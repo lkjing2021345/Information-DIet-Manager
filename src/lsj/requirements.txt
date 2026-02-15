@@ -1,0 +1,9 @@
+jieba~=0.42.1
+jieba3k~=0.35.1
+pandas~=3.0.0
+gensim~=4.4.0
+numpy~=2.4.2
+seaborn~=0.13.2
+requests~=2.32.5
+newspaper3k~=0.2.8
+sumy~=0.12.0
