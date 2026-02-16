@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import urllib.parse as urlparse
 import sys
+import logging
 
 def get_chrome_history_path():
     if sys.platform == 'win32':
@@ -22,40 +23,137 @@ def get_chrome_history_path():
         return None
     return path
 
-def extract_history():
-    original_path = get_chrome_history_path()
-    if not original_path:
+def safe_extract_history():
+    logs_folder_path = "../../logs"
+    if not os.path.exists(logs_folder_path):
+        os.makedirs(logs_folder_path)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('../../logs/fetch_data.log', encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+
+    logger = logging.getLogger(__name__)
+
+    # logger.info("Test1")
+    # logger.error("Test2")
+    # logger.warning("Test3")
+    # logger.exception("Test4")
+
+    logger.info("=" * 50)
+    logger.info("开始提取历史文件数据")
+    # 获取路径
+    try:
+        original_path = get_chrome_history_path()
+        if original_path is None:
+            logger.error("无法获取 Chrome 历史文件路径")
+            return None
+        logger.info(f"找到历史文件: {original_path}")
+    except Exception as e:
+        logger.exception(f"获取路径时发生错误: {e}")
         return None
 
-    temp_path = "../cache/temp_history_db"
+    # 复制文件
+    temp_dir = "..\\cache"
+    try:
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+            logger.info(f"创建临时目录: {temp_dir}")
+    except Exception as e:
+        logger.exception(f"无法创建临时目录: {e}")
+        return None
+
+    temp_path = os.path.join(temp_dir, "chrome_temp_history.db")
     try:
         shutil.copy2(original_path, temp_path)
+        logger.info(f"成功复制历史文件到: {temp_path}")
     except PermissionError:
-        print("无法复制文件")
+        logger.error("无法复制文件: Chrome可能正在运行， 请关闭Chrome后重试")
+        return None
+    except OSError as e:
+        logger.error(f"文件复制失败: {e}")
+        return None
+    except Exception as e:
+        logger.exception(f"文件复制时发生未知错误: {e}")
         return None
 
-    conn = sqlite3.connect(temp_path)
-    cursor = conn.cursor()
-
-    query = """
-    SELECT 
-        urls.url, 
-        urls.title, 
-        urls.visit_count, 
-        urls.last_visit_time 
-    FROM urls 
-    WHERE urls.last_visit_time > 0
-    """
+    # 连接数据库，读取数据
+    conn = None
+    df = None
 
     try:
-        df = pd.read_sql_query(query, conn)
-    except Exception as e:
-        print(f"数据库读取错误:{e}")
-        return None
-    finally:
-        conn.close()
-        os.remove(temp_path)
+        conn = sqlite3.connect(temp_path)
+        logger.info("成功连接到数据库")
 
+        query = """
+                SELECT urls.url, \
+                       urls.title, \
+                       urls.visit_count, \
+                       urls.last_visit_time
+                FROM urls
+                WHERE urls.last_visit_time > 0 \
+                """
+
+        df = pd.read_sql_query(query, conn)
+        logger.info(f"成功读取 {len(df)} 条历史记录")
+    except sqlite3.Error as e:
+        logger.error(f"数据库操作失败: {e}")
+        df = None
+    except pd.errors.DatabaseError as e:
+        logger.error(f"数据库读取失败: {e}")
+        df = None
+    except Exception as e:
+        logger.exception(f"查询数据时发生未知错误 {e}")
+        df = None
+
+    finally:
+        if conn:
+            conn.close()
+            logger.info("数据库连接已关闭")
+
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                logger.info("临时文件已删除")
+            except Exception as e:
+                logger.warning(f"删除临时文件失败: {e}")
+
+
+
+    # 验证数据
+    def validate_data(df):
+        if df is None:
+            logger.error("数据为 None")
+            return False
+
+        if df.empty:
+            logger.warning("数据为空，没有历史记录")
+            return False
+
+        required_columns = ['url', 'title', 'visit_count', 'last_visit_time']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            logger.error("缺少必要的列")
+            return False
+
+        if not pd.api.types.is_numeric_dtype(df['last_visit_time']):
+            logger.error("\'last_visit_time\' 列不是数字类型")
+            return False
+
+        logger.info("数据验证通过")
+        return True
+
+    if not validate_data(df):
+        logger.error("数据验证失败")
+        return None
+
+    logger.info("历史数据提取完成")
+    logger.info("=" * 50)
     return df
 
 def process_history(df):
@@ -128,10 +226,11 @@ def analyze_and_plot(df): #ai生成的: 分析数据并绘图
 
 
 if __name__ == "__main__":
-    print("开始读取 Chrome 浏览记录...")
-    raw_df = extract_history()
-
-    if raw_df is not None:
-        clean_df = process_history(raw_df)
-        save_as_csv(clean_df, "../../tests/files")
-        analyze_and_plot(clean_df)
+    # print("开始读取 Chrome 浏览记录...")
+    # raw_df = extract_history()
+    #
+    # if raw_df is not None:
+    #     clean_df = process_history(raw_df)
+    #     save_as_csv(clean_df, "../../tests/files")
+    #     analyze_and_plot(clean_df)
+    safe_extract_history()
