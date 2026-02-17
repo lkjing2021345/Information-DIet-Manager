@@ -11,6 +11,22 @@ import urllib.parse as urlparse
 import sys
 import logging
 
+logs_folder_path = "../../logs"
+if not os.path.exists(logs_folder_path):
+    os.makedirs(logs_folder_path)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('../../logs/fetch_data.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+### 获取历史文件路径
 def get_chrome_history_path():
     if sys.platform == 'win32':
         path = os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\History")
