@@ -196,7 +196,7 @@ def remove_duplicates(df, subset=None, keep='last'):
         return None
 
     original_count = len(df)
-    df_clean = df.duplicated(subset=subset, keep=keep)
+    df_clean = df.drop_duplicates(subset=subset, keep=keep)
 
     removed_count = original_count - len(df_clean)
 
