@@ -160,7 +160,7 @@ def safe_extract_history():
 def get_local_timezone():
     local_offset_seconds = -time.timezone
     if time.daylight and time.localtime().tm_isdst > 0:
-        local_offset_seconds -= time.altzone
+        local_offset_seconds = -time.altzone
     return timezone(timedelta(seconds=local_offset_seconds))
 
 def convert_to_local_time(df, col_name='visit_time'):
