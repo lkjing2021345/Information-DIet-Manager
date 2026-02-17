@@ -1,9 +1,12 @@
 import os
 import sqlite3
 import shutil
+import time
+
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import urllib.parse as urlparse
 import sys
 import logging
@@ -122,26 +125,24 @@ def safe_extract_history():
             except Exception as e:
                 logger.warning(f"删除临时文件失败: {e}")
 
-
-
     # 验证数据
-    def validate_data(df):
-        if df is None:
+    def validate_data(_df):
+        if _df is None:
             logger.error("数据为 None")
             return False
 
-        if df.empty:
+        if _df.empty:
             logger.warning("数据为空，没有历史记录")
             return False
 
         required_columns = ['url', 'title', 'visit_count', 'last_visit_time']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        missing_columns = [col for col in required_columns if col not in _df.columns]
 
         if missing_columns:
             logger.error("缺少必要的列")
             return False
 
-        if not pd.api.types.is_numeric_dtype(df['last_visit_time']):
+        if not pd.api.types.is_numeric_dtype(_df['last_visit_time']):
             logger.error("\'last_visit_time\' 列不是数字类型")
             return False
 
@@ -156,20 +157,39 @@ def safe_extract_history():
     logger.info("=" * 50)
     return df
 
-def process_history(df):
-    if df is None or df.empty:
-        return None
+def process_history_time():
+    def get_local_timezone():
+        local_offset_seconds = -time.timezone
+        if time.daylight and time.localtime().tm_isdst > 0:
+            local_offset_seconds -= time.altzone
+        return timezone(timedelta(seconds=local_offset_seconds))
 
-    def parse_webkit_time(microseconds):
-        return datetime(1601, 1, 1) + timedelta(microseconds=microseconds)
+    def convert_to_local_time(df, col_name='visit_time'):
+        local_timezone = get_local_timezone()
 
-    df['visit_time'] = df['last_visit_time'].apply(parse_webkit_time)
-    df['visit_time'] = df['visit_time'] + timedelta(hours=8)
+        if df[col_name].dt.tz is None:
+            df[col_name] = df[col_name].dt.tz_localize('UTC')
+        else:
+            df[col_name] = df[col_name].dt.tz_convert('UTC')
 
-    df['domain'] = df['url'].apply(lambda url: urlparse.urlparse(url).netloc)
-    df['hour'] = df['visit_time'].dt.hour
+        df[col_name] = df[col_name].dt.tz_convert(local_timezone)
 
-    return df
+        return df
+
+    def process_history(df):
+        if df is None or df.empty:
+            return None
+
+        def parse_webkit_time(microseconds):
+            return datetime(1601, 1, 1) + timedelta(microseconds=microseconds)
+
+        df['visit_time'] = df['last_visit_time'].apply(parse_webkit_time)
+        df = convert_to_local_time(df, 'visit_time')
+
+        df['domain'] = df['url'].apply(lambda url: urlparse.urlparse(url).netloc)
+        df['hour'] = df['visit_time'].dt.hour
+
+        return df
 
 def save_as_csv(df, output_path):
     folder_path = output_path
