@@ -210,6 +210,57 @@ def remove_duplicates(df, subset=None, keep='last'):
 
     return df_clean
 
+### 日期过滤
+def filter_by_date_range(df, start_date=None, end_date=None, days=None):
+    if df is None:
+        logger.error("数据为 None")
+        return None
+    if df.empty:
+        logger.error("数据为空，不存在历史记录")
+        return None
+    if 'visit_time' not in df.columns:
+        logger.error("DataFrame 中缺少 'visit_time' 列")
+        return df
+
+    df = df.copy()
+
+    df['visit_time'] = pd.to_datetime(df['visit_time'], errors='coerce')
+    df = df.dropna(subset=['visit_time'])
+
+    tz = df['visit_time'].dt.tz
+
+    current_time = datetime.now(tz)
+
+    if days is not None:
+        end_date = current_time
+        start_date = current_time - timedelta(days=days)
+        logger.info(f"正在过滤过去 {days} 天的数据")
+    else:
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date).tz_localize(tz)
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date).tz_localize(tz)
+
+    if start_date and end_date:
+        if isinstance(end_date, datetime) and end_date.hour == 0 and end_date.minute == 0:
+            end_date = end_date + timedelta(days=1) - timedelta(seconds=1)
+
+        filtered_df = df[df['visit_time'].between(start_date, end_date)]
+
+    elif start_date:
+        filtered_df = df[df['visit_time'] >= start_date]
+
+    elif end_date:
+        filtered_df = df[df['visit_time'] <= end_date]
+
+    else:
+        filtered_df = df
+
+    logger.info(f"日期过滤完成: {len(df)} -> {len(filtered_df)} 行")
+    return filtered_df
+
+
+
 def save_as_csv(df, output_path):
     folder_path = output_path
     if not os.path.exists(folder_path):
