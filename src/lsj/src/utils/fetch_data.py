@@ -42,22 +42,8 @@ def get_chrome_history_path():
         return None
     return path
 
+### 提取历史数据
 def safe_extract_history():
-    logs_folder_path = "../../logs"
-    if not os.path.exists(logs_folder_path):
-        os.makedirs(logs_folder_path)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('../../logs/fetch_data.log', encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
-
-    logger = logging.getLogger(__name__)
-
     # logger.info("Test1")
     # logger.error("Test2")
     # logger.warning("Test3")
@@ -173,6 +159,7 @@ def safe_extract_history():
     logger.info("=" * 50)
     return df
 
+### 时区转换
 def get_local_timezone():
     local_offset_seconds = -time.timezone
     if time.daylight and time.localtime().tm_isdst > 0:
@@ -278,10 +265,17 @@ def analyze_and_plot(df): #ai生成的: 分析数据并绘图
 
 
 if __name__ == "__main__":
-    print("开始读取 Chrome 浏览记录...")
+    logger.info("开始读取 Chrome 浏览记录")
     raw_df = safe_extract_history()
 
     if raw_df is not None:
+        logger.info("正在处理数据")
         clean_df = process_history(raw_df)
-        save_as_csv(clean_df, "../../tests/files")
+        clean_df = remove_duplicates(clean_df, subset=['url', 'visit_time'], keep='last')
+
+        save_as_csv(clean_df, "./output")
+
         analyze_and_plot(clean_df)
+
+    else:
+        print("无法获取数据，程序终止。")
