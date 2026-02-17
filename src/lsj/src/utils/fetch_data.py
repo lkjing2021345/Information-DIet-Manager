@@ -190,6 +190,23 @@ def process_history(df):
 
     return df
 
+### 过滤重复数据
+def remove_duplicates(df, subset=None, keep='last'):
+    if df is None or df.empty:
+        return None
+
+    original_count = len(df)
+    df_clean = df.duplicated(subset=subset, keep=keep)
+
+    removed_count = original_count - len(df_clean)
+
+    if removed_count > 0:
+        print(f"数据去重: 移除了 {removed_count} 条重复记录 (保留规则: {keep})")
+    else:
+        print("数据去重: 未发现重复记录")
+
+    return df_clean
+
 def save_as_csv(df, output_path):
     folder_path = output_path
     if not os.path.exists(folder_path):
