@@ -157,39 +157,38 @@ def safe_extract_history():
     logger.info("=" * 50)
     return df
 
-def process_history_time():
-    def get_local_timezone():
-        local_offset_seconds = -time.timezone
-        if time.daylight and time.localtime().tm_isdst > 0:
-            local_offset_seconds -= time.altzone
-        return timezone(timedelta(seconds=local_offset_seconds))
+def get_local_timezone():
+    local_offset_seconds = -time.timezone
+    if time.daylight and time.localtime().tm_isdst > 0:
+        local_offset_seconds -= time.altzone
+    return timezone(timedelta(seconds=local_offset_seconds))
 
-    def convert_to_local_time(df, col_name='visit_time'):
-        local_timezone = get_local_timezone()
+def convert_to_local_time(df, col_name='visit_time'):
+    local_timezone = get_local_timezone()
 
-        if df[col_name].dt.tz is None:
-            df[col_name] = df[col_name].dt.tz_localize('UTC')
-        else:
-            df[col_name] = df[col_name].dt.tz_convert('UTC')
+    if df[col_name].dt.tz is None:
+        df[col_name] = df[col_name].dt.tz_localize('UTC')
+    else:
+        df[col_name] = df[col_name].dt.tz_convert('UTC')
 
-        df[col_name] = df[col_name].dt.tz_convert(local_timezone)
+    df[col_name] = df[col_name].dt.tz_convert(local_timezone)
 
-        return df
+    return df
 
-    def process_history(df):
-        if df is None or df.empty:
-            return None
+def process_history(df):
+    if df is None or df.empty:
+        return None
 
-        def parse_webkit_time(microseconds):
-            return datetime(1601, 1, 1) + timedelta(microseconds=microseconds)
+    def parse_webkit_time(microseconds):
+        return datetime(1601, 1, 1) + timedelta(microseconds=microseconds)
 
-        df['visit_time'] = df['last_visit_time'].apply(parse_webkit_time)
-        df = convert_to_local_time(df, 'visit_time')
+    df['visit_time'] = df['last_visit_time'].apply(parse_webkit_time)
+    df = convert_to_local_time(df, 'visit_time')
 
-        df['domain'] = df['url'].apply(lambda url: urlparse.urlparse(url).netloc)
-        df['hour'] = df['visit_time'].dt.hour
+    df['domain'] = df['url'].apply(lambda url: urlparse.urlparse(url).netloc)
+    df['hour'] = df['visit_time'].dt.hour
 
-        return df
+    return df
 
 def save_as_csv(df, output_path):
     folder_path = output_path
@@ -246,11 +245,10 @@ def analyze_and_plot(df): #ai生成的: 分析数据并绘图
 
 
 if __name__ == "__main__":
-    # print("开始读取 Chrome 浏览记录...")
-    # raw_df = extract_history()
-    #
-    # if raw_df is not None:
-    #     clean_df = process_history(raw_df)
-    #     save_as_csv(clean_df, "../../tests/files")
-    #     analyze_and_plot(clean_df)
-    safe_extract_history()
+    print("开始读取 Chrome 浏览记录...")
+    raw_df = safe_extract_history()
+
+    if raw_df is not None:
+        clean_df = process_history(raw_df)
+        save_as_csv(clean_df, "../../tests/files")
+        analyze_and_plot(clean_df)
