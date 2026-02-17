@@ -179,7 +179,11 @@ def convert_to_local_time(df, col_name='visit_time'):
     return df
 
 def process_history(df):
-    if df is None or df.empty:
+    if df is None:
+        logger.error("数据为 None")
+        return None
+    if df.empty:
+        logger.error("数据为空，不存在历史记录")
         return None
 
     def parse_webkit_time(microseconds):
@@ -195,7 +199,11 @@ def process_history(df):
 
 ### 过滤重复数据
 def remove_duplicates(df, subset=None, keep='last'):
-    if df is None or df.empty:
+    if df is None:
+        logger.error("数据为 None")
+        return None
+    if df.empty:
+        logger.error("数据为空，不存在历史记录")
         return None
 
     original_count = len(df)
@@ -204,14 +212,16 @@ def remove_duplicates(df, subset=None, keep='last'):
     removed_count = original_count - len(df_clean)
 
     if removed_count > 0:
-        print(f"数据去重: 移除了 {removed_count} 条重复记录 (保留规则: {keep})")
+        logger.info(f"数据去重: 移除了 {removed_count} 条重复记录 (保留规则: {keep})")
     else:
-        print("数据去重: 未发现重复记录")
+        logger.info("数据去重: 未发现重复记录")
 
     return df_clean
 
 ### 日期过滤
 def filter_by_date_range(df, start_date=None, end_date=None, days=None):
+    logger.info("=" * 50)
+    logger.info("数据过滤开始")
     if df is None:
         logger.error("数据为 None")
         return None
@@ -223,28 +233,72 @@ def filter_by_date_range(df, start_date=None, end_date=None, days=None):
         return df
 
     df = df.copy()
-
     df['visit_time'] = pd.to_datetime(df['visit_time'], errors='coerce')
     df = df.dropna(subset=['visit_time'])
 
     tz = df['visit_time'].dt.tz
-
     current_time = datetime.now(tz)
 
+    min_time = df['visit_time'].min()
+    max_time = df['visit_time'].max()
+
+    logger.info(f"数据库时间范围: {min_time} ~ {max_time}")
+
+    # ===== 处理 days 参数 =====
     if days is not None:
+        if not isinstance(days, (int, float)) or days <= 0:
+            logger.error("days 必须是正数")
+            return df
         end_date = current_time
         start_date = current_time - timedelta(days=days)
         logger.info(f"正在过滤过去 {days} 天的数据")
     else:
-        if isinstance(start_date, str):
-            start_date = pd.to_datetime(start_date).tz_localize(tz)
-        if isinstance(end_date, str):
-            end_date = pd.to_datetime(end_date).tz_localize(tz)
+        # 转换 start_date / end_date
+        if start_date is not None:
+            start_date = pd.to_datetime(start_date, errors='coerce')
+        if end_date is not None:
+            end_date = pd.to_datetime(end_date, errors='coerce')
+
+        # ===== 合法性检查 =====
+        if start_date is not None and pd.isna(start_date):
+            logger.error("start_date 非法，无法解析为日期")
+            return df
+
+        if end_date is not None and pd.isna(end_date):
+            logger.error("end_date 非法，无法解析为日期")
+            return df
+
+        # 补齐时区
+        if start_date is not None and start_date.tzinfo is None:
+            start_date = start_date.tz_localize(tz)
+        if end_date is not None and end_date.tzinfo is None:
+            end_date = end_date.tz_localize(tz)
+
+    # ===== 日期逻辑合法性 =====
+    if start_date and end_date and start_date > end_date:
+        logger.error("start_date 不能大于 end_date")
+        return df
+
+    # ===== 是否在数据库日期范围内=====
+    if start_date and start_date > max_time:
+        logger.warning("start_date 超出数据库最大日期范围")
+        return df.iloc[0:0]
+
+    if end_date and end_date < min_time:
+        logger.warning("end_date 早于数据库最小日期范围")
+        return df.iloc[0:0]
+
+    if start_date and start_date < min_time:
+        logger.warning("start_date 早于数据库最小日期，已自动调整")
+        start_date = min_time
+
+    if end_date and end_date > max_time:
+        logger.warning("end_date 晚于数据库最大日期，已自动调整")
+        end_date = max_time
 
     if start_date and end_date:
         if isinstance(end_date, datetime) and end_date.hour == 0 and end_date.minute == 0:
             end_date = end_date + timedelta(days=1) - timedelta(seconds=1)
-
         filtered_df = df[df['visit_time'].between(start_date, end_date)]
 
     elif start_date:
@@ -257,9 +311,9 @@ def filter_by_date_range(df, start_date=None, end_date=None, days=None):
         filtered_df = df
 
     logger.info(f"日期过滤完成: {len(df)} -> {len(filtered_df)} 行")
+    logger.info("=" * 50)
+
     return filtered_df
-
-
 
 def save_as_csv(df, output_path):
     folder_path = output_path
@@ -275,11 +329,11 @@ def save_as_csv(df, output_path):
     file_path = os.path.join(folder_path, 'history_data.csv')
     new_df.to_csv(file_path, index=False)
 
-def analyze_and_plot(df): #ai生成的: 分析数据并绘图
+def analyze_and_plot(df): #AI生成: 分析数据并绘图
     if df is None:
         return
 
-    print(f"共加载了 {len(df)} 条访问记录。\n")
+    logger.info(f"共加载了 {len(df)} 条访问记录。\n")
 
     # --- 分析 1: 访问次数最多的前 10 个域名 ---
     top_domains = df['domain'].value_counts().head(10)
@@ -324,9 +378,11 @@ if __name__ == "__main__":
         clean_df = process_history(raw_df)
         clean_df = remove_duplicates(clean_df, subset=['url', 'visit_time'], keep='last')
 
-        save_as_csv(clean_df, "./output")
+        filtered_df = filter_by_date_range(clean_df, '2025-01-01', '2025-12-31')
 
-        analyze_and_plot(clean_df)
+        save_as_csv(filtered_df, "./output")
+
+        analyze_and_plot(filtered_df)
 
     else:
-        print("无法获取数据，程序终止。")
+        logger.error("无法获取数据，程序终止")
