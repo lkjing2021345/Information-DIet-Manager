@@ -104,13 +104,25 @@ class ContentClassifier:
         TODO: 请根据您的浏览习惯填充关键词
         """
         return {
-            # TODO: 为每个类别填充至少 5-10 个关键词
-            self.CATEGORY_SOCIAL: [],       # 如: "微信", "知乎", "weibo", "bilibili"
-            self.CATEGORY_LEARNING: [],     # 如: "教程", "文档", "python", "stackoverflow"
-            self.CATEGORY_SHOPPING: [],     # 如: "淘宝", "京东", "价格", "购物车"
-            self.CATEGORY_ENTERTAINMENT: [], # 如: "电影", "小说", "游戏", "music"
-            self.CATEGORY_NEWS: [],         # 如: "新闻", "头条", "日报", "央视"
-            self.CATEGORY_TOOLS: [],        # 如: "翻译", "网盘", "邮箱", "地图"
+            self.CATEGORY_SOCIAL: ["QQ", "微信", "知乎", "百度贴吧", "Weibo", "Bilibili", "抖音", "微博", "小红书",
+                                   "快手", "陌陌", "探探", "豆瓣", "领英", "脉脉", "朋友圈", "群聊", "论坛", "社区",
+                                   "Instagram", "Facebook", "Twitter", "Telegram", "Discord", "Reddit"],
+            self.CATEGORY_LEARNING: ["教程", "从零开始", "文档", "新手", "数学", "物理", "代数", "练习", "python",
+                                     "stackoverflow", "编程", "算法", "计算机", "英语", "四六级", "雅思", "托福",
+                                     "考研", "公务员", "课程", "Java", "GitHub", "CSDN", "LeetCode", "维基百科",
+                                     "Coursera"],
+            self.CATEGORY_SHOPPING: ["淘宝", "京东", "PDD", "拼多多", "购物车", "价格", "秒杀", "天猫", "苏宁",
+                                     "优惠券", "折扣", "包邮", "下单", "物流", "快递", "商城", "促销", "团购", "满减",
+                                     "亚马逊", "唯品会", "得物", "闲鱼", "支付宝"],
+            self.CATEGORY_ENTERTAINMENT: ["电影", "小说", "追番", "漫画", "游戏", "音乐", "music", "电视剧", "综艺",
+                                          "动漫", "体育", "直播", "搞笑", "娱乐", "明星", "八卦", "影视", "Netflix",
+                                          "YouTube", "网易云", "QQ音乐", "爱奇艺", "腾讯视频", "优酷", "Steam",
+                                          "Twitch"],
+            self.CATEGORY_NEWS: ["新闻", "日报", "头条", "央视", "资讯", "时政", "国际", "财经", "科技", "社会", "军事",
+                                 "热点", "突发", "早报", "晚报", "新浪", "澎湃", "今日头条", "BBC", "CNN", "环球时报",
+                                 "参考消息"],
+            self.CATEGORY_TOOLS: ["翻译", "网盘", "邮箱", "地图", "计算器", "天气", "日历", "时钟", "闹钟", "记事本",
+                                  "便签", "录音", "截图", "压缩", "解压", "PDF", "格式转换", "
         }
 
     def _segment_text(self, text: str) -> List[str]:
