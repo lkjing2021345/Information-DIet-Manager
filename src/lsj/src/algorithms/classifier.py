@@ -18,6 +18,9 @@ import jieba
 import pandas as pd
 import os
 import pickle
+import logging
+import json
+from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 # ==================== 可选导入 ====================
@@ -27,6 +30,21 @@ from typing import List, Dict, Optional, Tuple
 # from sklearn.model_selection import train_test_split
 # from sklearn.metrics import classification_report
 
+# logger 基本设置
+logs_folder_path = "../../logs"
+if not os.path.exists(logs_folder_path):
+    os.makedirs(logs_folder_path)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('../../logs/classifier.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 class ContentClassifier:
     """
@@ -72,11 +90,13 @@ class ContentClassifier:
             - Optional 类型提示表示参数可以为 None
             - __init__ 方法不应包含耗时操作
         """
-        # TODO: 初始化分类类别列表
-        self.categories = []  # 请填充所有类别
+        # 初始化分类类别列表
+        self.categories = []
 
-        # TODO: 加载关键词规则库
-        self.rules = {}  # 调用 _load_default_rules() 或使用传入的 keyword_dict
+        # 加载关键词规则库
+        self.rules = keyword_dict if keyword_dict is not None else self._load_default_rules()
+
+        self.categories = list(self.rules.keys())
 
         # TODO: 初始化机器学习相关属性（初始为 None）
         self.model = None       # 朴素贝叶斯模型
@@ -85,7 +105,7 @@ class ContentClassifier:
         # TODO: 如果提供了模型路径，尝试加载模型
         # 提示：调用 self.load_model(model_path)
 
-        print("✅ ContentClassifier 初始化完成")
+        logger.info("✅ ContentClassifier 初始化完成")
 
     # ==================== 私有方法（内部使用）====================
 
@@ -95,35 +115,46 @@ class ContentClassifier:
 
         返回:
             Dict[str, List[str]]: 关键词规则字典
-
-        设计建议:
-            1. 关键词要具有代表性，避免歧义
-            2. 可以同时包含中文和英文关键词
-            3. URL 域名关键词比标题关键词更准确
-
-        TODO: 请根据您的浏览习惯填充关键词
         """
-        return {
-            self.CATEGORY_SOCIAL: ["QQ", "微信", "知乎", "百度贴吧", "Weibo", "Bilibili", "抖音", "微博", "小红书",
-                                   "快手", "陌陌", "探探", "豆瓣", "领英", "脉脉", "朋友圈", "群聊", "论坛", "社区",
-                                   "Instagram", "Facebook", "Twitter", "Telegram", "Discord", "Reddit"],
-            self.CATEGORY_LEARNING: ["教程", "从零开始", "文档", "新手", "数学", "物理", "代数", "练习", "python",
-                                     "stackoverflow", "编程", "算法", "计算机", "英语", "四六级", "雅思", "托福",
-                                     "考研", "公务员", "课程", "Java", "GitHub", "CSDN", "LeetCode", "维基百科",
-                                     "Coursera"],
-            self.CATEGORY_SHOPPING: ["淘宝", "京东", "PDD", "拼多多", "购物车", "价格", "秒杀", "天猫", "苏宁",
-                                     "优惠券", "折扣", "包邮", "下单", "物流", "快递", "商城", "促销", "团购", "满减",
-                                     "亚马逊", "唯品会", "得物", "闲鱼", "支付宝"],
-            self.CATEGORY_ENTERTAINMENT: ["电影", "小说", "追番", "漫画", "游戏", "音乐", "music", "电视剧", "综艺",
-                                          "动漫", "体育", "直播", "搞笑", "娱乐", "明星", "八卦", "影视", "Netflix",
-                                          "YouTube", "网易云", "QQ音乐", "爱奇艺", "腾讯视频", "优酷", "Steam",
-                                          "Twitch"],
-            self.CATEGORY_NEWS: ["新闻", "日报", "头条", "央视", "资讯", "时政", "国际", "财经", "科技", "社会", "军事",
-                                 "热点", "突发", "早报", "晚报", "新浪", "澎湃", "今日头条", "BBC", "CNN", "环球时报",
-                                 "参考消息"],
-            self.CATEGORY_TOOLS: ["翻译", "网盘", "邮箱", "地图", "计算器", "天气", "日历", "时钟", "闹钟", "记事本",
-                                  "便签", "录音", "截图", "压缩", "解压", "PDF", "格式转换", "
-        }
+
+        current_dir = Path(__file__).parent
+        json_dir = current_dir.joinpath("rules")
+        config_path = json_dir.joinpath("default_classify_rules.json")
+
+        try:
+            with open(config_path, 'r', encoding="utf-8") as f:
+                raw_data = json.load(f)
+
+            category_mapping = {
+                "Social": self.CATEGORY_SOCIAL,
+                "Learning": self.CATEGORY_LEARNING,
+                "Shopping": self.CATEGORY_SHOPPING,
+                "Entertainment": self.CATEGORY_ENTERTAINMENT,
+                "News": self.CATEGORY_NEWS,
+                "Tools": self.CATEGORY_TOOLS,
+                "Other": self.CATEGORY_OTHER,
+            }
+
+            result = {}
+            for key, category_const in category_mapping.items():
+                if key in raw_data:
+                    result[category_const] = raw_data
+                else:
+                    result[category_const] = []
+
+            return result
+
+        except FileNotFoundError:
+            logger.error(f"配置文件 {config_path} 未找到，使用空规则")
+            return {}
+
+        except json.JSONDecodeError:
+            logger.error(f"配置文件 {config_path} 格式错误，请检查 JSON 语法")
+            return {}
+
+        except Exception as e:
+            logger.error(f"出现异常错误: {e}")
+            return {}
 
     def _segment_text(self, text: str) -> List[str]:
         """
