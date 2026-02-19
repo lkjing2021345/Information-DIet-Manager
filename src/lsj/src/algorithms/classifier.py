@@ -371,7 +371,7 @@ class ContentClassifier:
         logger.info(f"正在处理 {len(df)} 条数据...")
 
         result_df = df.copy()
-        result_df["category"] = result_df.apply(
+        result_df['category'] = result_df.apply(
             lambda row: self.predict(
                 text=row.get('title', ''),
                 url=row.get('url', '')
@@ -381,7 +381,7 @@ class ContentClassifier:
 
         logger.info("处理完成")
 
-        return df
+        return result_df
 
     # ==================== 模型持久化方法 ====================
 
@@ -486,3 +486,21 @@ if __name__ == "__main__":
     # 测试3: 都不匹配
     res3 = classifier.predict_by_rules("今天天气真好", "https://www.unknown.com")
     print(f"未知测试: {res3}")  # 预期输出: None
+
+    print("\n--- 测试 predict 主入口 ---")
+    res = classifier.predict("Python入门教程", None)
+    print(f"预测结果: {res}")  # 预期: learning
+
+    res = classifier.predict("未知标题", "https://unknown.com")
+    print(f"预测结果: {res}")  # 预期: other
+
+    # 测试批量预测
+    print("\n--- 测试 batch_predict ---")
+    test_data = pd.DataFrame([
+        {"title": "GitHub - 开源项目", "url": "https://github.com"},
+        {"title": "京东购物", "url": "https://www.jd.com"},
+        {"title": "今日新闻", "url": "https://news.baidu.com"},
+    ])
+    result_df = classifier.batch_predict(test_data)
+    # print(result_df.columns.tolist())
+    print(result_df[['title', 'category']])
