@@ -24,13 +24,13 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 from pandas.core.interchange.dataframe_protocol import DataFrame
+# removed import
+# removed import
 
-# ==================== 可选导入 ====================
-# Day 4 之后取消注释，用于机器学习分类
-# from sklearn.feature_extraction.text import TfidfVectorizer
-# from sklearn.naive_bayes import MultinomialNB
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import classification_report
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
 # logger 基本设置
 logs_folder_path = "../../logs"
@@ -104,8 +104,9 @@ class ContentClassifier:
         self.model = None       # 朴素贝叶斯模型
         self.vectorizer = None  # TF-IDF 向量化器
 
-        # TODO: 如果提供了模型路径，尝试加载模型
-        # 提示：调用 self.load_model(model_path)
+        # 如果提供了模型路径，尝试加载模型
+        if model_path:
+            self.load_model(model_path)
 
         logger.info("✅ ContentClassifier 初始化完成")
 
@@ -118,7 +119,6 @@ class ContentClassifier:
         返回:
             Dict[str, List[str]]: 关键词规则字典
         """
-
         current_dir = Path(__file__).parent
         json_dir = current_dir.joinpath("rules")
         config_path = json_dir.joinpath("default_classify_rules.json")
@@ -243,14 +243,6 @@ class ContentClassifier:
 
         返回:
             str: 预测的类别
-
-        前置条件:
-            self.model 和 self.vectorizer 必须已训练
-
-        实现步骤:
-            1. 对文本进行分词和预处理
-            2. 使用 vectorizer 转换为 TF-IDF 向量
-            3. 使用 model.predict() 预测类别
         """
         if not self.model or not self.vectorizer:
             logger.warning("模型未训练，无法预测")
@@ -320,25 +312,6 @@ class ContentClassifier:
 
         返回:
             Dict[str, float]: 包含准确率等评估指标的字典
-
-        实现步骤:
-            1. 文本预处理（分词、去停用词）
-            2. 划分训练集和测试集
-            3. 创建 TfidfVectorizer 并转换文本
-            4. 训练 MultinomialNB 模型
-            5. 评估模型性能
-
-        sklearn 关键方法:
-            - TfidfVectorizer(): 创建 TF-IDF 向量化器
-              - fit_transform(texts): 拟合并转换
-              - transform(texts): 仅转换（用于新数据）
-            - MultinomialNB(): 朴素贝叶斯分类器
-              - fit(X, y): 训练模型
-              - predict(X): 预测
-              - score(X, y): 计算准确率
-            - train_test_split(): 划分数据集
-
-        TODO: Day 4 实现模型训练
         """
         logger.info("正在巡练模型")
 
@@ -384,11 +357,6 @@ class ContentClassifier:
 
         返回:
             str: 预测的类别
-
-        分类策略:
-            1. 优先使用规则匹配（快速、准确）
-            2. 规则未命中且有模型时，使用模型预测
-            3. 都失败则返回 Other
         """
         result = self.predict_by_rules(text=text, url=url)
         if result:
@@ -451,22 +419,28 @@ class ContentClassifier:
 
         说明:
             模型保存后，下次启动可以直接加载，无需重新训练
-
-        Python 持久化方法:
-            - pickle.dump(obj, file): 序列化对象
-            - pickle.load(file): 反序列化对象
-            - 也可以使用 joblib（sklearn 推荐）
-
-        需要保存的内容:
-            - self.model (分类器)
-            - self.vectorizer (向量化器)
-            - self.categories (类别列表)
         """
-        # TODO: 实现模型保存
-        # 提示：
-        # with open(path, 'wb') as f:
-        #     pickle.dump({...}, f)
-        pass
+        if not self.model or not self.vectorizer:
+            logger.error("模型未训练，无法保存")
+            return
+
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            # 保存模型、向量化器和类别列表
+            model_data = {
+                'model': self.model,
+                'vectorizer': self.vectorizer,
+                'categories': self.categories
+            }
+
+            with open(path, 'wb') as f:
+                pickle.dump(model_data, f)
+
+            logger.info(f"✅ 模型已保存到: {path}")
+
+        except Exception as e:
+            logger.error(f"模型保存失败: {e}")
 
     def load_model(self, path: str) -> bool:
         """
@@ -481,8 +455,24 @@ class ContentClassifier:
         注意:
             加载前检查文件是否存在
         """
-        # TODO: 实现模型加载
-        pass
+        if not os.path.exists(path):
+            logger.error(f"模型文件不存在: {path}")
+            return False
+
+        try:
+            with open(path, 'rb') as f:
+                model_data = pickle.load(f)
+
+            self.model = model_data['model']
+            self.vectorizer = model_data['vectorizer']
+            self.categories = model_data['categories']
+
+            logger.info(f"✅ 模型已加载: {path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"模型加载失败: {e}")
+            return False
 
     def get_category_distribution(self, df: pd.DataFrame) -> pd.Series:
         """

@@ -58,10 +58,11 @@ logs/
 *.sqlite
 *.sqlite3
 
-# Data files (uncomment if needed)
-# *.csv
-# *.json
-# *.xml
+ Data files (uncomment if needed)
+ *.csv
+ *.json
+ *.xml
+ *.jsonl
 
 # Model files
 *.model
