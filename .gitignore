@@ -82,3 +82,4 @@ train_classifier.py
 
 src/lsj/src/utils/output/
 src/lsj/tests/files/
+src/lsj/src/utils/config.json
