@@ -23,6 +23,8 @@ import json
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
+from pandas.core.interchange.dataframe_protocol import DataFrame
+
 # ==================== 可选导入 ====================
 # Day 4 之后取消注释，用于机器学习分类
 # from sklearn.feature_extraction.text import TfidfVectorizer
@@ -266,7 +268,6 @@ class ContentClassifier:
         if url_lower:
             for category, keywords in self.rules.items():
                 for keyword in keywords:
-                    # 关键修复：在 url_lower 里查找 keyword，而不是在 keywords 列表里查找
                     if keyword.lower() in url_lower:
                         logger.info(f"URL匹配成功: '{keyword}' -> {category}")
                         return category
@@ -336,8 +337,6 @@ class ContentClassifier:
             1. 优先使用规则匹配（快速、准确）
             2. 规则未命中且有模型时，使用模型预测
             3. 都失败则返回 Other
-
-        这是类最重要的对外接口！
         """
         result = self.predict_by_rules(text=text, url=url)
         if result:
@@ -362,24 +361,30 @@ class ContentClassifier:
 
         返回:
             pd.DataFrame: 添加了 'category' 列的 DataFrame
-
-        Pandas 技巧:
-            - df.apply(func, axis=1): 对每行应用函数
-            - df['col'].apply(func): 对单列应用函数
-            - 使用进度条库 tqdm 可以显示处理进度
-
-        性能优化建议:
-            - 对于大量数据，可以考虑向量化操作
-            - 或者使用多进程处理
         """
+        # TODO: 多线程优化
+        # TODO: 向量化操作
+
         if df.empty:
-            print("⚠️ 输入数据为空")
+            logger.warning("输入数据为空")
             return df
 
-        print(f"📊 正在处理 {len(df)} 条数据...")
+        if df is None:
+            logger.warning("输出数据为 None")
+            return DataFrame
 
-        # TODO: 实现批量预测
-        # 提示：使用 df.apply(lambda row: self.predict(...), axis=1)
+        logger.info(f"正在处理 {len(df)} 条数据...")
+
+        result_df = df.copy()
+        result_df["category"] = result_df.apply(
+            lambda row: self.predict(
+                text=row.get('title', ''),
+                url=row.get('url', '')
+            ),
+            axis=1
+        )
+
+        logger.info("处理完成")
 
         return df
 
