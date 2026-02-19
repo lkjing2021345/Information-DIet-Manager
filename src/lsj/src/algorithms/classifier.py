@@ -340,9 +340,39 @@ class ContentClassifier:
 
         TODO: Day 4 实现模型训练
         """
-        print("🔄 正在训练模型...")
-        # TODO: 实现训练逻辑
-        pass
+        logger.info("正在巡练模型")
+
+        # 数据预处理
+        processed_texts = []
+
+        for text in texts:
+            words = self._segment_text(text)
+            clean_words = self._remove_stopwords(words)
+            processed_texts.append("".join(clean_words))
+
+        # 划分训练集和测试集
+        X_train, X_test, y_train, y_test = train_test_split(
+            processed_texts, labels, test_size=test_size, random_state=42
+        )
+
+        # TF-IDF
+        self.vectorizer = TfidfVectorizer(max_features=10000)
+        X_train_vec = self.vectorizer.fit_transform(X_train)
+        X_test_vec = self.vectorizer.transform(X_test)
+
+        self.model = MultinomialNB()
+        self.model.fit(X_train_vec, y_train)
+
+        # 评估
+        accuracy = self.model.score(X_test_vec, y_test)
+        logger.info(f"Accuracy: {accuracy}")
+
+        # 分类报告
+        y_pred = self.model.predict(X_test_vec)
+        report = classification_report(y_test, y_pred)
+        logger.info(f"\nClassification Report:\n {report}")
+
+        return {"accuracy": accuracy}
 
     def predict(self, text: str, url: Optional[str] = None) -> str:
         """
