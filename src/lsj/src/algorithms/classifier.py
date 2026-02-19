@@ -252,8 +252,23 @@ class ContentClassifier:
             2. 使用 vectorizer 转换为 TF-IDF 向量
             3. 使用 model.predict() 预测类别
         """
-        # TODO: Day 4 实现机器学习预测
-        pass
+        if not self.model or not self.vectorizer:
+            logger.warning("模型未训练，无法预测")
+            return self.CATEGORY_OTHER
+
+        try:
+            words = self._segment_text(text)
+            clean_words = self._remove_stopwords(words)
+            processed_text = "".join(clean_words)
+
+            text_vec = self.vectorizer.transform([processed_text])
+
+            prediction = self.model.predict(text_vec)[0]
+            return prediction
+
+        except Exception as e:
+            logger.error(f"模型预测失败: {e}")
+            return self.CATEGORY_OTHER
 
     # ==================== 核心公共方法 ====================
 
