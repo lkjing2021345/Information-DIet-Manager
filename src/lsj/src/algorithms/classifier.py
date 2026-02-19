@@ -255,16 +255,11 @@ class ContentClassifier:
 
         返回:
             Optional[str]: 匹配到的类别，未匹配返回 None
-
-        设计思路:
-            1. URL 匹配优先（域名更准确）
-            2. 标题关键词匹配次之
-            3. 只要匹配到就返回，不进行多类别判断
         """
         text_lower = str(text).lower() if text else ""
         url_lower = str(url).lower() if url else ""
 
-        # 1. URL 匹配（优先级高）
+        # 1. URL 匹配
         if url_lower:
             for category, keywords in self.rules.items():
                 for keyword in keywords:
@@ -272,7 +267,7 @@ class ContentClassifier:
                         logger.info(f"URL匹配成功: '{keyword}' -> {category}")
                         return category
 
-        # 2. 标题文本匹配（优先级次之）
+        # 2. 标题文本匹配
         if text_lower:
             for category, keywords in self.rules.items():
                 for keyword in keywords:
