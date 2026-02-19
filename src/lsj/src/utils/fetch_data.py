@@ -440,7 +440,7 @@ if __name__ == "__main__":
         logger.info("正在处理数据")
         clean_df = process_history(raw_df)
         clean_df = remove_duplicates(clean_df, subset=['url', 'visit_time'], keep='last')
-        filtered_df = filter_by_date_range(clean_df, '2025-01-01', '2025-12-31')
+        filtered_df = filter_by_date_range(clean_df, '2025-01-01', '2026-12-31')
 
         # 保存为符合 IngestItem 契约的格式
         save_as_csv(filtered_df, "./output", source="import")
