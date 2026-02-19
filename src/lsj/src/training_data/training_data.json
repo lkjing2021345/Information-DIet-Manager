@@ -1,0 +1,6794 @@
+[
+  {
+    "input": "淘宝网 - 淘！我喜欢",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.jd.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Python 3.12.1 Documentation",
+    "label": "Learning"
+  },
+  {
+    "input": "https://news.sina.com.cn/world/",
+    "label": "News"
+  },
+  {
+    "input": "Bilibili - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://github.com/pytorch/pytorch",
+    "label": "Learning"
+  },
+  {
+    "input": "微博 – 随时随地发现新鲜事",
+    "label": "Social"
+  },
+  {
+    "input": "Google Translate",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amazon.com/gp/cart/view.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "LeetCode - The World's Leading Online Programming Learning Platform",
+    "label": "Learning"
+  },
+  {
+    "input": "Netflix - Watch TV Shows Online, Watch Movies Online",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://mail.google.com/mail/u/0/",
+    "label": "Tools"
+  },
+  {
+    "input": "知乎 - 有问题，就会有答案",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-asia",
+    "label": "News"
+  },
+  {
+    "input": "Steam Store",
+    "label": "Entertainment"
+  },
+  {
+    "input": "唯品会 - 全球精选 正品特卖",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://stackoverflow.com/questions/20001/public-static-const-in-c-sharp",
+    "label": "Learning"
+  },
+  {
+    "input": "百度网盘 - 自由存，随心看",
+    "label": "Tools"
+  },
+  {
+    "input": "Twitter / Home",
+    "label": "Social"
+  },
+  {
+    "input": "https://item.taobao.com/item.htm?id=5234234123",
+    "label": "Shopping"
+  },
+  {
+    "input": "Coursera | Online Courses & Credentials",
+    "label": "Learning"
+  },
+  {
+    "input": "今日油价查询最新消息",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.douyin.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "CNN - Breaking News, Latest News and Videos",
+    "label": "News"
+  },
+  {
+    "input": "LinkedIn: Log In or Sign Up",
+    "label": "Social"
+  },
+  {
+    "input": "MDN Web Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm",
+    "label": "Shopping"
+  },
+  {
+    "input": "网易云音乐 - 听见好时光",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://pan.baidu.com/disk/home",
+    "label": "Tools"
+  },
+  {
+    "input": "CSDN - 专业开发者社区",
+    "label": "Learning"
+  },
+  {
+    "input": "人民网_网上的人民日报",
+    "label": "News"
+  },
+  {
+    "input": "https://www.apple.com/cn/shop/bag",
+    "label": "Shopping"
+  },
+  {
+    "input": "Speedtest by Ookla - The Global Broadband Speed Test",
+    "label": "Tools"
+  },
+  {
+    "input": "豆瓣电影 - 你的光影记录",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://arxiv.org/abs/1706.03762",
+    "label": "Learning"
+  },
+  {
+    "input": "Facebook - Log In or Sign Up",
+    "label": "Social"
+  },
+  {
+    "input": "什么值得买 | 品质消费网站",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://wx.qq.com/",
+    "label": "Social"
+  },
+  {
+    "input": "GeeksforGeeks | A computer science portal for geeks",
+    "label": "Learning"
+  },
+  {
+    "input": "虎扑 - 步行街",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "label": "Entertainment"
+  },
+  {
+    "input": "W3Schools Online Web Tutorials",
+    "label": "Learning"
+  },
+  {
+    "input": "腾讯新闻 - 事实派",
+    "label": "News"
+  },
+  {
+    "input": "JSON Formatter & Validator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.ikea.cn/cn/zh/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Twitch - The ultimate live streaming platform for gamers",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://scholar.google.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "凤凰网 - 资讯 为您服务",
+    "label": "News"
+  },
+  {
+    "input": "拼多多 商家后台",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://chat.openai.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "Instagram",
+    "label": "Social"
+  },
+  {
+    "input": "菜鸟教程 - 学的不仅是技术，更是梦想",
+    "label": "Learning"
+  },
+  {
+    "input": "https://music.163.com/#/song?id=123456",
+    "label": "Entertainment"
+  },
+  {
+    "input": "东方财富网：中国财经门户",
+    "label": "News"
+  },
+  {
+    "input": "Convert PDF to Word - ILovePDF",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.uniqlo.cn/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Kaggle: Your Machine Learning and Data Science Community",
+    "label": "Learning"
+  },
+  {
+    "input": "搜狐网 - 搜狐首页",
+    "label": "News"
+  },
+  {
+    "input": "https://store.steampowered.com/app/1091500/Cyberpunk_2077/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "12306 - 中国铁路客户服务中心",
+    "label": "Tools"
+  },
+  {
+    "input": "Spotify - Web Player",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.zhihu.com/question/20790576",
+    "label": "Learning"
+  },
+  {
+    "input": "闲鱼 - 闲置能换钱",
+    "label": "Shopping"
+  },
+  {
+    "input": "Docker Documentation | Docker Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://weibo.com/u/12345678",
+    "label": "Social"
+  },
+  {
+    "input": "环球网 - 全球生活",
+    "label": "News"
+  },
+  {
+    "input": "Adobe Photoshop System Requirements",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.costco.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Duolingo - The world's best way to learn a language",
+    "label": "Learning"
+  },
+  {
+    "input": "优酷 - 这世界很酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Notion - The all-in-one workspace",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/",
+    "label": "News"
+  },
+  {
+    "input": "小红书 - 你的生活指南",
+    "label": "Social"
+  },
+  {
+    "input": "Nike.com 官方商店",
+    "label": "Shopping"
+  },
+  {
+    "input": "Udemy: Online Courses - Learn Anything, On Your Schedule",
+    "label": "Learning"
+  },
+  {
+    "input": "https://v.qq.com/x/cover/mzc00200.html",
+    "label": "Entertainment"
+  },
+  {
+    "input": "快递100 - 查快递",
+    "label": "Tools"
+  },
+  {
+    "input": "财新网 - 原创财经新媒体",
+    "label": "News"
+  },
+  {
+    "input": "https://www.ebay.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "HackerRank - Join over 11 million developers",
+    "label": "Learning"
+  },
+  {
+    "input": "斗鱼 - 每个人的直播平台",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://docs.microsoft.com/en-us/dotnet/",
+    "label": "Learning"
+  },
+  {
+    "input": "中国天气网 - 专业天气预报",
+    "label": "Tools"
+  },
+  {
+    "input": "Reddit - Dive into anything",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bloomberg.com/asia",
+    "label": "News"
+  },
+  {
+    "input": "苏宁易购 - 综合网上购物平台",
+    "label": "Shopping"
+  },
+  {
+    "input": "MIT OpenCourseWare | Free Online Course Materials",
+    "label": "Learning"
+  },
+  {
+    "input": "芒果TV - 天生青春",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://tool.lu/timestamp/",
+    "label": "Tools"
+  },
+  {
+    "input": "TED: Ideas worth spreading",
+    "label": "Learning"
+  },
+  {
+    "input": "当当网 - 网上购物中心",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.wsj.com/",
+    "label": "News"
+  },
+  {
+    "input": "Discord | Your Place to Talk and Hang Out",
+    "label": "Social"
+  },
+  {
+    "input": "携程旅行网 - 酒店预订, 机票预订",
+    "label": "Tools"
+  },
+  {
+    "input": "IMDb: Ratings, Reviews, and Where to Watch the Best Movies & TV Shows",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://matplotlib.org/stable/gallery/index.html",
+    "label": "Learning"
+  },
+  {
+    "input": "美团外卖 - 美食",
+    "label": "Tools"
+  },
+  {
+    "input": "观察者网 - 中国关怀 全球视野",
+    "label": "News"
+  },
+  {
+    "input": "https://www.booking.com/",
+    "label": "Tools"
+  },
+    {
+    "input": "https://smallpdf.com/pdf-to-word",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.cnn.com/world",
+    "label": "News"
+  },
+  {
+    "input": "https://www.vice.com/en",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.rakuten.co.jp/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.memrise.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.minecraft.net/en-us",
+    "label": "Entertainment"
+  },
+  {
+    "input": "OneDrive",
+    "label": "Tools"
+  },
+  {
+    "input": "https://web.wechat.com/",
+    "label": "Social"
+  },
+  {
+    "input": "Quizlet | Learning tools & flashcards",
+    "label": "Learning"
+  },
+  {
+    "input": "Jira Software",
+    "label": "Tools"
+  },
+  {
+    "input": "Under Armour® Official Store | FREE Shipping available",
+    "label": "Shopping"
+  },
+  {
+    "input": "Google Drive - Cloud Storage & File Backup",
+    "label": "Tools"
+  },
+  {
+    "input": "Roblox",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.lowes.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Pandora Music",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.louisvuitton.cn/zh-cn/homepage",
+    "label": "Shopping"
+  },
+  {
+    "input": "MDN Web Docs: Mozilla Developer Network",
+    "label": "Learning"
+  },
+  {
+    "input": "YouTube",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.codechef.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.chinadaily.com.cn/",
+    "label": "News"
+  },
+  {
+    "input": "https://en.wikipedia.org/wiki/Machine_learning",
+    "label": "Learning"
+  },
+  {
+    "input": "Steam: Counter-Strike 2",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://kakao.com/",
+    "label": "Social"
+  },
+  {
+    "input": "LastPass | Password Manager",
+    "label": "Tools"
+  },
+  {
+    "input": "The Sydney Morning Herald",
+    "label": "News"
+  },
+  {
+    "input": "https://www.investopedia.com/terms/b/blockchain.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://docs.google.com/spreadsheets/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.reddit.com/r/funny/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.macys.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://reactjs.org/docs/getting-started.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://outlook.live.com/mail/",
+    "label": "Tools"
+  },
+  {
+    "input": "Kotaku | Gaming Reviews, News, Tips and More",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.washingtonpost.com/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.msnbc.com/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.lazada.sg/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.oreilly.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.polygon.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ikea.com/us/en/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.etsy.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.freecodecamp.org/",
+    "label": "Learning"
+  },
+  {
+    "input": "Le Monde.fr - Actualités et Infos en France",
+    "label": "News"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://angular.io/docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.zara.com/us/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Reuters | Breaking International News & Views",
+    "label": "News"
+  },
+  {
+    "input": "Speedtest by Ookla",
+    "label": "Tools"
+  },
+  {
+    "input": "The New York Times - Breaking News, US News, World News",
+    "label": "News"
+  },
+  {
+    "input": "Codecademy",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bumble.com/",
+    "label": "Social"
+  },
+  {
+    "input": "VK | Welcome!",
+    "label": "Social"
+  },
+  {
+    "input": "Grammarly: Free Online Writing Assistant",
+    "label": "Tools"
+  },
+  {
+    "input": "Vimeo | The world's only all-in-one video solution",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.samsclub.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://techcrunch.com/",
+    "label": "News"
+  },
+  {
+    "input": "Google Search",
+    "label": "Tools"
+  },
+  {
+    "input": "ResearchGate | Find and share research",
+    "label": "Learning"
+  },
+  {
+    "input": "https://confluence.atlassian.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "Walmart.com | Save Money. Live Better",
+    "label": "Shopping"
+  },
+  {
+    "input": "The Verge",
+    "label": "News"
+  },
+  {
+    "input": "Business Insider",
+    "label": "News"
+  },
+  {
+    "input": "https://www.last.fm/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Asana - Manage your team's work, projects, & tasks",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.hulu.com/welcome",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.spotify.com/us/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.dropbox.com/home",
+    "label": "Tools"
+  },
+  {
+    "input": "https://twitter.com/home",
+    "label": "Social"
+  },
+  {
+    "input": "Introduction to Algorithms - MIT OpenCourseWare",
+    "label": "Learning"
+  },
+  {
+    "input": "9GAG: Go Fun The World",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Rolling Stone: Music, Film, TV and Political News",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www3.nhk.or.jp/nhkworld/",
+    "label": "News"
+  },
+  {
+    "input": "Twitch",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://1password.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "Instagram",
+    "label": "Social"
+  },
+  {
+    "input": "Nordstrom Online & In Store: Shoes, Jewelry, Clothing",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.instructables.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://tieba.baidu.com/",
+    "label": "Social"
+  },
+  {
+    "input": "E! Online - Entertainment News, Celebrity Gossip",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ebay.co.uk/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://arstechnica.com/",
+    "label": "News"
+  },
+  {
+    "input": "https://duckduckgo.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.forbes.com/",
+    "label": "News"
+  },
+  {
+    "input": "Vue.js - The Progressive JavaScript Framework",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.britannica.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.whatismyip.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "Best Buy | Official Online Store",
+    "label": "Shopping"
+  },
+  {
+    "input": "Stack Overflow - Where Developers Learn, Share, & Build Careers",
+    "label": "Learning"
+  },
+  {
+    "input": "https://apnews.com/",
+    "label": "News"
+  },
+  {
+    "input": "Fox News - Breaking News Updates",
+    "label": "News"
+  },
+  {
+    "input": "TikTok - Make Your Day",
+    "label": "Social"
+  },
+  {
+    "input": "Hinge - The dating app designed to be deleted",
+    "label": "Social"
+  },
+  {
+    "input": "Old Navy | Shop the Latest Fashion for the Whole Family",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.biography.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.amazon.com/primevideo",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.w3.org/TR/html5/",
+    "label": "Learning"
+  },
+  {
+    "input": "National Geographic Education",
+    "label": "Learning"
+  },
+  {
+    "input": "https://scholar.google.com/citations?user=12345",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.canva.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "Douban Group",
+    "label": "Social"
+  },
+  {
+    "input": "Khan Academy | Free Online Courses, Lessons & Practice",
+    "label": "Learning"
+  },
+  {
+    "input": "GeeksforGeeks | A computer science portal for geeks",
+    "label": "Learning"
+  },
+  {
+    "input": "https://shop.lululemon.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://telegram.org/",
+    "label": "Social"
+  },
+  {
+    "input": "Adobe Acrobat - PDF Converter",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.accuweather.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.udacity.com/",
+    "label": "Learning"
+  },
+  {
+    "input": "Costco Wholesale",
+    "label": "Shopping"
+  },
+  {
+    "input": "Der Spiegel | Online-Nachrichten",
+    "label": "News"
+  },
+  {
+    "input": "Whois Lookup - Domain Name Availability",
+    "label": "Tools"
+  },
+  {
+    "input": "Shopee Singapore | #1 Online Shopping Platform",
+    "label": "Shopping"
+  },
+  {
+    "input": "Microsoft Office Home",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.epicgames.com/store/en-US/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.bloomberg.com/markets",
+    "label": "News"
+  },
+  {
+    "input": "https://www.pravda.ru/",
+    "label": "News"
+  },
+  {
+    "input": "https://gitlab.com/users/sign_in",
+    "label": "Tools"
+  },
+  {
+    "input": "Google Maps",
+    "label": "Tools"
+  },
+  {
+    "input": "Wayfair.com - Online Home Store for Furniture, Decor",
+    "label": "Shopping"
+  },
+  {
+    "input": "Merriam-Webster: Dictionary and Thesaurus",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.coursera.org/learn/machine-learning",
+    "label": "Learning"
+  },
+  {
+    "input": "AliExpress - Smarter Shopping, Better Living",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://leetcode.com/problems/two-sum/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.amazon.co.jp/",
+    "label": "Shopping"
+  },
+  {
+    "input": "Hermès USA | The Official Hermès Online Store",
+    "label": "Shopping"
+  },
+  {
+    "input": "Wired - The Latest in Technology, Science, Culture",
+    "label": "News"
+  },
+  {
+    "input": "https://translate.google.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "edX | Free Online Courses by Harvard, MIT, & more",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.buzzfeed.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "HBO Max",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Metacritic - Movie Reviews, TV Reviews, Game Reviews",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Home Depot | Power Tools, Garden, Furniture",
+    "label": "Shopping"
+  },
+  {
+    "input": "Disney+ | The streaming home of Disney, Pixar, Marvel",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.xing.com/",
+    "label": "Social"
+  },
+  {
+    "input": "GitHub - Microsoft/vscode: Visual Studio Code",
+    "label": "Learning"
+  },
+  {
+    "input": "Tiffany & Co. US | Luxury Jewelry, Gifts & Accessories",
+    "label": "Shopping"
+  },
+  {
+    "input": "Flipkart",
+    "label": "Shopping"
+  },
+  {
+    "input": "South China Morning Post",
+    "label": "News"
+  },
+  {
+    "input": "https://www.sephora.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.flickr.com/",
+    "label": "Social"
+  },
+  {
+    "input": "IMDb: Top 250 Movies",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Babbel.com",
+    "label": "Learning"
+  },
+  {
+    "input": "Al Jazeera English",
+    "label": "News"
+  },
+  {
+    "input": "https://meetup.com/",
+    "label": "Social"
+  },
+  {
+    "input": "https://time.is/",
+    "label": "Tools"
+  },
+  {
+    "input": "IGN - Video Games, Movies, TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "USA TODAY: Latest World and US News",
+    "label": "News"
+  },
+  {
+    "input": "https://www.engadget.com/",
+    "label": "News"
+  },
+  {
+    "input": "LINE",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.snapchat.com/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.dailymotion.com/us",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Rosetta Stone: Learn a New Language",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.tmz.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "History.com | The History Channel",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.netflix.com/browse",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://ok.ru/",
+    "label": "Social"
+  },
+  {
+    "input": "Nextdoor: Local Neighborhood News & Community",
+    "label": "Social"
+  },
+  {
+    "input": "Xinhua News Agency",
+    "label": "News"
+  },
+  {
+    "input": "HowStuffWorks - Learn How Everything Works",
+    "label": "Learning"
+  },
+  {
+    "input": "Java SE 17 Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.skype.com/en/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://docs.python.org/3/library/os.html",
+    "label": "Learning"
+  },
+  {
+    "input": "BBC News - Home",
+    "label": "News"
+  },
+  {
+    "input": "https://dictionary.cambridge.org/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.calculator.net/",
+    "label": "Tools"
+  },
+  {
+    "input": "Facebook - Log In or Sign Up",
+    "label": "Social"
+  },
+  {
+    "input": "https://mail.google.com/mail/u/0/#inbox",
+    "label": "Tools"
+  },
+  {
+    "input": "XE - The World's Trusted Currency Authority",
+    "label": "Tools"
+  },
+  {
+    "input": "Zoom Video Conferencing",
+    "label": "Tools"
+  },
+  {
+    "input": "ProtonMail - Secure Email",
+    "label": "Tools"
+  },
+  {
+    "input": "https://trello.com/b/example/board",
+    "label": "Tools"
+  },
+  {
+    "input": "Sina Weibo",
+    "label": "Social"
+  },
+  {
+    "input": "Pinterest",
+    "label": "Social"
+  },
+  {
+    "input": "https://elpais.com/",
+    "label": "News"
+  },
+  {
+    "input": "Pluralsight | The Tech Workforce Development Company",
+    "label": "Learning"
+  },
+  {
+    "input": "Nike. Just Do It. Nike.com",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.duolingo.com/learn",
+    "label": "Learning"
+  },
+  {
+    "input": "https://pitchfork.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.bananarepublic.com/",
+    "label": "Shopping"
+  },
+  {
+    "input": "The Guardian - News, sport, culture, and opinion",
+    "label": "News"
+  },
+  {
+    "input": "Quora - A place to share knowledge and better understand the world",
+    "label": "Social"
+  },
+  {
+    "input": "Tumblr",
+    "label": "Social"
+  },
+  {
+    "input": "SoundCloud - Listen to music",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.adidas.com/us",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.gamespot.com/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.france24.com/en/",
+    "label": "News"
+  },
+  {
+    "input": "Weather.com - The Weather Channel",
+    "label": "Tools"
+  },
+  {
+    "input": "Billboard - Music Charts, News, Photos & Video",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Badoo - Dating. Chat. Meet.",
+    "label": "Social"
+  },
+  {
+    "input": "Discord",
+    "label": "Social"
+  },
+  {
+    "input": "HackerRank Dashboard",
+    "label": "Learning"
+  },
+  {
+    "input": "https://timesofindia.indiatimes.com/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.notion.so/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://music.apple.com/us/browse",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Gucci Official Site United States",
+    "label": "Shopping"
+  },
+  {
+    "input": "Thesaurus.com | Synonyms, Antonyms, and Definitions",
+    "label": "Learning"
+  },
+  {
+    "input": "WhatsApp Web",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.cbc.ca/news",
+    "label": "News"
+  },
+  {
+    "input": "https://www.linkedin.com/feed/",
+    "label": "Social"
+  },
+  {
+    "input": "Mashable",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Target : Expect More. Pay Less.",
+    "label": "Shopping"
+  },
+  {
+    "input": "CNBC - International Business News",
+    "label": "News"
+  },
+  {
+    "input": "Slack | Where work happens",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.facebook.com/megablue",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.reuters.com/article/bluepro-idnsyFIeg6",
+    "label": "News"
+  },
+  {
+    "input": "https://regex101.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://jsonformatter.curiousconcept.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://slack.com/app_redirect?channel=2yq8RES3",
+    "label": "Tools"
+  },
+  {
+    "input": "https://tinyurl.com/app",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/ultracyber",
+    "label": "Learning"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/MBIezHAl",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026-11-19/mountainspace",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/hotmoon",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.flipkart.com/slowgreen/p/itmvLbEQl0w",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://scratch.mit.edu/projects/I8qJNb4q/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026-05-08/reviewbest",
+    "label": "News"
+  },
+  {
+    "input": "https://cloud.google.com/reviewsun/docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.clubhouse.com/@moonmountain",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.udemy.com/course/guidedaily/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.metacritic.com/game/pc/proultra",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.alibaba.com/product-detail/bluesuper_5Myb6xlO.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.vocabulary.com/dictionary/smartultra",
+    "label": "Learning"
+  },
+  {
+    "input": "https://web.whatsapp.com/",
+    "label": "Social"
+  },
+  {
+    "input": "https://arxiv.org/abs/VZvL7E4Q",
+    "label": "Learning"
+  },
+  {
+    "input": "https://vimeo.com/2AvnxUWL",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://jp.mercari.com/item/m3iFWkoBT",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://comicbook.com/{category}/news/moonhot/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt7YlBD6cK/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ebay.com/itm/qWSxTUyl",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.notion.so/lifemax/coolgreen-RveXs7z8",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/06/26/science/guidegreen.html",
+    "label": "News"
+  },
+  {
+    "input": "https://9gag.com/gag/E8gXP3iS",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.linkedin.com/in/newsmax/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.xing.com/profile/propro",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.deepl.com/translator#en/de/hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.disneyplus.com/movies/newshot/jl8UKKXW",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.dw.com/en/lifedaily/a-4sjCoDB0",
+    "label": "News"
+  },
+  {
+    "input": "https://mail.google.com/mail/u/0/#inbox/DLQ4fL05",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.buzzfeed.com/greensmart/ultrafun",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://t.me/reviewlife",
+    "label": "Social"
+  },
+  {
+    "input": "https://twitter.com/bluecool/status/Z2QlaPKA",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.lazada.co.id/products/moonpro-ijGUP7RWx.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.forbes.com/sites/{author}/2026/11/21/reviewbest/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.crunchyroll.com/sunnews",
+    "label": "Entertainment"
+  },
+  {
+    "input": "JD.com, Inc.",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.cnn.com/2026/09/18/europe/superblue/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.flipkart.com/mountainspace/p/itmBczsmxhp",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.foxnews.com/business/rednews",
+    "label": "News"
+  },
+  {
+    "input": "https://docs.python.org/3/library/mountainultra.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://drive.google.com/drive/folders/Z2MJLl1N",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.alibaba.com/product-detail/ultragreen_tZLtZsI5.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=EUR",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.crunchyroll.com/cyberred",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.rollingstone.com/music/music-news/superultra-DIR9JQL8/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://docs.oracle.com/en/java/javase/17/docs/api/java/lang/String.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.snapchat.com/add/bestsmart",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.xing.com/profile/newstech",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.threads.net/@fasthappy",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.threads.net/@mountainspace",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.zara.com/uk/en/slowmax-pT8ANbN6W.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.theguardian.com/science/2026/10/21/megamoon",
+    "label": "News"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/smHX4j52zr",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://music.apple.com/us/album/starblue/HNzsMCvn",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.researchgate.net/publication/ePK4rRYZ_bestcyber",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/fasthappy",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.threads.net/@spacesuper",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=WBOf0PH8",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://who.is/whois/example.com",
+    "label": "Tools"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/6zXtLx7S",
+    "label": "News"
+  },
+  {
+    "input": "https://www.zara.com/uk/en/sundaily-p4B2zCeIX.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.investopedia.com/terms/a/starspace.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.xing.com/profile/megapro",
+    "label": "Social"
+  },
+  {
+    "input": "https://docs.oracle.com/en/java/javase/17/docs/api/java/lang/String.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.dw.com/en/guidecool/a-Ri4QJ2TP",
+    "label": "News"
+  },
+  {
+    "input": "https://www.w3schools.com/prodaily/default.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "Shein - Women's Fashion",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.xing.com/profile/megaspace",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.reuters.com/article/dailyfast-idpleeJcc2",
+    "label": "News"
+  },
+  {
+    "input": "https://www.scmp.com/news/china/article/1Kc9wE9s/bestslow",
+    "label": "News"
+  },
+  {
+    "input": "https://www.geeksforgeeks.org/funstar/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/smartblue",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.target.com/p/moonfun/-/A-FkYyDcya",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://tinder.com/app/recs",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.theverge.com/2026/12/18/HyGwMRRl/greenblue",
+    "label": "News"
+  },
+  {
+    "input": "https://www.edx.org/course/guideocean",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bsky.app/profile/prostar.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://translate.google.com/?sl=en&tl=es&text=hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://twitter.com/happytop/status/8jAbzEN3",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/f4nvolNV/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Costco Wholesale - {name}",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.ted.com/talks/reviewpro",
+    "label": "Learning"
+  },
+  {
+    "input": "https://vimeo.com/H2fTOwF8",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.flipkart.com/ultraslow/p/itmKAiwRJuZ",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.canva.com/design/AVCQ9Iyb/greenstar/view",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.epicgames.com/store/en-US/p/megaguide",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.zhihu.com/question/BNsaO2gS",
+    "label": "Social"
+  },
+  {
+    "input": "https://dictionary.cambridge.org/dictionary/english/superlife",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.britannica.com/topic/redmoon",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.aljazeera.com/news/2026/01/27/megablue",
+    "label": "News"
+  },
+  {
+    "input": "https://cloud.google.com/guidehot/docs",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bbc.com/news/europe-UGuakaYV",
+    "label": "News"
+  },
+  {
+    "input": "https://www.alibaba.com/product-detail/coolcool_yN8ILBQw.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026-12-02/slowslow",
+    "label": "News"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/blueblue",
+    "label": "Learning"
+  },
+  {
+    "input": "https://store.playstation.com/en-us/product/OmFzjmiq",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.twitch.tv/moonblue",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://chat.openai.com/c/hrjqnx1T",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.ted.com/talks/oceanhot",
+    "label": "Learning"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/pI9Tm6Ka",
+    "label": "News"
+  },
+  {
+    "input": "https://line.me/ti/p/9vjdhqw4",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.notion.so/lifeguide/hotfast-tACMGPeo",
+    "label": "Tools"
+  },
+  {
+    "input": "https://dictionary.cambridge.org/dictionary/english/starfun",
+    "label": "Learning"
+  },
+  {
+    "input": "https://item.jd.com/FIDzSOHw.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.ebay.com/itm/BIQH5lj0",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bbc.com/news/middle-east-O2v7ekw0",
+    "label": "News"
+  },
+  {
+    "input": "https://www.flipkart.com/oceanmega/p/itmqnXT4gNJ",
+    "label": "Shopping"
+  },
+  {
+    "input": "Flipkart - Online Shopping",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://tinder.com/app/recs",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.canva.com/design/gw00YjN8/slowsmart/view",
+    "label": "Tools"
+  },
+  {
+    "input": "https://translate.google.com/?sl=en&tl=es&text=hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.netflix.com/title/mXuetoru",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://weather.com/weather/today/l/8ggrb5cA",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.instagram.com/p/L2GRDEEh/",
+    "label": "Social"
+  },
+  {
+    "input": "https://discord.com/channels/aPT37nMc/kZyR5fuJ",
+    "label": "Social"
+  },
+  {
+    "input": "https://outlook.office.com/mail/inbox/id/tT24Bwkh",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/H8rc4JHr/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/dailytech",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://discord.com/channels/qOqlJuF8/bAg1zvtw",
+    "label": "Social"
+  },
+  {
+    "input": "https://tinyurl.com/app",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amazon.com/dp/Wp4XHI6V",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://comicbook.com/{category}/news/smartreview/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.clubhouse.com/@newssuper",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.zhihu.com/question/R6ZQWSNa",
+    "label": "Social"
+  },
+  {
+    "input": "https://bitly.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://jp.mercari.com/item/m8caEUU8K",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dropbox.com/s/XNAeexDC/cyberlife?dl=0",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.tumblr.com/blog/funlife",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.scmp.com/news/china/article/rQDAVNy5/proreview",
+    "label": "News"
+  },
+  {
+    "input": "https://soundcloud.com/megastar/{track}",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.w3schools.com/coolspace/default.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://arxiv.org/abs/w7ZvZHIJ",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bsky.app/profile/topdaily.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.temu.com/goods.html?goods_id=yTeFYfpY",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.meetup.com/tech-meetup-tokyo/events/mKnzRM8G/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.asos.com/samsung/startech/prd/4i1rP9hm",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.remove.bg/upload",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.etsy.com/listing/GQEd9Clz/dailylife",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.edx.org/course/greengreen",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/HlNgBhmS",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.nationalgeographic.com/science/article/coollife",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/protop",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.virustotal.com/gui/home/upload",
+    "label": "Tools"
+  },
+  {
+    "input": "https://onedrive.live.com/?id=0T9pUrBL",
+    "label": "Tools"
+  },
+  {
+    "input": "https://calendar.google.com/calendar/r",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.ted.com/talks/cybermountain",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.flickr.com/photos/hotred/bXUXNaxH/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.ilovepdf.com/merge_pdf",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=EUR",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.base64decode.org/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.zara.com/uk/en/maxhappy-pYqIf30uD.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.twitch.tv/starmega",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.theguardian.com/politics/2026/07/20/mountaincool",
+    "label": "News"
+  },
+  {
+    "input": "https://www.epicgames.com/store/en-US/p/fastsun",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/aUSpNIP7",
+    "label": "News"
+  },
+  {
+    "input": "https://www.snapchat.com/add/newscool",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.theguardian.com/business/2026/07/11/spacecyber",
+    "label": "News"
+  },
+  {
+    "input": "https://www.apple.com/shop/buy-iphone/hotcyber",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://docs.python.org/3/library/redtop.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.tiktok.com/@ultradaily/video/wDNuFKKH",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.snapchat.com/add/sungreen",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.coursera.org/learn/fastgreen",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bsky.app/profile/coolmax.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://bumble.com/app",
+    "label": "Social"
+  },
+  {
+    "input": "https://www3.nhk.or.jp/news/html/20260219/4bYxr5hK.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/techultra",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Costco Wholesale - funocean",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/topsuper",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://vimeo.com/0TZ1SGhN",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://en.wikipedia.org/wiki/greensun",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.wsj.com/articles/spacepro-A4HjCd3l",
+    "label": "News"
+  },
+  {
+    "input": "https://zoom.us/j/zXE2em4F",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.zhihu.com/question/QhLhJAFV",
+    "label": "Social"
+  },
+  {
+    "input": "https://music.apple.com/us/album/ultrastar/xXADETHt",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.zhihu.com/question/YXm3Rx6E",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.temu.com/goods.html?goods_id=HMjdxW08",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.target.com/p/funsmart/-/A-qVQkGyWg",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://techcrunch.com/2026/05/23/bestsmart/",
+    "label": "News"
+  },
+  {
+    "input": "https://open.spotify.com/track/HExC7DNw",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.pinterest.com/pin/OpPmdPwU/",
+    "label": "Social"
+  },
+  {
+    "input": "https://nextdoor.com/news_feed/",
+    "label": "Social"
+  },
+  {
+    "input": "https://twitter.com/faststar/status/HPBXyPtA",
+    "label": "Social"
+  },
+  {
+    "input": "https://docs.python.org/3/library/coolultra.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.xing.com/profile/topdaily",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.theverge.com/2026/03/19/puUoilbe/coolspace",
+    "label": "News"
+  },
+  {
+    "input": "https://drive.google.com/drive/folders/aWlWz7Jt",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.buzzfeed.com/happycyber/superpro",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://mastodon.social/@lifemega/CMYzw84I",
+    "label": "Social"
+  },
+  {
+    "input": "https://bsky.app/profile/redocean.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.asahi.com/ajw/articles/emKgRaf6",
+    "label": "News"
+  },
+  {
+    "input": "https://www.cnn.com/2026/01/17/europe/happycool/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://who.is/whois/example.com",
+    "label": "Tools"
+  },
+  {
+    "input": "https://weather.com/weather/today/l/McMQNitL",
+    "label": "Tools"
+  },
+  {
+    "input": "https://docs.python.org/3/library/coolspace.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bitly.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://tinyurl.com/app",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/jbj9HXfd/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://jsonformatter.curiousconcept.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.usatoday.com/story/news/world/20260219/starfun/6AEf8m3U/",
+    "label": "News"
+  },
+  {
+    "input": "https://stackoverflow.com/questions/WnvbY8Ri/ultratech",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.zara.com/uk/en/greennews-p6Sfq7Xbf.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://vimeo.com/EMQmG5xp",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.linkedin.com/in/starnews/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.reddit.com/r/funny/comments/gopwAdoe/cyberhot/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.ilovepdf.com/merge_pdf",
+    "label": "Tools"
+  },
+  {
+    "input": "https://trello.com/c/L2SMAOpA/redcool",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=Roe1xaOU",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/YRx9jeOr",
+    "label": "News"
+  },
+  {
+    "input": "https://developer.mozilla.org/en-US/docs/Web/dailysuper",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/smmlsGDfDi",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.flickr.com/photos/mountaintop/fMymKYQX/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bbc.com/news/asia-uoGfrhVd",
+    "label": "News"
+  },
+  {
+    "input": "https://jp.mercari.com/item/mzBs5rt2p",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://outlook.office.com/mail/inbox/id/CAiCwrf1",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.clubhouse.com/@starblue",
+    "label": "Social"
+  },
+  {
+    "input": "JD.com, Inc.",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://onedrive.live.com/?id=RFIGq2BC",
+    "label": "Tools"
+  },
+  {
+    "input": "https://docs.oracle.com/en/java/javase/17/docs/api/java/lang/String.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://outlook.office.com/mail/inbox/id/8GsZTPfH",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.metacritic.com/game/pc/bluepro",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.w3schools.com/funguide/default.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.geeksforgeeks.org/maxreview/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.crunchyroll.com/redpro",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.asahi.com/ajw/articles/VBBxeCSZ",
+    "label": "News"
+  },
+  {
+    "input": "https://www.foxnews.com/tech/smartsmart",
+    "label": "News"
+  },
+  {
+    "input": "https://onedrive.live.com/?id=kgP6msBO",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.hulu.com/series/happymax-GTY4EUed",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Costco Wholesale - newssmart",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/ultrafast",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BVCkP6ZmMQ",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://slack.com/app_redirect?channel=LkAHQTkG",
+    "label": "Tools"
+  },
+  {
+    "input": "https://item.jd.com/ECLSDft8.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://line.me/ti/p/FlofKEWs",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/Hlot0PFo/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.pinterest.com/pin/p2vOWlWk/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.base64decode.org/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.scmp.com/news/china/article/MrO1B2lY/bestblue",
+    "label": "News"
+  },
+  {
+    "input": "https://www.google.com/maps/place/coollife/@35.6895,139.6917,15z",
+    "label": "Tools"
+  },
+  {
+    "input": "https://docs.oracle.com/en/java/javase/17/docs/api/java/lang/String.html",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.scmp.com/news/china/article/nt9ER3Si/moonfun",
+    "label": "News"
+  },
+  {
+    "input": "https://www.cnn.com/2026/03/25/asia/topblue/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.codecademy.com/learn/spaceultra",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.cnn.com/2026/08/07/middle-east/supermax/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.wired.com/story/cyberfun/",
+    "label": "News"
+  },
+  {
+    "input": "https://translate.google.com/?sl=en&tl=es&text=hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.alibaba.com/product-detail/topspace_7Wnj44R5.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.ikea.com/us/en/p/smartdaily-GuuH0yFY/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dropbox.com/s/NLmjFrrG/fastsun?dl=0",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.engadget.com/promax-mbrvwSwb.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/uhtavOF6",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.asahi.com/ajw/articles/1JJZoEm5",
+    "label": "News"
+  },
+  {
+    "input": "https://arxiv.org/abs/bvbpEYlT",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bumble.com/app",
+    "label": "Social"
+  },
+  {
+    "input": "https://bumble.com/app",
+    "label": "Social"
+  },
+  {
+    "input": "https://9gag.com/gag/AQDc2t62",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Costco Wholesale - happypro",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://weather.com/weather/today/l/NdhjhwjE",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.virustotal.com/gui/home/upload",
+    "label": "Tools"
+  },
+  {
+    "input": "https://bsky.app/profile/happypro.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.netflix.com/title/liTr3Rp2",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://badoo.com/user/AaSAALki",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.etsy.com/listing/ovfrDYfY/sunfun",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.facebook.com/slowsmart",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.google.com/search?q=weather+tokyo",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.reuters.com/article/proguide-idc9TapQAI",
+    "label": "News"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=EUR",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/1ozfO8qe/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://outlook.office.com/mail/inbox/id/xJy7eXY4",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.edx.org/course/greenreview",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.asos.com/adidas/oceanultra/prd/8b52uc7d",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://soundcloud.com/newssmart/{track}",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://onedrive.live.com/?id=dzKtMYug",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.clubhouse.com/@starmoon",
+    "label": "Social"
+  },
+  {
+    "input": "Music Tips - Entertainment Video",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://music.apple.com/us/album/spaceslow/5A99V5XL",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Flipkart - Online Shopping",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.canva.com/design/jmg13iCz/maxmountain/view",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.base64decode.org/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://leetcode.com/problems/guidelife/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.vocabulary.com/dictionary/megacyber",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.calculator.net/auto-loan-calculator.html",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.khanacademy.org/math/moonhappy",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.vocabulary.com/dictionary/bluereview",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.lazada.co.id/products/newsultra-iV5XWQyQs.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://vimeo.com/Uikza035",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ilovepdf.com/merge_pdf",
+    "label": "Tools"
+  },
+  {
+    "input": "Shein - Women's Fashion",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=218kcUt1",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ebay.com/itm/5UOZDxse",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.linkedin.com/in/sunslow/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.codecademy.com/learn/fasttech",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.google.com/maps/place/happymega/@35.6895,139.6917,15z",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.ign.com/articles/oceantop-review",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.facebook.com/ultramax",
+    "label": "Social"
+  },
+  {
+    "input": "https://outlook.office.com/mail/inbox/id/yNXciaD8",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/cyberslow/-/A-t5XEdAzw",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.theguardian.com/politics/2026/09/13/reviewnews",
+    "label": "News"
+  },
+  {
+    "input": "https://www.sephora.com/product/bluemax-BIvEVOnp",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.threads.net/@supersmart",
+    "label": "Social"
+  },
+  {
+    "input": "https://timesofindia.indiatimes.com/science/redgreen/articleshow/WAYsnscp.cms",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bbc.com/news/asia-DF41wZxf",
+    "label": "News"
+  },
+  {
+    "input": "https://archive.org/web/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.wired.com/story/happylife/",
+    "label": "News"
+  },
+  {
+    "input": "https://mail.google.com/mail/u/0/#inbox/Lbijqusu",
+    "label": "Tools"
+  },
+  {
+    "input": "https://tinyurl.com/app",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.notion.so/oceancyber/hothot-0UEc9CZB",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.netflix.com/title/kXQoZ2Wp",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ted.com/talks/smartmax",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.twitch.tv/megasuper",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.facebook.com/proguide",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.zara.com/uk/en/happyocean-pktcdqaee.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://regex101.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://t.me/redmega",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/smUhaHc5BK",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.foxnews.com/tech/coolgreen",
+    "label": "News"
+  },
+  {
+    "input": "https://onedrive.live.com/?id=zcAmQyZu",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/12/05/business/moonnews.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.gap.com/browse/product.do?pid=j3wo6nSO",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.google.com/search?q=python+list+comprehension",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/03/21/business/guidenews.html",
+    "label": "News"
+  },
+  {
+    "input": "https://translate.google.com/?sl=en&tl=es&text=hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/dailyhot",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.pinterest.com/pin/3YOGq5J7/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.tiktok.com/@lifespace/video/IQtoXSbW",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://weather.com/weather/today/l/bXnYkA2p",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.clubhouse.com/@bestmax",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.ebay.com/itm/iViDnL5Z",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.threads.net/@technews",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.ilovepdf.com/merge_pdf",
+    "label": "Tools"
+  },
+  {
+    "input": "https://zoom.us/j/JWCEA7Us",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.dropbox.com/s/ovR409ud/techmega?dl=0",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/05/08/tech/spacehappy.html",
+    "label": "News"
+  },
+  {
+    "input": "https://techcrunch.com/2026/03/27/fastlife/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.edx.org/course/lifesun",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt0va8N1R6/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/zKONBhRy",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.tiktok.com/@funsmart",
+    "label": "Social"
+  },
+  {
+    "input": "https://calendar.google.com/calendar/r",
+    "label": "Tools"
+  },
+  {
+    "input": "https://bsky.app/profile/moontop.bsky.social",
+    "label": "Social"
+  },
+  {
+    "input": "https://tinder.com/app/recs",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.theverge.com/2026/11/18/UBYTyQ2V/redultra",
+    "label": "News"
+  },
+  {
+    "input": "https://trello.com/c/95DQ1Cbf/fastmountain",
+    "label": "Tools"
+  },
+  {
+    "input": "https://zozo.jp/shop/nike/goods/p4QU7M8H/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.google.com/maps/place/reviewgreen/@35.6895,139.6917,15z",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=KIZkCT0k",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.geeksforgeeks.org/megaspace/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://scratch.mit.edu/projects/rbLpUIdL/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://stackoverflow.com/questions/0wMWQvJg/cyberfun",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.codecademy.com/learn/topcool",
+    "label": "Learning"
+  },
+  {
+    "input": "https://weibo.com/QeakivrX/DWz3qqdI",
+    "label": "Social"
+  },
+  {
+    "input": "https://asia.nikkei.com/Business/prosmart",
+    "label": "News"
+  },
+  {
+    "input": "https://developer.mozilla.org/en-US/docs/Web/slowdaily",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.huffpost.com/entry/techmax_xDSW0jKT",
+    "label": "News"
+  },
+  {
+    "input": "JD.com, Inc.",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.ted.com/talks/cyberultra",
+    "label": "Learning"
+  },
+  {
+    "input": "https://aws.amazon.com/documentation/reviewsuper/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.walmart.com/ip/hotdaily/WZLhgNGw",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.udemy.com/course/oceanfun/",
+    "label": "Learning"
+  },
+  {
+    "input": "JD.com, Inc.",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://store.playstation.com/en-us/product/i9ZaBPeP",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.canva.com/design/PrFFsHHd/cyberlife/view",
+    "label": "Tools"
+  },
+  {
+    "input": "https://mastodon.social/@superred/rfT37GTD",
+    "label": "Social"
+  },
+  {
+    "input": "https://jp.mercari.com/item/mO2yA8oYq",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.rollingstone.com/music/music-news/happycyber-zR0y3oc7/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.cnn.com/2026/12/09/europe/bluemax/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.duolingo.com/skill/en/newshappy",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.edx.org/course/spacelife",
+    "label": "Learning"
+  },
+  {
+    "input": "https://weibo.com/4VYi3Wrd/c64Eplnd",
+    "label": "Social"
+  },
+  {
+    "input": "https://en.wikipedia.org/wiki/megagreen",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.foxnews.com/business/ultralife",
+    "label": "News"
+  },
+  {
+    "input": "https://www.ted.com/talks/superfast",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.flickr.com/photos/reviewmoon/IpM6ddDp/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.xing.com/profile/topfast",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.amazon.com/gp/video/detail/P82dmWut/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/smZSzkfJbR",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://soundcloud.com/topmax/{track}",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://scratch.mit.edu/projects/Cpgv0ocG/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.investopedia.com/terms/a/starocean.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.cnbc.com/2026/01/24/funsun.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.base64decode.org/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.rollingstone.com/music/music-news/sunspace-28HC5wuA/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.codecademy.com/learn/ultraocean",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.nike.com/t/smartstar-shoes/CC6voWOx",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.buzzfeed.com/smartmoon/funmega",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.wired.com/story/guidesuper/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.udemy.com/course/guideslow/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.vocabulary.com/dictionary/slowcool",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.reuters.com/article/sundaily-id8N1y0DQt",
+    "label": "News"
+  },
+  {
+    "input": "https://tinder.com/app/recs",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.webtoons.com/en/romance/oceansun/list?title_no=ZXmzQZe0",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.khanacademy.org/math/guidelife",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bestbuy.com/site/techslow/yKsfQ19j.p?skuId=0650315",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/yKFeGrdM",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dw.com/en/oceanguide/a-fSLfFLAn",
+    "label": "News"
+  },
+  {
+    "input": "https://www.walmart.com/ip/megadaily/coudWPsO",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.meetup.com/tech-meetup-tokyo/events/gGDBTcHr/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.coursera.org/learn/coolmega",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bbc.com/news/europe-MQxh9QXN",
+    "label": "News"
+  },
+  {
+    "input": "https://www.ebay.com/itm/SEGZ3hzR",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://mastodon.social/@techtech/9tonroPv",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.theguardian.com/world/2026/01/23/redlife",
+    "label": "News"
+  },
+  {
+    "input": "https://www3.nhk.or.jp/news/html/20260219/arblwX5z.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.ebay.com/itm/9ODkXos4",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.foxnews.com/science/smartred",
+    "label": "News"
+  },
+  {
+    "input": "https://dictionary.cambridge.org/dictionary/english/redmoon",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.cnn.com/2026/04/09/europe/greennews/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.buzzfeed.com/funcool/bluetop",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.alibaba.com/product-detail/ultrastar_yxAN6F0C.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://shopee.sg/sunfun-i.19091637.06112978",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.meetup.com/tech-meetup-tokyo/events/5JxRMCDw/",
+    "label": "Social"
+  },
+  {
+    "input": "https://scratch.mit.edu/projects/xoObpeqL/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.homedepot.com/p/coolspace/5wmbuYDb",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.huffpost.com/entry/hotcool_oQPC3SNT",
+    "label": "News"
+  },
+  {
+    "input": "Shein - Women's Fashion",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.quora.com/bestcool",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.foxnews.com/science/starpro",
+    "label": "News"
+  },
+  {
+    "input": "https://www.notion.so/moonpro/stardaily-pDzW3kCT",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nike.com/t/spacelife-shoes/Hg7vy6rl",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://soundcloud.com/guidered/{track}",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.xing.com/profile/bestguide",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=EUR",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.ign.com/articles/guidestar-review",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.meetup.com/tech-meetup-tokyo/events/81CcGcZu/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.w3schools.com/smartsuper/default.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.nationalgeographic.com/science/article/oceanred",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.metacritic.com/game/pc/megamax",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.etsy.com/listing/veumwkkl/sunreview",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.wired.com/story/guidereview/",
+    "label": "News"
+  },
+  {
+    "input": "Costco Wholesale - megamega",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026-10-06/megasun",
+    "label": "News"
+  },
+  {
+    "input": "https://www.gap.com/browse/product.do?pid=mM9yfH9i",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.apple.com/shop/buy-iphone/mountainsun",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/jiEULDyi",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.theguardian.com/politics/2026/07/04/guideocean",
+    "label": "News"
+  },
+  {
+    "input": "https://www.metacritic.com/game/pc/supertop",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://mastodon.social/@hotgreen/bl7iF1re",
+    "label": "Social"
+  },
+  {
+    "input": "https://archive.org/web/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.vocabulary.com/dictionary/superbest",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt9bvppd3H/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.tmz.com/2026/04/27/reviewcool/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/reviewcool",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://arxiv.org/abs/pchYz7rv",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BVC1y5PavT",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.disneyplus.com/movies/smartcool/us4SxvJ5",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.ikea.com/us/en/p/lifeblue-WqCrX0wy/",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.forbes.com/sites/{author}/2026/03/14/topsun/",
+    "label": "News"
+  },
+  {
+    "input": "https://www.dropbox.com/s/JU7T0RRD/starmoon?dl=0",
+    "label": "Tools"
+  },
+  {
+    "input": "https://drive.google.com/drive/folders/tg28YOsX",
+    "label": "Tools"
+  },
+  {
+    "input": "https://techcrunch.com/2026/02/23/reviewgreen/",
+    "label": "News"
+  },
+  {
+    "input": "https://developer.mozilla.org/en-US/docs/Web/moonnews",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/a8f6uByy",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.ign.com/articles/guidegreen-review",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://twitter.com/lifestar/status/wXq88quF",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.forbes.com/sites/{author}/2026/05/20/sungreen/",
+    "label": "News"
+  },
+  {
+    "input": "https://news.yahoo.co.jp/articles/X7btuLit",
+    "label": "News"
+  },
+  {
+    "input": "https://developer.mozilla.org/en-US/docs/Web/moonmax",
+    "label": "Learning"
+  },
+  {
+    "input": "https://bumble.com/app",
+    "label": "Social"
+  },
+  {
+    "input": "https://dictionary.cambridge.org/dictionary/english/sunmountain",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.aljazeera.com/news/2026/06/10/newsblue",
+    "label": "News"
+  },
+  {
+    "input": "https://www.uniqlo.com/us/en/products/VLNPjMCy",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.asahi.com/ajw/articles/34M3XaW3",
+    "label": "News"
+  },
+  {
+    "input": "https://www.temu.com/goods.html?goods_id=tR6amkqL",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://web.whatsapp.com/",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.rottentomatoes.com/m/techfast",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.twitch.tv/spacedaily",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://jsonformatter.curiousconcept.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://leetcode.com/problems/slowslow/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://timesofindia.indiatimes.com/tech/oceanspace/articleshow/NDcWa4ii.cms",
+    "label": "News"
+  },
+  {
+    "input": "https://stackoverflow.com/questions/nx3zQRmr/fastcool",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.etsy.com/listing/luK60LG1/happyspace",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.rakuten.co.jp/category/br0a66tL",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.gamespot.com/reviews/hotdaily-review/TQAP6rbL/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.tumblr.com/blog/megadaily",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/smESLUdtIQ",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.webtoons.com/en/romance/oceancyber/list?title_no=cJEFKZgw",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://azure.microsoft.com/en-us/documentation/articles/mountainfast/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.tiktok.com/@bestsuper",
+    "label": "Social"
+  },
+  {
+    "input": "https://mail.google.com/mail/u/0/#inbox/CSc5HQCu",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.etsy.com/listing/6j53VQAb/fastpro",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.cnn.com/2026/06/11/us/ultraguide/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.engadget.com/happyred-BfVBoYi8.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.lazada.co.id/products/greentop-ivi9hJCm3.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://jsonformatter.curiousconcept.com/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bbc.com/news/middle-east-ROCcEjZk",
+    "label": "News"
+  },
+  {
+    "input": "https://www.wayfair.com/furniture/pdp/sunfast-XFFnQ9rg.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.pinterest.com/pin/13i7fCOZ/",
+    "label": "Social"
+  },
+  {
+    "input": "https://leetcode.com/problems/happyblue/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://asia.nikkei.com/Business/bestfun",
+    "label": "News"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/12/12/science/dailynews.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bestbuy.com/site/blueultra/MhsOiE1W.p?skuId=4052931",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.nicovideo.jp/watch/sm1JGDSwZo",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.deepl.com/translator#en/de/hello%20world",
+    "label": "Tools"
+  },
+  {
+    "input": "https://nextdoor.com/news_feed/",
+    "label": "Social"
+  },
+  {
+    "input": "https://store.playstation.com/en-us/product/dMZcbsKC",
+    "label": "Entertainment"
+  },
+  {
+    "input": "海贼王漫画 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Oscars Winners - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "夏季连衣裙 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "特别关注 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "外交部例行记者会 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "二维码生成器 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "男士运动鞋 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "吉他入门指法 | 哔哩哔哩教程",
+    "label": "Learning"
+  },
+  {
+    "input": "甄嬛传 全集高清 - 起点中文网",
+    "label": "Entertainment"
+  },
+  {
+    "input": "文件传输助手 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "央视春晚节目单 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "Twitch Stream - Hulu",
+    "label": "Entertainment"
+  },
+  {
+    "input": "豆瓣高分电影榜单 - 腾讯视频",
+    "label": "Entertainment"
+  },
+  {
+    "input": "新能源汽车销量榜 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "iPhone 16 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "华为 Mate 70 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "个人主页 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "超话社区 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "收藏夹 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "人体工学椅 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "Instagram - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "Calculator - Google Maps",
+    "label": "Tools"
+  },
+  {
+    "input": "Weather Forecast - ChatGPT",
+    "label": "Tools"
+  },
+  {
+    "input": "慕课网 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "私信 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "个人所得税计算器 - 12306中国铁路",
+    "label": "Tools"
+  },
+  {
+    "input": "红烧肉的做法 | 掘金",
+    "label": "Learning"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - Reuters",
+    "label": "News"
+  },
+  {
+    "input": "Weather Forecast",
+    "label": "Tools"
+  },
+  {
+    "input": "我的微博 - 随时随地发现新鲜事",
+    "label": "Social"
+  },
+  {
+    "input": "Coffee Maker : Walmart",
+    "label": "Shopping"
+  },
+  {
+    "input": "男士运动鞋 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "猫粮 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "Discord - Login",
+    "label": "Social"
+  },
+  {
+    "input": "Coffee Maker : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "Pinterest - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "Reddit - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "Instagram - My Feed",
+    "label": "Social"
+  },
+  {
+    "input": "我是歌手 - 优酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "央视春晚节目单 - 新浪新闻",
+    "label": "News"
+  },
+  {
+    "input": "股市大盘走势 - 腾讯新闻",
+    "label": "News"
+  },
+  {
+    "input": "猫粮 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "文件传输助手 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "外交部例行记者会 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "流浪地球3预告片 - 芒果TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "甄嬛传 全集高清 - 网易云音乐",
+    "label": "Entertainment"
+  },
+  {
+    "input": "夏季连衣裙 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "Timer",
+    "label": "Tools"
+  },
+  {
+    "input": "慕课网 - 考研英语词汇",
+    "label": "Learning"
+  },
+  {
+    "input": "我的关注 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Champions League Final - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "Twitter / X - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "原神游戏攻略 - 芒果TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "RTX 5090 : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "掘金 - 唐诗三百首赏析",
+    "label": "Learning"
+  },
+  {
+    "input": "天气预报 - 中国邮政",
+    "label": "Tools"
+  },
+  {
+    "input": "夏季连衣裙 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "股市大盘走势 - 凤凰网",
+    "label": "News"
+  },
+  {
+    "input": "知乎 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "Top 10 Funny Cats - Twitch",
+    "label": "Entertainment"
+  },
+  {
+    "input": "台风预警 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "Machine Learning Basics - GeeksforGeeks",
+    "label": "Learning"
+  },
+  {
+    "input": "LinkedIn - Profile",
+    "label": "Social"
+  },
+  {
+    "input": "好友动态 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "收藏夹 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "医保报销新规 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "Twitter / X - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "switch游戏机 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "Kindle Paperwhite : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "乐高积木 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "豆瓣高分电影榜单吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "PDF Merger",
+    "label": "Tools"
+  },
+  {
+    "input": "Facebook - Trending Topics",
+    "label": "Social"
+  },
+  {
+    "input": "唐诗三百首赏析 | 百度百科",
+    "label": "Learning"
+  },
+  {
+    "input": "慕课网 - 吉他入门指法",
+    "label": "Learning"
+  },
+  {
+    "input": "文件传输助手 - 12306中国铁路",
+    "label": "Tools"
+  },
+  {
+    "input": "Tech Industry Layoffs - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "我的微博 - 随时随地发现新鲜事",
+    "label": "Social"
+  },
+  {
+    "input": "群聊 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "台风预警 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "个人主页 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "央视春晚节目单 - 凤凰网",
+    "label": "News"
+  },
+  {
+    "input": "Champions League Final - BBC News",
+    "label": "News"
+  },
+  {
+    "input": "World War II History - Stack Overflow",
+    "label": "Learning"
+  },
+  {
+    "input": "周杰伦最新专辑 - 起点中文网",
+    "label": "Entertainment"
+  },
+  {
+    "input": "医保报销新规 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "新能源汽车销量榜 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "Tech Industry Layoffs - Reuters",
+    "label": "News"
+  },
+  {
+    "input": "台风预警 - 新浪新闻",
+    "label": "News"
+  },
+  {
+    "input": "乐高积木 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "洗面奶 - 唯品会",
+    "label": "Shopping"
+  },
+  {
+    "input": "慕课网 - 区块链原理解析",
+    "label": "Learning"
+  },
+  {
+    "input": "CSS Flexbox Guide - Wikipedia",
+    "label": "Learning"
+  },
+  {
+    "input": "甄嬛传 全集高清 - 网易云音乐",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Twitch Stream - Twitch",
+    "label": "Entertainment"
+  },
+  {
+    "input": "机械键盘 - 拼多多",
+    "label": "Shopping"
+  },
+  {
+    "input": "男士运动鞋 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "群聊 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "Minecraft Gameplay - Spotify",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Bluetooth Headphones : Best Buy",
+    "label": "Shopping"
+  },
+  {
+    "input": "外交部例行记者会 - 凤凰网",
+    "label": "News"
+  },
+  {
+    "input": "CSDN博客 - 区块链原理解析",
+    "label": "Learning"
+  },
+  {
+    "input": "Spanish for Beginners - GeeksforGeeks",
+    "label": "Learning"
+  },
+  {
+    "input": "夏季连衣裙 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "掘金 - 红烧肉的做法",
+    "label": "Learning"
+  },
+  {
+    "input": "我是歌手 - 优酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Herman Miller Chair : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "收藏夹 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "Pinterest - Profile",
+    "label": "Social"
+  },
+  {
+    "input": "Excel函数使用技巧 - 菜鸟教程",
+    "label": "Learning"
+  },
+  {
+    "input": "各地高考分数线 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "外交部例行记者会 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "CSS Flexbox Guide - Wikipedia",
+    "label": "Learning"
+  },
+  {
+    "input": "朋友圈 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Marvel Movie Trailer - Disney+",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Pinterest - Sign Up",
+    "label": "Social"
+  },
+  {
+    "input": "高中数学公式大全 - 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "考研英语词汇 | 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "Yoga Mat : Etsy",
+    "label": "Shopping"
+  },
+  {
+    "input": "收藏夹 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "Calendar",
+    "label": "Tools"
+  },
+  {
+    "input": "Oscars Winners - The New York Times",
+    "label": "News"
+  },
+  {
+    "input": "Elden Ring Walkthrough - IMDb",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Discord - My Feed",
+    "label": "Social"
+  },
+  {
+    "input": "科技巨头裁员潮 - 腾讯新闻",
+    "label": "News"
+  },
+  {
+    "input": "Marvel Movie Trailer - IMDb",
+    "label": "Entertainment"
+  },
+  {
+    "input": "个人主页 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "Oscars Winners - Bloomberg",
+    "label": "News"
+  },
+  {
+    "input": "Speedtest",
+    "label": "Tools"
+  },
+  {
+    "input": "王者荣耀直播 - 斗鱼",
+    "label": "Entertainment"
+  },
+  {
+    "input": "我是歌手 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "switch游戏机 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "Pinterest - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - BBC News",
+    "label": "News"
+  },
+  {
+    "input": "唐诗三百首赏析 | 哔哩哔哩教程",
+    "label": "Learning"
+  },
+  {
+    "input": "各地高考分数线 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "个人所得税计算器 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "原神游戏攻略 - 芒果TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "在线翻译 - 高德地图",
+    "label": "Tools"
+  },
+  {
+    "input": "油价调整最新消息 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "Oscars Winners - CNN",
+    "label": "News"
+  },
+  {
+    "input": "Machine Learning Basics - GeeksforGeeks",
+    "label": "Learning"
+  },
+  {
+    "input": "Excel函数使用技巧 - 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "台风预警 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "周杰伦最新专辑 - 哔哩哔哩 (bilibili)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "哔哩哔哩教程 - Excel函数使用技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "PS抠图教程 | 简书",
+    "label": "Learning"
+  },
+  {
+    "input": "switch游戏机 - 唯品会",
+    "label": "Shopping"
+  },
+  {
+    "input": "慕课网 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "TikTok - Trending Topics",
+    "label": "Social"
+  },
+  {
+    "input": "我是歌手 - 腾讯视频",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Calendar - Zoom",
+    "label": "Tools"
+  },
+  {
+    "input": "特别关注 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "超话社区 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "特别关注 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "网速测试 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "我是歌手 - 哔哩哔哩 (bilibili)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "日历查询 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "速干T恤 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "好友动态 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "各地高考分数线 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "甄嬛传 全集高清 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "二维码生成器 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "PS抠图教程 - 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "菜鸟教程 - Vue.js实战",
+    "label": "Learning"
+  },
+  {
+    "input": "LinkedIn - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "Excel函数使用技巧 | 简书",
+    "label": "Learning"
+  },
+  {
+    "input": "斗破苍穹动画 - 网易云音乐",
+    "label": "Entertainment"
+  },
+  {
+    "input": "周杰伦最新专辑 - 豆瓣电影",
+    "label": "Entertainment"
+  },
+  {
+    "input": "科技巨头裁员潮 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "群聊 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "快递查询 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "朋友圈 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "LinkedIn - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "Facebook - My Feed",
+    "label": "Social"
+  },
+  {
+    "input": "台风预警 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "台风预警 - 新浪新闻",
+    "label": "News"
+  },
+  {
+    "input": "Weather Forecast - Outlook",
+    "label": "Tools"
+  },
+  {
+    "input": "Election Results 2026 - CNN",
+    "label": "News"
+  },
+  {
+    "input": "乐高积木 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "养老金调整方案 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "流浪地球3预告片 - 优酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "LinkedIn - Login",
+    "label": "Social"
+  },
+  {
+    "input": "Pinterest - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "PDF转Word - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "王者荣耀直播 - 腾讯视频",
+    "label": "Entertainment"
+  },
+  {
+    "input": "乐高积木 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "天气预报 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "switch游戏机 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "Docker Containerization - MDN Web Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "收藏夹 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "台风预警 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "我的关注 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "知乎 - 区块链原理解析",
+    "label": "Learning"
+  },
+  {
+    "input": "考研英语词汇 | 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "台风预警 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "Java Spring Boot入门 | 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "快递查询 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "Speedtest",
+    "label": "Tools"
+  },
+  {
+    "input": "豆瓣高分电影榜单 - 爱奇艺",
+    "label": "Entertainment"
+  },
+  {
+    "input": "热门微博 - 随时随地发现新鲜事",
+    "label": "Social"
+  },
+  {
+    "input": "iPhone 16 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "收藏夹 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "海贼王漫画 - 优酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "海贼王漫画 - 豆瓣电影",
+    "label": "Entertainment"
+  },
+  {
+    "input": "二维码生成器 - 中国邮政",
+    "label": "Tools"
+  },
+  {
+    "input": "人体工学椅 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "周杰伦最新专辑吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "Samsung Galaxy S25 : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "Reddit - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "我的关注 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "网速测试 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "Election Results 2026 - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "Instagram - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "Elden Ring Walkthrough - IMDb",
+    "label": "Entertainment"
+  },
+  {
+    "input": "北京时间校准 - 中国邮政",
+    "label": "Tools"
+  },
+  {
+    "input": "华为 Mate 70 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - The New York Times",
+    "label": "News"
+  },
+  {
+    "input": "Vue.js实战 | 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "Calendar - Dropbox",
+    "label": "Tools"
+  },
+  {
+    "input": "百度百科 - 区块链原理解析",
+    "label": "Learning"
+  },
+  {
+    "input": "Coffee Maker : Best Buy",
+    "label": "Shopping"
+  },
+  {
+    "input": "Kindle Paperwhite : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "人体工学椅 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "Nike Air Max : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "Global Warming Report - CNN",
+    "label": "News"
+  },
+  {
+    "input": "Python多线程教程 | CSDN博客",
+    "label": "Learning"
+  },
+  {
+    "input": "红烧肉的做法 - 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "switch游戏机 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "Calculus 101 - GeeksforGeeks",
+    "label": "Learning"
+  },
+  {
+    "input": "在线翻译 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "Reddit - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "乐高积木 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "甄嬛传 全集高清 - 芒果TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "二维码生成器 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "Python多线程教程 | 哔哩哔哩教程",
+    "label": "Learning"
+  },
+  {
+    "input": "机械键盘 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "Samsung Galaxy S25 : eBay",
+    "label": "Shopping"
+  },
+  {
+    "input": "空气炸锅 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "兰蔻小黑瓶 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "周杰伦最新专辑 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "我是歌手 - 哔哩哔哩 (bilibili)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "知乎 - 机器学习算法导论",
+    "label": "Learning"
+  },
+  {
+    "input": "速干T恤 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "快递查询 - 中国邮政",
+    "label": "Tools"
+  },
+  {
+    "input": "百度百科 - Java Spring Boot入门",
+    "label": "Learning"
+  },
+  {
+    "input": "洗面奶 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "人体工学椅 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "快递查询 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "外交部例行记者会 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "CSS Flexbox Guide - Stack Overflow",
+    "label": "Learning"
+  },
+  {
+    "input": "Stranger Things Season 6 - Twitch",
+    "label": "Entertainment"
+  },
+  {
+    "input": "兰蔻小黑瓶 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "油价调整最新消息 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "Global Warming Report - The New York Times",
+    "label": "News"
+  },
+  {
+    "input": "夏季连衣裙 - 拼多多",
+    "label": "Shopping"
+  },
+  {
+    "input": "个人主页 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "Calculator",
+    "label": "Tools"
+  },
+  {
+    "input": "Nike Air Max : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "汇率换算 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "考研英语词汇 - 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "Pinterest - Trending Topics",
+    "label": "Social"
+  },
+  {
+    "input": "机械键盘 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "兰蔻小黑瓶 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "海贼王漫画吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "特别关注 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "机器学习算法导论 | 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "王者荣耀直播 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "油价调整最新消息 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "身份证号码验证 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "Coffee Maker : Etsy",
+    "label": "Shopping"
+  },
+  {
+    "input": "王者荣耀直播吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "天气预报 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "海贼王漫画 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "快递查询 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "switch游戏机 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "Taylor Swift Lyrics - Steam Store",
+    "label": "Entertainment"
+  },
+  {
+    "input": "豆瓣高分电影榜单 - 虎牙直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Calculator",
+    "label": "Tools"
+  },
+  {
+    "input": "Stranger Things Season 6 - Twitch",
+    "label": "Entertainment"
+  },
+  {
+    "input": "菜鸟教程 - Excel函数使用技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "Global Warming Report - Bloomberg",
+    "label": "News"
+  },
+  {
+    "input": "Global Warming Report - BBC News",
+    "label": "News"
+  },
+  {
+    "input": "超话社区 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "快递查询 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "快递查询 - 中国邮政",
+    "label": "Tools"
+  },
+  {
+    "input": "人体工学椅 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "养老金调整方案 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "Twitter / X - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "兰蔻小黑瓶 - 唯品会",
+    "label": "Shopping"
+  },
+  {
+    "input": "群聊 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "外交部例行记者会 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "Kindle Paperwhite : Walmart",
+    "label": "Shopping"
+  },
+  {
+    "input": "Elden Ring Walkthrough - IMDb",
+    "label": "Entertainment"
+  },
+  {
+    "input": "网速测试 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "PS抠图教程 - 掘金",
+    "label": "Learning"
+  },
+  {
+    "input": "私信 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "原神游戏攻略 - 优酷",
+    "label": "Entertainment"
+  },
+  {
+    "input": "LinkedIn - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "空气炸锅 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "Currency Converter - Zoom",
+    "label": "Tools"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "天气预报 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "科技巨头裁员潮 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "TikTok - My Feed",
+    "label": "Social"
+  },
+  {
+    "input": "王者荣耀直播 - 斗鱼",
+    "label": "Entertainment"
+  },
+  {
+    "input": "群聊 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "身份证号码验证 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "Champions League Final - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "周杰伦最新专辑 - 爱奇艺",
+    "label": "Entertainment"
+  },
+  {
+    "input": "二维码生成器 - 腾讯会议",
+    "label": "Tools"
+  },
+  {
+    "input": "Reddit - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "Bluetooth Headphones : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "人体工学椅 - 唯品会",
+    "label": "Shopping"
+  },
+  {
+    "input": "医保报销新规 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "洗面奶 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "机械键盘 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "简书 - Excel函数使用技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "天气预报 - 12306中国铁路",
+    "label": "Tools"
+  },
+  {
+    "input": "Machine Learning Basics - Stack Overflow",
+    "label": "Learning"
+  },
+  {
+    "input": "个人主页 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "Vue.js实战 - 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "Kindle Paperwhite : Amazon.com",
+    "label": "Shopping"
+  },
+  {
+    "input": "CSDN博客 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "Timer - Zoom",
+    "label": "Tools"
+  },
+  {
+    "input": "高中数学公式大全 | 菜鸟教程",
+    "label": "Learning"
+  },
+  {
+    "input": "夏季连衣裙 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "日历查询 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "养老金调整方案 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "百度百科 - 吉他入门指法",
+    "label": "Learning"
+  },
+  {
+    "input": "速干T恤 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "在线翻译 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "Twitch Stream - Disney+",
+    "label": "Entertainment"
+  },
+  {
+    "input": "油价调整最新消息 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "React Hooks Tutorial - Medium",
+    "label": "Learning"
+  },
+  {
+    "input": "Stranger Things Season 6 - Hulu",
+    "label": "Entertainment"
+  },
+  {
+    "input": "油价调整最新消息 - 腾讯新闻",
+    "label": "News"
+  },
+  {
+    "input": "NASA Mars Mission - CNN",
+    "label": "News"
+  },
+  {
+    "input": "周杰伦最新专辑 - 斗鱼",
+    "label": "Entertainment"
+  },
+  {
+    "input": "红烧肉的做法 | 掘金",
+    "label": "Learning"
+  },
+  {
+    "input": "Coffee Maker : Rakuten",
+    "label": "Shopping"
+  },
+  {
+    "input": "机械键盘 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "Minecraft Gameplay - Spotify",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Minecraft Gameplay - Steam Store",
+    "label": "Entertainment"
+  },
+  {
+    "input": "天气预报 - 12306中国铁路",
+    "label": "Tools"
+  },
+  {
+    "input": "Google Translate - Google Maps",
+    "label": "Tools"
+  },
+  {
+    "input": "Python List Comprehension - Khan Academy",
+    "label": "Learning"
+  },
+  {
+    "input": "夏季连衣裙 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "PDF转Word - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "日历查询 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "人体工学椅 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "猫粮 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "Spotify Web Player - IMDb",
+    "label": "Entertainment"
+  },
+  {
+    "input": "各地高考分数线 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "特别关注 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "作业帮 - Python多线程教程",
+    "label": "Learning"
+  },
+  {
+    "input": "台风预警 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "Coffee Maker : Etsy",
+    "label": "Shopping"
+  },
+  {
+    "input": "区块链原理解析 | 知乎",
+    "label": "Learning"
+  },
+  {
+    "input": "机械键盘 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "天气预报 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "Vue.js实战 - 哔哩哔哩教程",
+    "label": "Learning"
+  },
+  {
+    "input": "各地高考分数线 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "原神游戏攻略 - 网易云音乐",
+    "label": "Entertainment"
+  },
+  {
+    "input": "洗面奶 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "热门话题 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Top 10 Funny Cats - Disney+",
+    "label": "Entertainment"
+  },
+  {
+    "input": "各地高考分数线 - 新浪新闻",
+    "label": "News"
+  },
+  {
+    "input": "科技巨头裁员潮 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "文件传输助手 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "Top 10 Funny Cats - YouTube",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Vue.js实战 - 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "空气炸锅 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "台风预警 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "央视春晚节目单 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "日历查询 - 百度搜索",
+    "label": "Tools"
+  },
+  {
+    "input": "掘金 - Python多线程教程",
+    "label": "Learning"
+  },
+  {
+    "input": "Spanish for Beginners - MDN Web Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "新能源汽车销量榜 - 腾讯新闻",
+    "label": "News"
+  },
+  {
+    "input": "私信 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Reddit - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "群聊 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "MacBook Pro : Amazon.com",
+    "label": "Shopping"
+  },
+  {
+    "input": "慕课网 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "PS抠图教程 - 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "台风预警 - 凤凰网",
+    "label": "News"
+  },
+  {
+    "input": "Speedtest - Google Maps",
+    "label": "Tools"
+  },
+  {
+    "input": "TikTok - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "作业帮 - PS抠图教程",
+    "label": "Learning"
+  },
+  {
+    "input": "医保报销新规 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "私信 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "戴森吹风机 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "区块链原理解析 - 掘金",
+    "label": "Learning"
+  },
+  {
+    "input": "医保报销新规 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "switch游戏机 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "各地高考分数线 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "超话社区 - 脉脉",
+    "label": "Social"
+  },
+  {
+    "input": "外交部例行记者会 - 人民网",
+    "label": "News"
+  },
+  {
+    "input": "外交部例行记者会 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "群聊 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "好友动态 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "Top 10 Funny Cats - Netflix",
+    "label": "Entertainment"
+  },
+  {
+    "input": "PDF转Word - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "switch游戏机 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "我是歌手 - 网易云音乐",
+    "label": "Entertainment"
+  },
+  {
+    "input": "海贼王漫画 - 斗鱼",
+    "label": "Entertainment"
+  },
+  {
+    "input": "超话社区 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "在线翻译 - 百度网盘",
+    "label": "Tools"
+  },
+  {
+    "input": "Nike Air Max : Etsy",
+    "label": "Shopping"
+  },
+  {
+    "input": "特别关注 - 知乎",
+    "label": "Social"
+  },
+  {
+    "input": "Weather Forecast - Google Search",
+    "label": "Tools"
+  },
+  {
+    "input": "Discord - Messages",
+    "label": "Social"
+  },
+  {
+    "input": "PlayStation 5 : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - Yahoo News",
+    "label": "News"
+  },
+  {
+    "input": "RTX 5090 : eBay",
+    "label": "Shopping"
+  },
+  {
+    "input": "人体工学椅 - 得物",
+    "label": "Shopping"
+  },
+  {
+    "input": "Coffee Maker : eBay",
+    "label": "Shopping"
+  },
+  {
+    "input": "Federal Reserve Interest Rates - Reuters",
+    "label": "News"
+  },
+  {
+    "input": "CSS Flexbox Guide - GeeksforGeeks",
+    "label": "Learning"
+  },
+  {
+    "input": "各地高考分数线 - 新浪新闻",
+    "label": "News"
+  },
+  {
+    "input": "二维码生成器 - 12306中国铁路",
+    "label": "Tools"
+  },
+  {
+    "input": "油价调整最新消息 - 澎湃新闻",
+    "label": "News"
+  },
+  {
+    "input": "简书 - 唐诗三百首赏析",
+    "label": "Learning"
+  },
+  {
+    "input": "汇率换算 - 草料二维码",
+    "label": "Tools"
+  },
+  {
+    "input": "Elden Ring Walkthrough - Netflix",
+    "label": "Entertainment"
+  },
+  {
+    "input": "我是歌手吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "Python List Comprehension - Stack Overflow",
+    "label": "Learning"
+  },
+  {
+    "input": "原神游戏攻略 - 芒果TV",
+    "label": "Entertainment"
+  },
+  {
+    "input": "超话社区 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Facebook - Friends",
+    "label": "Social"
+  },
+  {
+    "input": "Reddit - My Feed",
+    "label": "Social"
+  },
+  {
+    "input": "Yoga Mat : AliExpress",
+    "label": "Shopping"
+  },
+  {
+    "input": "Currency Converter",
+    "label": "Tools"
+  },
+  {
+    "input": "脱口秀大会吧 - 百度贴吧",
+    "label": "Social"
+  },
+  {
+    "input": "北京时间校准 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "switch游戏机 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "油价调整最新消息 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "私信 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "乐高积木 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "油价调整最新消息 - 网易新闻",
+    "label": "News"
+  },
+  {
+    "input": "各地高考分数线 - 观察者网",
+    "label": "News"
+  },
+  {
+    "input": "作业帮 - Excel函数使用技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "Election Results 2026 - Fox News",
+    "label": "News"
+  },
+  {
+    "input": "Reddit - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "Pinterest - Trending Topics",
+    "label": "Social"
+  },
+  {
+    "input": "PlayStation 5 : Best Buy",
+    "label": "Shopping"
+  },
+  {
+    "input": "TikTok - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "央视春晚节目单 - 凤凰网",
+    "label": "News"
+  },
+  {
+    "input": "我是歌手 - 斗鱼",
+    "label": "Entertainment"
+  },
+  {
+    "input": "乐高积木 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "人体工学椅 - 闲鱼",
+    "label": "Shopping"
+  },
+  {
+    "input": "个人主页 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "iPhone 16 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "Pinterest - Trending Topics",
+    "label": "Social"
+  },
+  {
+    "input": "超话社区 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "Champions League Final - Reuters",
+    "label": "News"
+  },
+  {
+    "input": "Timer - Gmail",
+    "label": "Tools"
+  },
+  {
+    "input": "乐高积木 - 淘宝网",
+    "label": "Shopping"
+  },
+  {
+    "input": "特别关注 - QQ空间",
+    "label": "Social"
+  },
+  {
+    "input": "Calculus 101 - Medium",
+    "label": "Learning"
+  },
+  {
+    "input": "机械键盘 - 唯品会",
+    "label": "Shopping"
+  },
+  {
+    "input": "PDF Merger - Google Search",
+    "label": "Tools"
+  },
+  {
+    "input": "乐高积木 - 当当网",
+    "label": "Shopping"
+  },
+  {
+    "input": "Speedtest - Google Search",
+    "label": "Tools"
+  },
+  {
+    "input": "Twitch Stream - YouTube",
+    "label": "Entertainment"
+  },
+  {
+    "input": "外交部例行记者会 - 今日头条",
+    "label": "News"
+  },
+  {
+    "input": "Bluetooth Headphones : Target",
+    "label": "Shopping"
+  },
+  {
+    "input": "iPhone 16 - 天猫",
+    "label": "Shopping"
+  },
+  {
+    "input": "Bluetooth Headphones : Amazon.com",
+    "label": "Shopping"
+  },
+  {
+    "input": "CSS Flexbox Guide - Coursera",
+    "label": "Learning"
+  },
+  {
+    "input": "朋友圈 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "PDF Merger",
+    "label": "Tools"
+  },
+  {
+    "input": "Stranger Things Season 6 - Hulu",
+    "label": "Entertainment"
+  },
+  {
+    "input": "外交部例行记者会 - 环球网",
+    "label": "News"
+  },
+  {
+    "input": "朋友圈 - 豆瓣小组",
+    "label": "Social"
+  },
+  {
+    "input": "Machine Learning Basics - Medium",
+    "label": "Learning"
+  },
+  {
+    "input": "脱口秀大会 - 腾讯视频",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Tech Industry Layoffs - The New York Times",
+    "label": "News"
+  },
+  {
+    "input": "Calculator",
+    "label": "Tools"
+  },
+  {
+    "input": "吉他入门指法 - 简书",
+    "label": "Learning"
+  },
+  {
+    "input": "网速测试 - 高德地图",
+    "label": "Tools"
+  },
+  {
+    "input": "网速测试 - 支付宝",
+    "label": "Tools"
+  },
+  {
+    "input": "Facebook - Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "PS抠图教程 | 慕课网",
+    "label": "Learning"
+  },
+  {
+    "input": "洗面奶 - 京东",
+    "label": "Shopping"
+  },
+  {
+    "input": "World War II History - MDN Web Docs",
+    "label": "Learning"
+  },
+  {
+    "input": "男士运动鞋 - 苏宁易购",
+    "label": "Shopping"
+  },
+  {
+    "input": "MacBook Pro : Walmart",
+    "label": "Shopping"
+  },
+  {
+    "input": "戴森吹风机 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "PS抠图教程 - 掘金",
+    "label": "Learning"
+  },
+  {
+    "input": "私信 - 小红书",
+    "label": "Social"
+  },
+  {
+    "input": "Twitch Stream - YouTube",
+    "label": "Entertainment"
+  },
+  {
+    "input": "乐高积木 - 网易严选",
+    "label": "Shopping"
+  },
+  {
+    "input": "Reddit - Profile",
+    "label": "Social"
+  },
+  {
+    "input": "周杰伦最新专辑 - 豆瓣电影",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Currency Converter",
+    "label": "Tools"
+  },
+  {
+    "input": "JSON Formatter - Outlook",
+    "label": "Tools"
+  },
+  {
+    "input": "热门话题 - 微信网页版",
+    "label": "Social"
+  },
+  {
+    "input": "Twitter / X - Profile",
+    "label": "Social"
+  },
+  {
+    "input": "LinkedIn - Trending Topics",
+    "label": "Social"
+  },
+    {
+    "input": "https://www.target.com/p/yHjqb/-/A-570892057194 戴森 V12 吸尘器",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.iqiyi.com/v_93679700.html 鬼灭之刃 无限城篇",
+    "label": "Entertainment"
+  },
+  {
+    "input": "泰勒斯威夫特 时代巡演 - iQIYI https://www.iqiyi.com/v_13533836579.html",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.walmart.com/ip/Z9PbMIOriM/4889108815 Canon EOS R5",
+    "label": "Shopping"
+  },
+  {
+    "input": "历史记录 (https://www.xiaohongshu.com/user/profile/21660455)",
+    "label": "Social"
+  },
+  {
+    "input": "红烧肉的正宗做法 - Udemy https://www.udemy.com/course/45CVpA/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/ QR Code Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://user.qzone.qq.com/196727859504 Your Story",
+    "label": "Social"
+  },
+  {
+    "input": "Levi's 501 Jeans https://mobile.yangkeduo.com/goods.html?goods_id=31038509",
+    "label": "Shopping"
+  },
+  {
+    "input": "公务员考试 行测技巧 - W3Schools https://www.w3schools.com/ZewuG2/default.asp",
+    "label": "Learning"
+  },
+  {
+    "input": "Taylor Swift Eras Tour Movie (https://www.imdb.com/title/tt6724657106/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "IP Address Lookup (https://pan.baidu.com/s/978250493)",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV825624128912 公务员考试 行测技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x2o4j 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/87771741 World Cup 2026 Schedule",
+    "label": "News"
+  },
+  {
+    "input": "iPhone 16 Pro Max (https://detail.tmall.com/item.htm?id=96841288)",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://item.taobao.com/item.htm?id=260714249 Dyson Supersonic",
+    "label": "Shopping"
+  },
+  {
+    "input": "Dune: Part Three (https://www.youtube.com/watch?v=5373300508)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Settings https://www.linkedin.com/in/55dM7J/",
+    "label": "Social"
+  },
+  {
+    "input": "House of the Dragon Finale - Netflix https://www.netflix.com/title/1269553644",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Settings - Facebook https://www.facebook.com/n6tIq",
+    "label": "Social"
+  },
+  {
+    "input": "Deep Learning PyTorch - YouTube https://www.youtube.com/watch?v=06123062363",
+    "label": "Learning"
+  },
+  {
+    "input": "PlayStation 5 Pro (https://www.amazon.com/dp/587979313)",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.google.com/maps/place/9vN1HlM 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=80467551064 戴森 V12 吸尘器",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=917088924037 庆余年2 全集在线",
+    "label": "Entertainment"
+  },
+  {
+    "input": "House of the Dragon Finale (https://movie.douban.com/subject/2865910609/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.reddit.com/r/0Y87s/comments/5836262453/ 直播间",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.dropbox.com/home/63w9P 随机数生成",
+    "label": "Tools"
+  },
+  {
+    "input": "Create Post - LinkedIn https://www.linkedin.com/in/599388/",
+    "label": "Social"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-40810751936.shtml 碳中和行动方案",
+    "label": "News"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/50346001 Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "Met Gala Red Carpet - BBC https://www.bbc.com/news/world-F170i-3520556108",
+    "label": "News"
+  },
+  {
+    "input": "SpaceX 星舰发射失败 (https://world.huanqiu.com/article/308183180)",
+    "label": "News"
+  },
+  {
+    "input": "Fed Interest Rate Decision - The Paper https://www.thepaper.cn/newsDetail_forward_73030462701",
+    "label": "News"
+  },
+  {
+    "input": "Nike Dunk Low https://detail.tmall.com/item.htm?id=8573210411",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.shein.com/5J3I7-p-94776100.html SK-II 神仙水",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.shein.com/00lO0-p-10659775.html 索尼 WH-1000XM5",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.shein.com/39w62b-p-32002824.html Nike Dunk Low",
+    "label": "Shopping"
+  },
+  {
+    "input": "Unit Converter https://www.12306.cn/index/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x1R38q55 在线翻译",
+    "label": "Tools"
+  },
+  {
+    "input": "Global Warming Crisis Report - CNN https://www.cnn.com/2026/02/19/2N1s0d/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/4q2jI7 Python for Data Science",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.coursera.org/learn/F7L4c How to bake sourdough bread",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.walmart.com/ip/07rTz/06079943 华为 Mate 70 RS",
+    "label": "Shopping"
+  },
+  {
+    "input": "Grand Theft Auto VI Gameplay - Bilibili https://www.bilibili.com/video/BV51586548171",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Python 数据分析实战 - CSDN https://blog.csdn.net/60b09/article/details/2539009893",
+    "label": "Learning"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=4572242698 华为 Mate 70 RS",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.linkedin.com/in/1J36577/ 上传视频",
+    "label": "Social"
+  },
+  {
+    "input": "Super Bowl Halftime Show https://www.thepaper.cn/newsDetail_forward_12399672017",
+    "label": "News"
+  },
+  {
+    "input": "https://www.linkedin.com/in/qL10u/ 直播间",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-2u3j0-9289196328 SpaceX Starship Launch",
+    "label": "News"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-8547372295.shtml Met Gala Red Carpet",
+    "label": "News"
+  },
+  {
+    "input": "https://www.netflix.com/title/35165415 甄嬛传 4K 修复版",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Grand Theft Auto VI Gameplay https://www.bilibili.com/video/BV03387877",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amap.com/search?query=91rY7W0 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://user.qzone.qq.com/3931754425 历史记录",
+    "label": "Social"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=7961234724 lululemon 瑜伽裤",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.amap.com/search?query=g1K3S 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/7608149817 New iPhone 17 Rumors",
+    "label": "News"
+  },
+  {
+    "input": "https://item.jd.com/9759363024.html Nike Dunk Low",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=57335198038 歌手2026 直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x354H 随机数生成",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.tiktok.com/@u6841/video/7279148473 Direct Messages",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.12306.cn/index/ Base64解码",
+    "label": "Tools"
+  },
+  {
+    "input": "SpaceX Starship Launch - Sina News https://news.sina.com.cn/c/2026/02/19/doc-4014902636.shtml",
+    "label": "News"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt4043960012/ Black Myth: Wukong Guide",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-62402927282.shtml 美联储维持利率不变",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV6095115286 泰勒斯威夫特 时代巡演",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Create Post https://user.qzone.qq.com/830303861298",
+    "label": "Social"
+  },
+  {
+    "input": "Base64 Encoder - Google Maps https://www.google.com/maps/place/43209",
+    "label": "Tools"
+  },
+  {
+    "input": "https://store.steampowered.com/app/2188204128/Z0u0t 歌手2026 直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amazon.com/dp/44297125 GoPro Hero 13",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV55027814981 唐诗三百首 朗读",
+    "label": "Learning"
+  },
+  {
+    "input": "Unit Converter https://www.xe.com/currencyconverter/convert/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/87b6h/-/A-47526368 Dyson Supersonic",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://item.taobao.com/item.htm?id=2523738096 Levi's 501 Jeans",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.zhihu.com/question/2996253456 The Science of Well-Being",
+    "label": "Learning"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=0119280749 乐高 兰博基尼",
+    "label": "Shopping"
+  },
+  {
+    "input": "New iPhone 17 Rumors - The Paper https://www.thepaper.cn/newsDetail_forward_7306233543",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV5187768297 League of Legends Worlds",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://world.huanqiu.com/article/76935741639",
+    "label": "News"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x133W 汇率换算",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/22Y37 汇率换算",
+    "label": "Tools"
+  },
+  {
+    "input": "Random Number Generator - 12306 https://www.12306.cn/index/",
+    "label": "Tools"
+  },
+  {
+    "input": "Star Wars: New Jedi Order - Steam https://store.steampowered.com/app/2485908920/48z5m",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Fitbit Charge 6 - Taobao https://item.taobao.com/item.htm?id=01037617",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/l5058.html Global Warming Crisis Report",
+    "label": "News"
+  },
+  {
+    "input": "https://www.tiktok.com/@1S3826/video/61661601732 Settings",
+    "label": "Social"
+  },
+  {
+    "input": "Bose QuietComfort Ultra (https://www.bestbuy.com/site/g3u89/7642636250.p)",
+    "label": "Shopping"
+  },
+  {
+    "input": "World Clock https://www.xe.com/currencyconverter/convert/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.twitter.com/x579S/status/39735515 Edit Profile",
+    "label": "Social"
+  },
+  {
+    "input": "US Election Results 2026 https://world.huanqiu.com/article/34878233",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/7l256 公务员考试 行测技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "iPhone 16 Pro Max - Target https://www.target.com/p/t602N/-/A-17188737",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=3148425232 戴森 V12 吸尘器",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-40176378.shtml 华为发布纯血鸿蒙系统",
+    "label": "News"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://news.sina.com.cn/c/2026/02/19/doc-69239845345.shtml",
+    "label": "News"
+  },
+  {
+    "input": "https://www.twitter.com/65x564/status/98553641041 朋友圈",
+    "label": "Social"
+  },
+  {
+    "input": "Coachella 2026 Lineup https://open.spotify.com/track/46074213032",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=1334183060 Stranger Things Season 5",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amazon.com/dp/9804561081 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "Zelda Movie Announcement (https://www.imdb.com/title/tt45037233/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.reddit.com/r/45fP8/comments/01962383/ Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "New iPhone 17 Rumors - CNN https://www.cnn.com/2026/02/19/18r6M80u/index.html",
+    "label": "News"
+  },
+  {
+    "input": "My Profile https://www.tiktok.com/@d1222/video/84100523",
+    "label": "Social"
+  },
+  {
+    "input": "Fed Interest Rate Decision - The Paper https://www.thepaper.cn/newsDetail_forward_74183615433",
+    "label": "News"
+  },
+  {
+    "input": "https://www.target.com/p/0n4X3/-/A-2696013444 赫曼米勒人体工学椅",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.linkedin.com/in/4H4831/ Settings",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.12306.cn/index/ World Clock",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/9F026 单位换算",
+    "label": "Tools"
+  },
+  {
+    "input": "Color Picker https://www.dropbox.com/home/82J0q",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=04526615865 零基础学剪辑",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.zhihu.com/people/4r5007 群聊",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.amazon.com/dp/2395350912 lululemon 瑜伽裤",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dropbox.com/home/86j1L2 QR Code Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV81804246 The Witcher 4 Teaser",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/2V43i.html Fed Interest Rate Decision",
+    "label": "News"
+  },
+  {
+    "input": "https://pan.baidu.com/s/99818815 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/P5335 JSON Formatter",
+    "label": "Tools"
+  },
+  {
+    "input": "Dell XPS 13 - Shein https://www.shein.com/5l317-p-6862590635.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "Unit Converter https://translate.google.com/?sl=auto&tl=zh-CN&text=23y67",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/8R2739 QR Code Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.dropbox.com/home/9l717M Countdown Timer",
+    "label": "Tools"
+  },
+  {
+    "input": "Fitbit Charge 6 (https://detail.tmall.com/item.htm?id=9688406280)",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.target.com/p/0T82y/-/A-04987037 雅诗兰黛小棕瓶",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-7jO96-3392359419 人工智能法草案",
+    "label": "News"
+  },
+  {
+    "input": "Grand Theft Auto VI Gameplay - Bilibili https://www.bilibili.com/video/BV70404097",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=0489956488 Organic Chemistry 101",
+    "label": "Learning"
+  },
+  {
+    "input": "Dyson Supersonic - Amazon https://www.amazon.com/dp/5609420015",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.reddit.com/r/v20F657/comments/6451079379/ Groups",
+    "label": "Social"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=98725946 赫曼米勒人体工学椅",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.amazon.com/dp/74974868 罗技 G Pro 鼠标",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.zhihu.com/question/28608882 Photography Basics",
+    "label": "Learning"
+  },
+  {
+    "input": "SpaceX 星舰发射失败 https://www.wsj.com/articles/Z9884-2508620863",
+    "label": "News"
+  },
+  {
+    "input": "Bitcoin hits new all-time high https://world.huanqiu.com/article/7679808383",
+    "label": "News"
+  },
+  {
+    "input": "Settings https://www.zhihu.com/people/x275q",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.tiktok.com/@77K596/video/9632870198 登录/注册",
+    "label": "Social"
+  },
+  {
+    "input": "Introduction to Algorithms MIT (https://blog.csdn.net/60J5q/article/details/35736735)",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.twitter.com/xQ74j/status/65203714 附近的人",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.google.com/maps/place/4w58f 房贷计算器",
+    "label": "Tools"
+  },
+  {
+    "input": "Organic Chemistry 101 https://zh.wikipedia.org/wiki/6Y235",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.ebay.com/itm/6182101683 Dyson Supersonic",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bestbuy.com/site/9Q380/7313063854.p Nike Air Jordan 1",
+    "label": "Shopping"
+  },
+  {
+    "input": "IP Address Lookup https://translate.google.com/?sl=auto&tl=zh-CN&text=2G37Q",
+    "label": "Tools"
+  },
+  {
+    "input": "The Witcher 4 Teaser https://store.steampowered.com/app/2056345914/c103q",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=3305593892 Harvard CS50",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.amazon.com/dp/2381287611 Ray-Ban Aviator",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.wsj.com/articles/12318-7248986280 俄乌局势最新进展",
+    "label": "News"
+  },
+  {
+    "input": "Star Wars: New Jedi Order - Steam https://store.steampowered.com/app/2034871465/C7J70",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.shein.com/5lF69-p-8339199342.html 大疆御 3 Pro",
+    "label": "Shopping"
+  },
+  {
+    "input": "House of the Dragon Finale (https://movie.douban.com/subject/2892976077/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/8078330756 Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "https://www.w3schools.com/83p14H/default.asp 唐诗三百首 朗读",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.tiktok.com/@g344N/video/1406606894 Edit Profile",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.speedtest.net/result/750478061266 身份证号码查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/2R076.html 神舟十九号发射成功",
+    "label": "News"
+  },
+  {
+    "input": "Your Story (https://www.linkedin.com/in/4u27F/)",
+    "label": "Social"
+  },
+  {
+    "input": "Bitcoin hits new all-time high https://www.bloomberg.com/news/articles/2026/02/19/8488X",
+    "label": "News"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-48220977.shtml 央行宣布降准0.5个百分点",
+    "label": "News"
+  },
+  {
+    "input": "Nike Dunk Low https://mobile.yangkeduo.com/goods.html?goods_id=7496294711",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.qq.com/rain/a/2026/02/19/4141689252 Tech Giants Layoffs Continue",
+    "label": "News"
+  },
+  {
+    "input": "Oscar Best Picture 2026 https://movie.douban.com/subject/41270273/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Python 数据分析实战 - Udemy https://www.udemy.com/course/43076G/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026/02/19/91409 诺贝尔文学奖揭晓",
+    "label": "News"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt8055415714/ 黑神话：悟空 通关攻略",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.coursera.org/learn/7v844 React 前端开发",
+    "label": "Learning"
+  },
+  {
+    "input": "https://news.qq.com/rain/a/2026/02/19/6905597956 World Cup 2026 Schedule",
+    "label": "News"
+  },
+  {
+    "input": "Global Warming Crisis Report (https://www.wsj.com/articles/C9778-9571990425)",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-v0E26-5386266019 Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "New iPhone 17 Rumors - The Paper https://www.thepaper.cn/newsDetail_forward_74176461",
+    "label": "News"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=0162024040 索尼 WH-1000XM5",
+    "label": "Shopping"
+  },
+  {
+    "input": "Dyson Supersonic https://item.jd.com/46367355.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/ Random Number Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://pan.baidu.com/s/07137837 Color Picker",
+    "label": "Tools"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/0733527265 全球股市大跌",
+    "label": "News"
+  },
+  {
+    "input": "SpaceX Starship Launch - The Paper https://www.thepaper.cn/newsDetail_forward_18967923",
+    "label": "News"
+  },
+  {
+    "input": "https://item.jd.com/39626496.html 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-S66l5-8571891963 医保药品目录调整",
+    "label": "News"
+  },
+  {
+    "input": "IP Address Lookup https://translate.google.com/?sl=auto&tl=zh-CN&text=22736",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/06p6F/-/A-5912959882 Ray-Ban Aviator",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-41885871.shtml Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/u47W3 Introduction to Algorithms MIT",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.wsj.com/articles/8624K-3801835706 UK General Election",
+    "label": "News"
+  },
+  {
+    "input": "https://www.reddit.com/r/k11r7F6/comments/7366311749/ Following",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.w3schools.com/00P2648/default.asp Creative Writing Masterclass",
+    "label": "Learning"
+  },
+  {
+    "input": "World Clock https://www.google.com/maps/place/92801",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x5310 房贷计算器",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/21M7N/-/A-1755913256 耐克 Air Jordan 1",
+    "label": "Shopping"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://world.huanqiu.com/article/0891461622",
+    "label": "News"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=83204922 Hoka One One Running Shoes",
+    "label": "Shopping"
+  },
+  {
+    "input": "Settings - Weibo https://weibo.com/u/12975317",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.coursera.org/learn/72223 Java SpringCloud 微服务",
+    "label": "Learning"
+  },
+  {
+    "input": "https://v.qq.com/x/cover/77241253.html Avengers: Secret Wars Trailer",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=0346059876 Taylor Swift Eras Tour Movie",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.shein.com/08Z82-p-8378379471.html 飞天茅台 53度",
+    "label": "Shopping"
+  },
+  {
+    "input": "Global Warming Crisis Report - CNN https://www.cnn.com/2026/02/19/2N81f/index.html",
+    "label": "News"
+  },
+  {
+    "input": "https://www.12306.cn/index/ Base64解码",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026/02/19/73775 US Election Results 2026",
+    "label": "News"
+  },
+  {
+    "input": "Stranger Things Season 5 https://v.qq.com/x/cover/3630680193.html",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.target.com/p/4M71b/-/A-6609461129 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.udemy.com/course/42a12/ Java SpringCloud 微服务",
+    "label": "Learning"
+  },
+  {
+    "input": "Nike Dunk Low - Walmart https://www.walmart.com/ip/11J3o/74737299",
+    "label": "Shopping"
+  },
+  {
+    "input": "Zelda Movie Announcement (https://www.imdb.com/title/tt22079237/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.google.com/maps/place/14W66 Online Stopwatch",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=0159495376 Zelda Movie Announcement",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Global Warming Crisis Report - Reuters https://www.reuters.com/article/76774-id4395893348",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026/02/19/08153 俄乌局势最新进展",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV5349692994 House of the Dragon Finale",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=32545809 索尼 WH-1000XM5",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.shein.com/39l22-p-8381881515.html 乐高 兰博基尼",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dropbox.com/home/4v596 在线秒表",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.12306.cn/index/ Base64 Encoder",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.instagram.com/p/8975871775/ 收藏夹",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.instagram.com/p/87869389/ 点赞列表",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=52509121 鬼灭之刃 无限城篇",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/ Random Number Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-672l0-9426372078 诺贝尔文学奖揭晓",
+    "label": "News"
+  },
+  {
+    "input": "Friend Request (https://www.linkedin.com/in/973415/)",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV30508544 间谍过家家 第二季",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Chat https://www.xiaohongshu.com/user/profile/36184061",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.reddit.com/r/O96M78/comments/7594967399/ Edit Profile",
+    "label": "Social"
+  },
+  {
+    "input": "Dell XPS 13 - Shein https://www.shein.com/S9723-p-01588698.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.amap.com/search?query=9435J 房贷计算器",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.iqiyi.com/v_68571068.html Coachella 2026 Lineup",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Followers https://www.xiaohongshu.com/user/profile/2122677103",
+    "label": "Social"
+  },
+  {
+    "input": "Followers - Reddit https://www.reddit.com/r/k441w/comments/5052988880/",
+    "label": "Social"
+  },
+  {
+    "input": "Create Post https://www.facebook.com/n14115",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.dropbox.com/home/49767l 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-E1192-5636043004 碳中和行动方案",
+    "label": "News"
+  },
+  {
+    "input": "Amazon Prime Day Deals (https://www.bbc.com/news/world-92W26-72815777)",
+    "label": "News"
+  },
+  {
+    "input": "https://www.12306.cn/index/ Base64解码",
+    "label": "Tools"
+  },
+  {
+    "input": "https://zh.wikipedia.org/wiki/W711Z63 Introduction to Algorithms MIT",
+    "label": "Learning"
+  },
+  {
+    "input": "Chat (https://www.linkedin.com/in/69g44/)",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.xiaohongshu.com/user/profile/0413000947 Settings",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.udemy.com/course/489e22I/ Organic Chemistry 101",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.target.com/p/0u25d/-/A-9494432095 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://pan.baidu.com/s/4348633912 Internet Speed Test",
+    "label": "Tools"
+  },
+  {
+    "input": "Fed Interest Rate Decision - BBC https://www.bbc.com/news/world-0J747-0639912061",
+    "label": "News"
+  },
+  {
+    "input": "https://www.facebook.com/5S268393 热门话题",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV60909062322 唐诗三百首 朗读",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.facebook.com/4S06I Create Post",
+    "label": "Social"
+  },
+  {
+    "input": "Nike Dunk Low - Walmart https://www.walmart.com/ip/e760C/8651811822",
+    "label": "Shopping"
+  },
+  {
+    "input": "Word Counter https://www.dropbox.com/home/89u72",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.reddit.com/r/2K866/comments/66300485/ Create Post",
+    "label": "Social"
+  },
+  {
+    "input": "The Witcher 4 Teaser (https://www.youtube.com/watch?v=04895669)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/5637207436 美联储维持利率不变",
+    "label": "News"
+  },
+  {
+    "input": "https://pan.baidu.com/s/21O65225 IP Address Lookup",
+    "label": "Tools"
+  },
+  {
+    "input": "https://news.qq.com/rain/a/2026/02/19/2361657159 台风“梅花”即将登陆",
+    "label": "News"
+  },
+  {
+    "input": "Settings https://www.tiktok.com/@75225/video/4442125199",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=180126588236 Black Myth: Wukong Guide",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amazon.com/dp/71447990 Bose QuietComfort Ultra",
+    "label": "Shopping"
+  },
+  {
+    "input": "Harry Potter TV Series (https://movie.douban.com/subject/28929002/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Global Warming Crisis Report - CNN https://www.cnn.com/2026/02/19/2N1s0d/index.html",
+    "label": "News"
+  },
+  {
+    "input": "Global Warming Crisis Report https://world.huanqiu.com/article/8138933758",
+    "label": "News"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=4572242698 华为 Mate 70 RS",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.linkedin.com/in/1J36577/ 上传视频",
+    "label": "Social"
+  },
+  {
+    "input": "Super Bowl Halftime Show https://www.thepaper.cn/newsDetail_forward_12399672017",
+    "label": "News"
+  },
+  {
+    "input": "https://www.linkedin.com/in/qL10u/ 直播间",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-2u3j0-9289196328 SpaceX Starship Launch",
+    "label": "News"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-8547372295.shtml Met Gala Red Carpet",
+    "label": "News"
+  },
+  {
+    "input": "https://www.netflix.com/title/35165415 甄嬛传 4K 修复版",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Grand Theft Auto VI Gameplay https://www.bilibili.com/video/BV03387877",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amap.com/search?query=91rY7W0 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://user.qzone.qq.com/3931754425 历史记录",
+    "label": "Social"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=7961234724 lululemon 瑜伽裤",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.amap.com/search?query=g1K3S 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/7608149817 New iPhone 17 Rumors",
+    "label": "News"
+  },
+  {
+    "input": "https://item.jd.com/9759363024.html Nike Dunk Low",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=57335198038 歌手2026 直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x354H 随机数生成",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.tiktok.com/@u6841/video/7279148473 Direct Messages",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.12306.cn/index/ Base64解码",
+    "label": "Tools"
+  },
+  {
+    "input": "SpaceX Starship Launch - Sina News https://news.sina.com.cn/c/2026/02/19/doc-4014902636.shtml",
+    "label": "News"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt4043960012/ Black Myth: Wukong Guide",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-62402927282.shtml 美联储维持利率不变",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV6095115286 泰勒斯威夫特 时代巡演",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Create Post https://user.qzone.qq.com/830303861298",
+    "label": "Social"
+  },
+  {
+    "input": "Base64 Encoder - Google Maps https://www.google.com/maps/place/43209",
+    "label": "Tools"
+  },
+  {
+    "input": "https://store.steampowered.com/app/2188204128/Z0u0t 歌手2026 直播",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amazon.com/dp/44297125 GoPro Hero 13",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV55027814981 唐诗三百首 朗读",
+    "label": "Learning"
+  },
+  {
+    "input": "Unit Converter https://www.xe.com/currencyconverter/convert/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/87b6h/-/A-47526368 Dyson Supersonic",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://item.taobao.com/item.htm?id=2523738096 Levi's 501 Jeans",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.zhihu.com/question/2996253456 The Science of Well-Being",
+    "label": "Learning"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=0119280749 乐高 兰博基尼",
+    "label": "Shopping"
+  },
+  {
+    "input": "New iPhone 17 Rumors - The Paper https://www.thepaper.cn/newsDetail_forward_7306233543",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV5187768297 League of Legends Worlds",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://world.huanqiu.com/article/76935741639",
+    "label": "News"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x133W 汇率换算",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/22Y37 汇率换算",
+    "label": "Tools"
+  },
+  {
+    "input": "Random Number Generator - 12306 https://www.12306.cn/index/",
+    "label": "Tools"
+  },
+  {
+    "input": "Star Wars: New Jedi Order - Steam https://store.steampowered.com/app/2485908920/48z5m",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Fitbit Charge 6 - Taobao https://item.taobao.com/item.htm?id=01037617",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/l5058.html Global Warming Crisis Report",
+    "label": "News"
+  },
+  {
+    "input": "https://www.tiktok.com/@1S3826/video/61661601732 Settings",
+    "label": "Social"
+  },
+  {
+    "input": "Bose QuietComfort Ultra (https://www.bestbuy.com/site/g3u89/7642636250.p)",
+    "label": "Shopping"
+  },
+  {
+    "input": "World Clock https://www.xe.com/currencyconverter/convert/",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.twitter.com/x579S/status/39735515 Edit Profile",
+    "label": "Social"
+  },
+  {
+    "input": "US Election Results 2026 https://world.huanqiu.com/article/34878233",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/7l256 公务员考试 行测技巧",
+    "label": "Learning"
+  },
+  {
+    "input": "iPhone 16 Pro Max - Target https://www.target.com/p/t602N/-/A-17188737",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=3148425232 戴森 V12 吸尘器",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-40176378.shtml 华为发布纯血鸿蒙系统",
+    "label": "News"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://news.sina.com.cn/c/2026/02/19/doc-69239845345.shtml",
+    "label": "News"
+  },
+  {
+    "input": "https://www.twitter.com/65x564/status/98553641041 朋友圈",
+    "label": "Social"
+  },
+  {
+    "input": "Coachella 2026 Lineup https://open.spotify.com/track/46074213032",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=1334183060 Stranger Things Season 5",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.amazon.com/dp/9804561081 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "Zelda Movie Announcement (https://www.imdb.com/title/tt22079237/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.reddit.com/r/45fP8/comments/01962383/ Notifications",
+    "label": "Social"
+  },
+  {
+    "input": "New iPhone 17 Rumors - CNN https://www.cnn.com/2026/02/19/18r6M80u/index.html",
+    "label": "News"
+  },
+  {
+    "input": "My Profile https://www.tiktok.com/@d1222/video/84100523",
+    "label": "Social"
+  },
+  {
+    "input": "Fed Interest Rate Decision - The Paper https://www.thepaper.cn/newsDetail_forward_74183615433",
+    "label": "News"
+  },
+  {
+    "input": "https://www.target.com/p/0n4X3/-/A-2696013444 赫曼米勒人体工学椅",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.linkedin.com/in/4H4831/ Settings",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.12306.cn/index/ World Clock",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/9F026 单位换算",
+    "label": "Tools"
+  },
+  {
+    "input": "Color Picker https://www.dropbox.com/home/82J0q",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=04526615865 零基础学剪辑",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.zhihu.com/people/4r5007 群聊",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.amazon.com/dp/2395350912 lululemon 瑜伽裤",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.dropbox.com/home/86j1L2 QR Code Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.bilibili.com/video/BV81804246 The Witcher 4 Teaser",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/2V43i.html Fed Interest Rate Decision",
+    "label": "News"
+  },
+  {
+    "input": "https://pan.baidu.com/s/99818815 快递查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/P5335 JSON Formatter",
+    "label": "Tools"
+  },
+  {
+    "input": "Dell XPS 13 - Shein https://www.shein.com/5l317-p-6862590635.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "Unit Converter https://translate.google.com/?sl=auto&tl=zh-CN&text=23y67",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.google.com/maps/place/8R2739 QR Code Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.dropbox.com/home/9l717M Countdown Timer",
+    "label": "Tools"
+  },
+  {
+    "input": "Fitbit Charge 6 (https://detail.tmall.com/item.htm?id=9688406280)",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.target.com/p/0T82y/-/A-04987037 雅诗兰黛小棕瓶",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-7jO96-3392359419 人工智能法草案",
+    "label": "News"
+  },
+  {
+    "input": "Grand Theft Auto VI Gameplay - Bilibili https://www.bilibili.com/video/BV70404097",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=0489956488 Organic Chemistry 101",
+    "label": "Learning"
+  },
+  {
+    "input": "Dyson Supersonic - Amazon https://www.amazon.com/dp/5609420015",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.reddit.com/r/v20F657/comments/6451079379/ Groups",
+    "label": "Social"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=98725946 赫曼米勒人体工学椅",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.amazon.com/dp/74974868 罗技 G Pro 鼠标",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.zhihu.com/question/28608882 Photography Basics",
+    "label": "Learning"
+  },
+  {
+    "input": "SpaceX 星舰发射失败 https://www.wsj.com/articles/Z9884-2508620863",
+    "label": "News"
+  },
+  {
+    "input": "Bitcoin hits new all-time high https://world.huanqiu.com/article/7679808383",
+    "label": "News"
+  },
+  {
+    "input": "Settings https://www.zhihu.com/people/x275q",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.tiktok.com/@77K596/video/9632870198 登录/注册",
+    "label": "Social"
+  },
+  {
+    "input": "Introduction to Algorithms MIT (https://blog.csdn.net/60J5q/article/details/35736735)",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.twitter.com/xQ74j/status/65203714 附近的人",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.google.com/maps/place/4w58f 房贷计算器",
+    "label": "Tools"
+  },
+  {
+    "input": "Organic Chemistry 101 https://zh.wikipedia.org/wiki/6Y235",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.ebay.com/itm/6182101683 Dyson Supersonic",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bestbuy.com/site/9Q380/7313063854.p Nike Air Jordan 1",
+    "label": "Shopping"
+  },
+  {
+    "input": "IP Address Lookup https://translate.google.com/?sl=auto&tl=zh-CN&text=2G37Q",
+    "label": "Tools"
+  },
+  {
+    "input": "The Witcher 4 Teaser https://store.steampowered.com/app/2056345914/c103q",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.youtube.com/watch?v=3305593892 Harvard CS50",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.amazon.com/dp/2381287611 Ray-Ban Aviator",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.wsj.com/articles/12318-7248986280 俄乌局势最新进展",
+    "label": "News"
+  },
+  {
+    "input": "Star Wars: New Jedi Order - Steam https://store.steampowered.com/app/2034871465/C7J70",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.shein.com/5lF69-p-8339199342.html 大疆御 3 Pro",
+    "label": "Shopping"
+  },
+  {
+    "input": "House of the Dragon Finale (https://movie.douban.com/subject/2892976077/)",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/8078330756 Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "https://www.w3schools.com/83p14H/default.asp 唐诗三百首 朗读",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.tiktok.com/@g344N/video/1406606894 Edit Profile",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.speedtest.net/result/750478061266 身份证号码查询",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.nytimes.com/2026/02/19/2R076.html 神舟十九号发射成功",
+    "label": "News"
+  },
+  {
+    "input": "Your Story (https://www.linkedin.com/in/4u27F/)",
+    "label": "Social"
+  },
+  {
+    "input": "Bitcoin hits new all-time high https://www.bloomberg.com/news/articles/2026/02/19/8488X",
+    "label": "News"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-48220977.shtml 央行宣布降准0.5个百分点",
+    "label": "News"
+  },
+  {
+    "input": "Nike Dunk Low https://mobile.yangkeduo.com/goods.html?goods_id=7496294711",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.qq.com/rain/a/2026/02/19/4141689252 Tech Giants Layoffs Continue",
+    "label": "News"
+  },
+  {
+    "input": "Oscar Best Picture 2026 https://movie.douban.com/subject/41270273/",
+    "label": "Entertainment"
+  },
+  {
+    "input": "Python 数据分析实战 - Udemy https://www.udemy.com/course/43076G/",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.bloomberg.com/news/articles/2026/02/19/91409 诺贝尔文学奖揭晓",
+    "label": "News"
+  },
+  {
+    "input": "https://www.imdb.com/title/tt8055415714/ 黑神话：悟空 通关攻略",
+    "label": "Entertainment"
+  },
+  {
+    "input": "https://www.coursera.org/learn/7v844 React 前端开发",
+    "label": "Learning"
+  },
+  {
+    "input": "https://news.qq.com/rain/a/2026/02/19/6905597956 World Cup 2026 Schedule",
+    "label": "News"
+  },
+  {
+    "input": "Global Warming Crisis Report (https://www.wsj.com/articles/C9778-9571990425)",
+    "label": "News"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-v0E26-5386266019 Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "New iPhone 17 Rumors - The Paper https://www.thepaper.cn/newsDetail_forward_74176461",
+    "label": "News"
+  },
+  {
+    "input": "https://detail.tmall.com/item.htm?id=0162024040 索尼 WH-1000XM5",
+    "label": "Shopping"
+  },
+  {
+    "input": "Dyson Supersonic https://item.jd.com/46367355.html",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.xe.com/currencyconverter/convert/ Random Number Generator",
+    "label": "Tools"
+  },
+  {
+    "input": "https://pan.baidu.com/s/07137837 Color Picker",
+    "label": "Tools"
+  },
+  {
+    "input": "https://world.huanqiu.com/article/0733527265 全球股市大跌",
+    "label": "News"
+  },
+  {
+    "input": "SpaceX Starship Launch - The Paper https://www.thepaper.cn/newsDetail_forward_18967923",
+    "label": "News"
+  },
+  {
+    "input": "https://item.jd.com/39626496.html 三只松鼠坚果礼盒",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://www.bbc.com/news/world-S66l5-8571891963 医保药品目录调整",
+    "label": "News"
+  },
+  {
+    "input": "IP Address Lookup https://translate.google.com/?sl=auto&tl=zh-CN&text=22736",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/06p6F/-/A-5912959882 Ray-Ban Aviator",
+    "label": "Shopping"
+  },
+  {
+    "input": "https://news.sina.com.cn/c/2026/02/19/doc-41885871.shtml Artificial Intelligence Regulation",
+    "label": "News"
+  },
+  {
+    "input": "https://www.coursera.org/learn/u47W3 Introduction to Algorithms MIT",
+    "label": "Learning"
+  },
+  {
+    "input": "https://www.wsj.com/articles/8624K-3801835706 UK General Election",
+    "label": "News"
+  },
+  {
+    "input": "https://www.reddit.com/r/k11r7F6/comments/7366311749/ Following",
+    "label": "Social"
+  },
+  {
+    "input": "https://www.w3schools.com/00P2648/default.asp Creative Writing Masterclass",
+    "label": "Learning"
+  },
+  {
+    "input": "World Clock https://www.google.com/maps/place/92801",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.amap.com/search?query=x5310 房贷计算器",
+    "label": "Tools"
+  },
+  {
+    "input": "https://www.target.com/p/21M7N/-/A-1755913256 耐克 Air Jordan 1",
+    "label": "Shopping"
+  },
+  {
+    "input": "Fed Interest Rate Decision https://world.huanqiu.com/article/0891461622",
+    "label": "News"
+  },
+  {
+    "input": "https://mobile.yangkeduo.com/goods.html?goods_id=83204922 Hoka One One Running Shoes",
+    "label": "Shopping"
+  }
+]

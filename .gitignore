@@ -58,7 +58,7 @@ logs/
 *.sqlite
 *.sqlite3
 
- Data files (uncomment if needed)
+# Data files (uncomment if needed)
  *.csv
  *.json
  *.xml
