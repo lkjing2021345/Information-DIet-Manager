@@ -138,7 +138,7 @@ class ContentClassifier:
             result = {}
             for key, category_const in category_mapping.items():
                 if key in raw_data:
-                    result[category_const] = raw_data
+                    result[category_const] = raw_data[key]
                 else:
                     result[category_const] = []
 
