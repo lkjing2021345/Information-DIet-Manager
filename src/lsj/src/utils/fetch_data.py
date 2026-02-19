@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 import urllib.parse as urlparse
 import sys
 import logging
+import json
+from typing import Literal
 
 logs_folder_path = "../../logs"
 if not os.path.exists(logs_folder_path):
@@ -189,9 +191,11 @@ def process_history(df):
 
     df['visit_time'] = df['last_visit_time'].apply(parse_webkit_time)
     df = convert_to_local_time(df, 'visit_time')
-
     df['domain'] = df['url'].apply(lambda url: urlparse.urlparse(url).netloc)
     df['hour'] = df['visit_time'].dt.hour
+
+    # 转换为 Unix 毫秒时间戳
+    df['ts'] = df['visit_time'].apply(lambda x: int(x.timestamp() * 1000))
 
     return df
 
@@ -313,21 +317,83 @@ def filter_by_date_range(df, start_date=None, end_date=None, days=None):
 
     return filtered_df
 
-def save_as_csv(df, output_path):
+
+def save_as_csv(df, output_path, source: Literal["plugin", "import"] = "import"):
+    """
+    保存为符合 IngestItem 格式的 CSV
+    字段顺序：url, title, text, ts, source, lang, channel, author, tags, meta
+    """
     folder_path = output_path
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
 
+    # 构建 IngestItem 格式的 DataFrame
     new_df = pd.DataFrame({
-        'domain': df['domain'].tolist(),
-        'visit_time': df['visit_time'].tolist(),
-        'hour' : df['hour'].tolist()
+        'url': df['url'].tolist(),
+        'title': df['title'].tolist(),
+        'text': [''] * len(df),
+        'ts': df['ts'].tolist(),
+        'source': [source] * len(df),
+        'lang': [''] * len(df),
+        'channel': [''] * len(df),
+        'author': [''] * len(df),
+        'tags': [''] * len(df),
+        'meta': [''] * len(df),
     })
 
     file_path = os.path.join(folder_path, 'history_data.csv')
     new_df.to_csv(file_path, index=False)
+    logger.info(f"已保存 {len(new_df)} 条记录到 {file_path}")
 
-def analyze_and_plot(df): #AI生成: 分析数据并绘图
+
+def save_as_jsonl(df, output_path, source: Literal["plugin", "import"] = "import"):
+    """
+    保存为符合 IngestItem 格式的 JSONL
+    每行一个 JSON 对象，包含 url/title/ts/source 必填字段
+    """
+    folder_path = output_path
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+    file_path = os.path.join(folder_path, 'history_data.jsonl')
+
+    records = []
+    for _, row in df.iterrows():
+        record = {
+            "url": row['url'],
+            "title": row['title'],
+            "ts": int(row['ts']),
+            "source": source
+        }
+        records.append(record)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+
+    logger.info(f"已保存 {len(records)} 条记录到 {file_path}")
+
+
+def to_ingest_items(df, source: Literal["plugin", "import"] = "import") -> list:
+    """
+    转换为 IngestItem 兼容的字典列表，便于直接调用 API
+    """
+    if df is None or df.empty:
+        return []
+
+    items = []
+    for _, row in df.iterrows():
+        item = {
+            "url": row['url'],
+            "title": row['title'],
+            "ts": int(row['ts']),
+            "source": source
+        }
+        items.append(item)
+
+    return items
+
+def analyze_and_plot(df):
     if df is None:
         return
 
@@ -366,7 +432,6 @@ def analyze_and_plot(df): #AI生成: 分析数据并绘图
     plt.tight_layout()
     plt.show()
 
-
 if __name__ == "__main__":
     logger.info("开始读取 Chrome 浏览记录")
     raw_df = safe_extract_history()
@@ -375,12 +440,14 @@ if __name__ == "__main__":
         logger.info("正在处理数据")
         clean_df = process_history(raw_df)
         clean_df = remove_duplicates(clean_df, subset=['url', 'visit_time'], keep='last')
-
         filtered_df = filter_by_date_range(clean_df, '2025-01-01', '2025-12-31')
 
-        save_as_csv(filtered_df, "./output")
+        # 保存为符合 IngestItem 契约的格式
+        save_as_csv(filtered_df, "./output", source="import")
+        save_as_jsonl(filtered_df, "./output", source="import")
+
+        items = to_ingest_items(filtered_df, source="import")
 
         analyze_and_plot(filtered_df)
-
     else:
         logger.error("无法获取数据，程序终止")
