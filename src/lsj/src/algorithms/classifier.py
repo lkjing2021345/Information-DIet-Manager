@@ -177,9 +177,18 @@ class ContentClassifier:
             - jieba.add_word(word): 添加自定义词
             - jieba.load_userdict(path): 加载自定义词典文件
         """
-        # TODO: 实现分词逻辑
-        # 提示：处理 text 为 None 或空字符串的情况
-        pass
+        if text is None:
+            logger.error("输入的文本为 None")
+            return []
+
+        try:
+            words = jieba.lcut(text)
+            return words
+
+        except Exception as e:
+            logger.exception(f"分词失败: {e}")
+            return []
+
 
     def _remove_stopwords(self, words: List[str]) -> List[str]:
         """
