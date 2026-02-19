@@ -11790,10 +11790,7 @@
     "input": "评论回复 - 抖音",
     "url": "https://www.douyin.com/notification?id=501926",
     "label": "Social"
-  }
-]
-```json
-[
+  },
   {
     "input": "修改密码 - 淘宝",
     "url": "https://member1.taobao.com/member/fresh/account_security.htm?id=339142",
