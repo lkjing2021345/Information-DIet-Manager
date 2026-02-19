@@ -274,21 +274,26 @@ class ContentClassifier:
             - 字符串的 in 操作符可以判断子串
             - 使用 .lower() 统一转为小写，提高匹配率
         """
-        # TODO: 实现规则匹配逻辑
-        # 伪代码框架：
-        # if url 存在:
-        #     for category, keywords in self.rules.items():
-        #         for keyword in keywords:
-        #             if keyword 在 url 中:
-        #                 return category
-        #
-        # for category, keywords in self.rules.items():
-        #     for keyword in keywords:
-        #         if keyword 在 text 中:
-        #             return category
-        #
-        # return None
-        pass
+        text_lower = str(text).lower() if text else ""
+        url_lower = str(url).lower() if url else ""
+
+        if url_lower:
+            for category, keywords in self.rules.items():
+                for keyword in keywords:
+                    if keyword.lower() in keywords:
+                        logger.info(f"url类别成功匹配: {category}")
+                        return category
+
+        logger.warning(f"url类别匹配失败，继续使用标题关键词匹配")
+        if text_lower:
+            for category, keywords in self.rules.items():
+                for keyword in keywords:
+                    if keyword.lower() in text_lower:
+                        logger.info(f"标题关键字匹配成功: {category}")
+                        return category
+
+        logger.warning("规则匹配失败")
+        return None
 
     def train_model(self,
                     texts: List[str],
