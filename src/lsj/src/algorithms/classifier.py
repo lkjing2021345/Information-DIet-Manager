@@ -165,17 +165,6 @@ class ContentClassifier:
 
         返回:
             List[str]: 分词后的词语列表
-
-        学习要点:
-            - jieba.cut() 返回生成器，需要用 list() 转换
-            - jieba.lcut() 直接返回列表，更方便
-            - 可以加载自定义词典提高分词准确率
-
-        jieba 常用方法:
-            - jieba.cut(text): 精确模式分词
-            - jieba.lcut(text): 返回列表
-            - jieba.add_word(word): 添加自定义词
-            - jieba.load_userdict(path): 加载自定义词典文件
         """
         if text is None:
             logger.error("输入的文本为 None")
@@ -269,30 +258,29 @@ class ContentClassifier:
             1. URL 匹配优先（域名更准确）
             2. 标题关键词匹配次之
             3. 只要匹配到就返回，不进行多类别判断
-
-        提示:
-            - 字符串的 in 操作符可以判断子串
-            - 使用 .lower() 统一转为小写，提高匹配率
         """
         text_lower = str(text).lower() if text else ""
         url_lower = str(url).lower() if url else ""
 
+        # 1. URL 匹配（优先级高）
         if url_lower:
             for category, keywords in self.rules.items():
                 for keyword in keywords:
-                    if keyword.lower() in keywords:
-                        logger.info(f"url类别成功匹配: {category}")
+                    # 关键修复：在 url_lower 里查找 keyword，而不是在 keywords 列表里查找
+                    if keyword.lower() in url_lower:
+                        logger.info(f"URL匹配成功: '{keyword}' -> {category}")
                         return category
 
-        logger.warning(f"url类别匹配失败，继续使用标题关键词匹配")
+        # 2. 标题文本匹配（优先级次之）
         if text_lower:
             for category, keywords in self.rules.items():
                 for keyword in keywords:
                     if keyword.lower() in text_lower:
-                        logger.info(f"标题关键字匹配成功: {category}")
+                        logger.info(f"标题匹配成功: '{keyword}' -> {category}")
                         return category
 
-        logger.warning("规则匹配失败")
+        # 3. 匹配失败
+        logger.debug("规则匹配失败，返回 None")
         return None
 
     def train_model(self,
@@ -450,7 +438,6 @@ class ContentClassifier:
 
 
 # ==================== 测试代码 ====================
-
 if __name__ == "__main__":
     """
     单元测试：直接运行此文件来测试分类器功能
@@ -466,24 +453,26 @@ if __name__ == "__main__":
     print("ContentClassifier 单元测试")
     print("=" * 50)
 
-    # TODO: 编写测试代码
-
     # 1. 实例化分类器
     classifier = ContentClassifier()
 
-    # 2. 测试单条预测
-    # test_cases = [
-    #     {"title": "Python 基础教程", "url": "https://www.runoob.com/python"},
-    #     {"title": "京东 - 正品低价", "url": "https://www.jd.com"},
-    #     ...
-    # ]
-    # for case in test_cases:
-    #     result = classifier.predict(case['title'], case['url'])
-    #     print(f"标题: {case['title']} -> {result}")
+    # 2. 测试分词功能
+    print("\n--- 测试分词 ---")
+    words = classifier._segment_text("我爱用Python写代码")
+    print(f"分词结果: {words}")
+    # 预期输出: ['我', '爱', '用', 'Python', '写', '代码']
 
-    # 3. 测试批量预测
-    # df = pd.DataFrame(test_cases)
-    # result_df = classifier.batch_predict(df)
-    # print(result_df)
+    # 3. 测试规则预测功能
+    print("\n--- 测试规则预测 ---")
 
-    print("\n✅ 测试完成")
+    # 测试1: URL 包含 "jd" (购物)
+    res1 = classifier.predict_by_rules("首页", "https://www.jd.com")
+    print(f"京东测试: {res1}")  # 预期输出: Shopping
+
+    # 测试2: 标题包含 "Python" (学习)
+    res2 = classifier.predict_by_rules("Python基础教程", "https://www.baidu.com")
+    print(f"Python测试: {res2}")  # 预期输出: Learning
+
+    # 测试3: 都不匹配
+    res3 = classifier.predict_by_rules("今天天气真好", "https://www.unknown.com")
+    print(f"未知测试: {res3}")  # 预期输出: None
