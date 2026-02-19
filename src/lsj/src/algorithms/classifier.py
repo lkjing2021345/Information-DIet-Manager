@@ -339,9 +339,19 @@ class ContentClassifier:
 
         这是类最重要的对外接口！
         """
-        # TODO: 实现预测逻辑
-        # 提示：调用 self.predict_by_rules() 和 self._predict_by_model()
-        pass
+        result = self.predict_by_rules(text=text, url=url)
+        if result:
+            logger.info(f"规则匹配成功: {result}")
+            return result
+
+        if self.model is not None:
+            model_result = self._predict_by_model(text=text)
+            if model_result:
+                logger.info(f"模型预测成功: {model_result}")
+                return model_result
+
+        return self.CATEGORY_OTHER
+
 
     def batch_predict(self, df: pd.DataFrame) -> pd.DataFrame:
         """
