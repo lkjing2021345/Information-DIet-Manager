@@ -199,9 +199,10 @@ def train_improved_model(train_data, test_data):
     # 保存模型
     classifier.model = model
     classifier.vectorizer = vectorizer
-    
-    model_path = "improved_model.pkl"
-    classifier.save_model(model_path)
+
+    model_folder_path = Path(__file__).parent.joinpath("models")
+    model_path = model_folder_path.joinpath("improved_model.pkl")
+    classifier.save_model(str(model_path))
     print(f"\n模型已保存: {model_path}")
     
     return {
@@ -229,7 +230,6 @@ def main():
     
     print(f"\n=== 总结 ===")
     print(f"使用清洗后的数据训练，测试准确率: {results['test_accuracy']:.4f}")
-    print(f"建议: 后续训练都使用相同的测试集进行评估")
 
 if __name__ == "__main__":
     main()
