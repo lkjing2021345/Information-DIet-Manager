@@ -1,506 +1,172 @@
-"""
-文本分类器模块
-
-功能概述：
-    对浏览记录的标题/URL进行自动分类，判断用户访问的是新闻、娱乐、学习等哪类内容
-
-主要技术：
-    - jieba: 中文分词
-    - sklearn: TF-IDF 特征提取 + 朴素贝叶斯分类器
-
-学习要点：
-    - 类的封装设计
-    - 规则匹配 vs 机器学习方法的选择
-    - 文本预处理流程
-"""
-
 import jieba
 import pandas as pd
 import os
-import pickle
-import logging
-import json
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
 
-from pandas.core.interchange.dataframe_protocol import DataFrame
 
-# ==================== 可选导入 ====================
-# Day 4 之后取消注释，用于机器学习分类
+# 如果后续要用机器学习，需要引入 sklearn
 # from sklearn.feature_extraction.text import TfidfVectorizer
 # from sklearn.naive_bayes import MultinomialNB
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import classification_report
-
-# logger 基本设置
-logs_folder_path = "../../logs"
-if not os.path.exists(logs_folder_path):
-    os.makedirs(logs_folder_path)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('../../logs/classifier.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
 
 class ContentClassifier:
     """
     浏览记录内容分类器
 
-    设计思路：
-        采用"规则优先，模型兜底"的混合策略：
-        1. 先用关键词规则快速匹配（准确率高、速度快）
-        2. 规则未命中时，使用训练好的机器学习模型（泛化能力强）
-        3. 都失败则归类为 Other
-
-    属性说明：
-        categories: 支持的分类类别列表
-        rules: 关键词规则字典 {类别: [关键词列表]}
-        model: 机器学习模型（朴素贝叶斯）
-        vectorizer: TF-IDF 向量化器
+    功能：
+    1. 对浏览标题进行分词处理
+    2. 基于关键词规则进行快速分类
+    3. (预留) 基于机器学习模型进行分类
     """
 
-    # ==================== 类常量 ====================
-    # 使用类常量定义默认类别，方便统一管理
-    CATEGORY_NEWS = "News"           # 新闻
-    CATEGORY_ENTERTAINMENT = "Entertainment"  # 娱乐
-    CATEGORY_LEARNING = "Learning"   # 学习
-    CATEGORY_SOCIAL = "Social"        # 社交
-    CATEGORY_SHOPPING = "Shopping"    # 购物
-    CATEGORY_TOOLS = "Tools"          # 工具
-    CATEGORY_OTHER = "Other"          # 其他
-
-    # ==================== 初始化方法 ====================
-
-    def __init__(self,
-                 keyword_dict: Optional[Dict[str, List[str]]] = None,
-                 model_path: Optional[str] = None):
+    def __init__(self, keyword_dict=None):
         """
         初始化分类器
 
-        参数:
-            keyword_dict: 自定义关键词字典，格式为 {'类别': ['词1', '词2']}
-                          如果为 None，则使用默认规则库
-            model_path: 已训练模型的路径，如果提供则自动加载
-
-        学习要点:
-            - Optional 类型提示表示参数可以为 None
-            - __init__ 方法不应包含耗时操作
+        :param keyword_dict: 自定义的关键词字典，格式为 {'类别': ['词1', '词2']}
         """
-        # 初始化分类类别列表
-        self.categories = []
+        # 定义核心类别 (参考你的开发计划)
+        self.categories = [
+            "News",  # 新闻
+            "Entertainment",  # 娱乐
+            "Learning",  # 学习
+            "Social",  # 社交
+            "Shopping",  # 购物
+            "Tools",  # 工具
+            "Other"  # 其他
+        ]
 
-        # 加载关键词规则库
-        self.rules = keyword_dict if keyword_dict is not None else self._load_default_rules()
+        # 1. 初始化规则库 (如果没有传入，则使用默认的空字典，后续需要你填充)
+        self.rules = keyword_dict if keyword_dict else self._load_default_rules()
 
-        self.categories = list(self.rules.keys())
+        # 2. 初始化机器学习模型相关变量 (占位，Day 3-4 后期实现)
+        self.model = None
+        self.vectorizer = None
 
-        # TODO: 初始化机器学习相关属性（初始为 None）
-        self.model = None       # 朴素贝叶斯模型
-        self.vectorizer = None  # TF-IDF 向量化器
+        print("✅ ContentClassifier 初始化完成")
 
-        # TODO: 如果提供了模型路径，尝试加载模型
-        # 提示：调用 self.load_model(model_path)
-
-        logger.info("✅ ContentClassifier 初始化完成")
-
-    # ==================== 私有方法（内部使用）====================
-
-    def _load_default_rules(self) -> Dict[str, List[str]]:
+    def _load_default_rules(self):
         """
-        加载默认的关键词规则库
-
-        返回:
-            Dict[str, List[str]]: 关键词规则字典
+        (私有方法) 加载默认的关键词规则库
+        这是你 Day 3 需要重点填充的部分
         """
+        return {
+            "Social": ["微信", "知乎", "微博", "weibo", "bilibili"],
+            "Learning": ["教程", "文档", "python", "course", "学习", "CSDN", "Stack Overflow"],
+            "Shopping": ["淘宝", "京东", "亚马逊", "价格", "优惠券"],
+            "Entertainment": ["电影", "小说", "游戏", "直播", "漫画"],
+            "News": ["新闻", "日报", "头条", "news", "report"],
+            "Tools": ["翻译", "邮箱", "日历", "网盘", "转换"]
+        }
 
-        current_dir = Path(__file__).parent
-        json_dir = current_dir.joinpath("rules")
-        config_path = json_dir.joinpath("default_classify_rules.json")
-
-        try:
-            with open(config_path, 'r', encoding="utf-8") as f:
-                raw_data = json.load(f)
-
-            category_mapping = {
-                "Social": self.CATEGORY_SOCIAL,
-                "Learning": self.CATEGORY_LEARNING,
-                "Shopping": self.CATEGORY_SHOPPING,
-                "Entertainment": self.CATEGORY_ENTERTAINMENT,
-                "News": self.CATEGORY_NEWS,
-                "Tools": self.CATEGORY_TOOLS,
-                "Other": self.CATEGORY_OTHER,
-            }
-
-            result = {}
-            for key, category_const in category_mapping.items():
-                if key in raw_data:
-                    result[category_const] = raw_data[key]
-                else:
-                    result[category_const] = []
-
-            return result
-
-        except FileNotFoundError:
-            logger.error(f"配置文件 {config_path} 未找到，使用空规则")
-            return {}
-
-        except json.JSONDecodeError:
-            logger.error(f"配置文件 {config_path} 格式错误，请检查 JSON 语法")
-            return {}
-
-        except Exception as e:
-            logger.error(f"出现异常错误: {e}")
-            return {}
-
-    def _segment_text(self, text: str) -> List[str]:
+    def _preprocess(self, text):
         """
-        对文本进行分词
+        (私有方法) 文本预处理：分词
 
-        参数:
-            text: 待分词的文本字符串
-
-        返回:
-            List[str]: 分词后的词语列表
+        :param text: 原始标题字符串
+        :return: 分词后的列表或空格分隔的字符串
         """
-        if text is None:
-            logger.error("输入的文本为 None")
-            return []
+        if not isinstance(text, str):
+            return ""
 
-        try:
-            words = jieba.lcut(text)
-            return words
+        # 使用 jieba 进行分词
+        words = jieba.cut(text)
+        # 过滤停用词逻辑可以在这里添加
+        return list(words)
 
-        except Exception as e:
-            logger.exception(f"分词失败: {e}")
-            return []
-
-
-    def _remove_stopwords(self, words: List[str]) -> List[str]:
+    def predict_by_rules(self, text, url=None):
         """
-        移除停用词
+        基于规则和关键词的分类 (P0 优先级)
 
-        参数:
-            words: 分词后的词语列表
-
-        返回:
-            List[str]: 移除停用词后的词语列表
-
-        说明:
-            停用词是指"的"、"是"、"在"等无实际意义的词语
-            移除停用词可以提高分类准确率
-
-        TODO:
-            1. 定义停用词列表或从文件加载
-            2. 过滤掉停用词
+        :param text: 网页标题
+        :param url: 网页链接 (辅助判断，例如 domain 包含 'bilibili')
+        :return: 匹配到的类别，如果没有匹配则返回 None
         """
-        pass
-
-    def _extract_domain(self, url: str) -> str:
-        """
-        从 URL 中提取域名
-
-        参数:
-            url: 完整的 URL 字符串
-
-        返回:
-            str: 域名部分，如 "www.baidu.com"
-
-        提示:
-            - 可以使用字符串的 split('/') 方法
-            - 或使用 urllib.parse.urlparse() 解析
-
-        示例:
-            输入: "https://www.bilibili.com/video/xxx"
-            输出: "www.bilibili.com" 或 "bilibili.com"
-        """
-        # TODO: 实现域名提取
-        pass
-
-    def _predict_by_model(self, text: str) -> str:
-        """
-        使用机器学习模型进行预测
-
-        参数:
-            text: 待预测的文本
-
-        返回:
-            str: 预测的类别
-
-        前置条件:
-            self.model 和 self.vectorizer 必须已训练
-
-        实现步骤:
-            1. 对文本进行分词和预处理
-            2. 使用 vectorizer 转换为 TF-IDF 向量
-            3. 使用 model.predict() 预测类别
-        """
-        # TODO: Day 4 实现机器学习预测
-        pass
-
-    # ==================== 核心公共方法 ====================
-
-    def predict_by_rules(self, text: str, url: Optional[str] = None) -> Optional[str]:
-        """
-        基于关键词规则进行分类
-
-        参数:
-            text: 网页标题
-            url: 网页 URL（可选，辅助判断）
-
-        返回:
-            Optional[str]: 匹配到的类别，未匹配返回 None
-        """
-        text_lower = str(text).lower() if text else ""
-        url_lower = str(url).lower() if url else ""
-
-        # 1. URL 匹配
-        if url_lower:
+        # 1. URL 规则检查 (通常 URL 的域名最准确)
+        if url:
             for category, keywords in self.rules.items():
-                for keyword in keywords:
-                    if keyword.lower() in url_lower:
-                        logger.info(f"URL匹配成功: '{keyword}' -> {category}")
+                for kw in keywords:
+                    if kw.lower() in url.lower():
                         return category
 
-        # 2. 标题文本匹配
-        if text_lower:
-            for category, keywords in self.rules.items():
-                for keyword in keywords:
-                    if keyword.lower() in text_lower:
-                        logger.info(f"标题匹配成功: '{keyword}' -> {category}")
-                        return category
+        # 2. 标题关键词检查
+        for category, keywords in self.rules.items():
+            for kw in keywords:
+                if kw in text:
+                    return category
 
-        # 3. 匹配失败
-        logger.debug("规则匹配失败，返回 None")
         return None
 
-    def train_model(self,
-                    texts: List[str],
-                    labels: List[str],
-                    test_size: float = 0.2) -> Dict[str, float]:
+    def train_model(self, training_data, training_labels):
         """
-        训练朴素贝叶斯分类器
+        (Day 4 任务) 训练朴素贝叶斯分类器
 
-        参数:
-            texts: 训练文本列表
-            labels: 对应的标签列表
-            test_size: 测试集比例，默认 0.2
-
-        返回:
-            Dict[str, float]: 包含准确率等评估指标的字典
-
-        实现步骤:
-            1. 文本预处理（分词、去停用词）
-            2. 划分训练集和测试集
-            3. 创建 TfidfVectorizer 并转换文本
-            4. 训练 MultinomialNB 模型
-            5. 评估模型性能
-
-        sklearn 关键方法:
-            - TfidfVectorizer(): 创建 TF-IDF 向量化器
-              - fit_transform(texts): 拟合并转换
-              - transform(texts): 仅转换（用于新数据）
-            - MultinomialNB(): 朴素贝叶斯分类器
-              - fit(X, y): 训练模型
-              - predict(X): 预测
-              - score(X, y): 计算准确率
-            - train_test_split(): 划分数据集
-
-        TODO: Day 4 实现模型训练
+        :param training_data: 文本列表
+        :param training_labels: 对应的标签列表
         """
-        print("🔄 正在训练模型...")
-        # TODO: 实现训练逻辑
+        print("🔄 正在训练模型... (待实现)")
+        # 伪代码逻辑：
+        # 1. self.vectorizer = TfidfVectorizer()
+        # 2. X = self.vectorizer.fit_transform(training_data)
+        # 3. self.model = MultinomialNB()
+        # 4. self.model.fit(X, training_labels)
         pass
 
-    def predict(self, text: str, url: Optional[str] = None) -> str:
+    def predict(self, text, url=None):
         """
-        预测单条文本的类别（主入口方法）
-
-        参数:
-            text: 网页标题
-            url: 网页 URL（可选）
-
-        返回:
-            str: 预测的类别
-
-        分类策略:
-            1. 优先使用规则匹配（快速、准确）
-            2. 规则未命中且有模型时，使用模型预测
-            3. 都失败则返回 Other
+        主预测函数：对外暴露的唯一接口
+        逻辑：优先使用规则匹配，如果规则未命中，且有模型，则用模型，否则返回 Other
         """
-        result = self.predict_by_rules(text=text, url=url)
-        if result:
-            logger.info(f"规则匹配成功: {result}")
-            return result
+        # 1. 尝试规则匹配
+        category = self.predict_by_rules(text, url)
+        if category:
+            return category
 
-        if self.model is not None:
-            model_result = self._predict_by_model(text=text)
-            if model_result:
-                logger.info(f"模型预测成功: {model_result}")
-                return model_result
+        # 2. (未来) 尝试模型预测
+        # if self.model:
+        #     return self._predict_by_model(text)
 
-        return self.CATEGORY_OTHER
+        # 3. 兜底策略
+        return "Other"
 
-
-    def batch_predict(self, df: pd.DataFrame) -> pd.DataFrame:
+    def batch_predict(self, df):
         """
-        批量预测 DataFrame 中的数据
+        批量预测 pandas DataFrame
 
-        参数:
-            df: 包含 'title' 和 'url' 列的 DataFrame
-
-        返回:
-            pd.DataFrame: 添加了 'category' 列的 DataFrame
+        :param df: 包含 'title' 和 'url' 列的 DataFrame
+        :return: 增加了 'category' 列的 DataFrame
         """
-        # TODO: 多线程优化
-        # TODO: 向量化操作
-
         if df.empty:
-            logger.warning("输入数据为空")
             return df
 
-        if df is None:
-            logger.warning("输出数据为 None")
-            return DataFrame
+        print(f"📊 正在处理 {len(df)} 条数据...")
 
-        logger.info(f"正在处理 {len(df)} 条数据...")
-
-        result_df = df.copy()
-        result_df['category'] = result_df.apply(
-            lambda row: self.predict(
-                text=row.get('title', ''),
-                url=row.get('url', '')
-            ),
+        # 使用 apply 函数应用 predict 方法
+        # axis=1 表示按行处理
+        df['category'] = df.apply(
+            lambda row: self.predict(row.get('title', ''), row.get('url', '')),
             axis=1
         )
-
-        logger.info("处理完成")
-
-        return result_df
-
-    # ==================== 模型持久化方法 ====================
-
-    def save_model(self, path: str) -> None:
-        """
-        保存训练好的模型到文件
-
-        参数:
-            path: 模型保存路径
-
-        说明:
-            模型保存后，下次启动可以直接加载，无需重新训练
-
-        Python 持久化方法:
-            - pickle.dump(obj, file): 序列化对象
-            - pickle.load(file): 反序列化对象
-            - 也可以使用 joblib（sklearn 推荐）
-
-        需要保存的内容:
-            - self.model (分类器)
-            - self.vectorizer (向量化器)
-            - self.categories (类别列表)
-        """
-        # TODO: 实现模型保存
-        # 提示：
-        # with open(path, 'wb') as f:
-        #     pickle.dump({...}, f)
-        pass
-
-    def load_model(self, path: str) -> bool:
-        """
-        从文件加载模型
-
-        参数:
-            path: 模型文件路径
-
-        返回:
-            bool: 加载是否成功
-
-        注意:
-            加载前检查文件是否存在
-        """
-        # TODO: 实现模型加载
-        pass
-
-    def get_category_distribution(self, df: pd.DataFrame) -> pd.Series:
-        """
-        统计分类结果的分布情况
-
-        参数:
-            df: 包含 'category' 列的 DataFrame
-
-        返回:
-            pd.Series: 各类别的数量统计
-
-        用途:
-            用于分析用户浏览习惯，生成报告
-
-        Pandas 方法:
-            - df['col'].value_counts(): 统计各值出现次数
-        """
-        # TODO: 实现统计逻辑
-        pass
+        return df
 
 
-# ==================== 测试代码 ====================
+# --- 单元测试代码 (用于直接运行此文件测试) ---
 if __name__ == "__main__":
-    """
-    单元测试：直接运行此文件来测试分类器功能
-    
-    测试步骤:
-        1. 实例化分类器
-        2. 测试单条文本预测
-        3. 测试批量预测
-        4. (可选) 测试模型训练和保存
-    """
-
-    print("=" * 50)
-    print("ContentClassifier 单元测试")
-    print("=" * 50)
-
-    # 1. 实例化分类器
+    # 1. 实例化
     classifier = ContentClassifier()
 
-    # 2. 测试分词功能
-    print("\n--- 测试分词 ---")
-    words = classifier._segment_text("我爱用Python写代码")
-    print(f"分词结果: {words}")
-    # 预期输出: ['我', '爱', '用', 'Python', '写', '代码']
+    # 2. 测试单条数据
+    test_title = "Python 教程 - 廖雪峰的官方网站"
+    test_url = "https://www.liaoxuefeng.com/wiki/python"
 
-    # 3. 测试规则预测功能
-    print("\n--- 测试规则预测 ---")
+    result = classifier.predict(test_title, test_url)
+    print(f"测试标题: {test_title}")
+    print(f"分类结果: {result}")  # 应该输出 'Learning'
 
-    # 测试1: URL 包含 "jd" (购物)
-    res1 = classifier.predict_by_rules("首页", "https://www.jd.com")
-    print(f"京东测试: {res1}")  # 预期输出: Shopping
-
-    # 测试2: 标题包含 "Python" (学习)
-    res2 = classifier.predict_by_rules("Python基础教程", "https://www.baidu.com")
-    print(f"Python测试: {res2}")  # 预期输出: Learning
-
-    # 测试3: 都不匹配
-    res3 = classifier.predict_by_rules("今天天气真好", "https://www.unknown.com")
-    print(f"未知测试: {res3}")  # 预期输出: None
-
-    print("\n--- 测试 predict 主入口 ---")
-    res = classifier.predict("Python入门教程", None)
-    print(f"预测结果: {res}")  # 预期: learning
-
-    res = classifier.predict("未知标题", "https://unknown.com")
-    print(f"预测结果: {res}")  # 预期: other
-
-    # 测试批量预测
-    print("\n--- 测试 batch_predict ---")
-    test_data = pd.DataFrame([
-        {"title": "GitHub - 开源项目", "url": "https://github.com"},
-        {"title": "京东购物", "url": "https://www.jd.com"},
-        {"title": "今日新闻", "url": "https://news.baidu.com"},
-    ])
-    result_df = classifier.batch_predict(test_data)
-    # print(result_df.columns.tolist())
-    print(result_df[['title', 'category']])
+    # 3. 测试 DataFrame
+    data = {
+        'title': ['京东超市', 'Bilibili 视频', '未知网页'],
+        'url': ['jd.com', 'bilibili.com', 'unknown.com']
+    }
+    df = pd.DataFrame(data)
+    result_df = classifier.batch_predict(df)
+    print("\n批量测试结果:")
+    print(result_df)
