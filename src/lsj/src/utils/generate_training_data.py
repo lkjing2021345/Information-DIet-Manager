@@ -325,48 +325,89 @@ label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entert
 
 async def main():
     """主函数"""
-    
-    # 配置参数
-    API_KEY = "your-api-key-here"  # 替换为你的API密钥
-    BASE_URL = "https://api.openai.com/v1"  # 或其他兼容的API地址
-    MODEL = "gpt-4o-mini"
-    
-    # 训练数据文件路径
-    TRAINING_DATA_PATH = "src/lsj/src/training_data/training_data.json"
-    
-    # 待分类的标签页标题列表
-    sample_inputs = [
-        "GitHub - microsoft/vscode: Visual Studio Code",
-        "Python Documentation - Built-in Functions",
-        "Amazon.com: Online Shopping for Electronics",
-        "CNN - Breaking News, Latest News and Videos",
-        "YouTube - Broadcast Yourself",
-        "Stack Overflow - Where Developers Learn",
-        "Netflix - Watch TV Shows Online",
-        "Twitter / X - Home",
-        "Google Translate",
-        "Spotify - Web Player",
-        "淘宝网 - 淘！我喜欢",
-        "知乎 - 有问题，就会有答案",
-        "哔哩哔哩 (゜-゜)つロ 干杯~",
-        "微博 - 随时随地发现新鲜事",
-        "百度网盘 - 自由存，随心看",
-        "CSDN - 专业开发者社区",
-        "人民网 - 网上的人民日报",
-        "豆瓣电影 - 你的光影记录",
-        "腾讯新闻 - 事实派",
-        "网易云音乐 - 听见好时光",
-    ]
-    
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description='训练数据生成和分类工具')
+    parser.add_argument(
+        '--config',
+        default='config.json',
+        help='配置文件路径（默认: config.json）'
+    )
+    parser.add_argument(
+        '--input',
+        nargs='+',
+        help='要分类的标题列表（可选，用于测试）'
+    )
+
+    args = parser.parse_args()
+
+    # 加载配置文件
+    config_path = Path(__file__).parent / args.config
+    if not config_path.exists():
+        logger.error(f"配置文件不存在: {config_path}")
+        logger.info("请创建 config.json 文件，包含以下字段:")
+        logger.info("  - api_key: API密钥")
+        logger.info("  - base_url: API基础URL")
+        logger.info("  - model: 模型名称")
+        logger.info("  - training_data_path: 训练数据文件路径")
+        logger.info("  - max_retries: 最大重试次数（可选，默认3）")
+        logger.info("  - concurrent_requests: 并发请求数（可选，默认5）")
+        sys.exit(1)
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        logger.error(f"读取配置文件失败: {str(e)}")
+        sys.exit(1)
+
+    # 验证必需字段
+    required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
+    missing_fields = [field for field in required_fields if field not in config]
+    if missing_fields:
+        logger.error(f"配置文件缺少必需字段: {', '.join(missing_fields)}")
+        sys.exit(1)
+
+    # 待分类的标签页标题列表（示例或从命令行参数）
+    if args.input:
+        sample_inputs = args.input
+    else:
+        # 默认示例数据
+        sample_inputs = [
+            "GitHub - microsoft/vscode: Visual Studio Code",
+            "Python Documentation - Built-in Functions",
+            "Amazon.com: Online Shopping for Electronics",
+            "CNN - Breaking News, Latest News and Videos",
+            "YouTube - Broadcast Yourself",
+            "Stack Overflow - Where Developers Learn",
+            "Netflix - Watch TV Shows Online",
+            "Twitter / X - Home",
+            "Google Translate",
+            "Spotify - Web Player",
+            "淘宝网 - 淘！我喜欢",
+            "知乎 - 有问题，就会有答案",
+            "哔哩哔哩 (゜-゜)つロ 干杯~",
+            "微博 - 随时随地发现新鲜事",
+            "百度网盘 - 自由存，随心看",
+            "CSDN - 专业开发者社区",
+            "人民网 - 网上的人民日报",
+            "豆瓣电影 - 你的光影记录",
+            "腾讯新闻 - 事实派",
+            "网易云音乐 - 听见好时光",
+        ]
+
     # 创建生成器
     generator = TrainingDataGenerator(
-        api_key=API_KEY,
-        base_url=BASE_URL,
-        model=MODEL,
-        max_retries=3,
-        concurrent_requests=5
+        api_key=config['api_key'],
+        base_url=config['base_url'],
+        model=config['model'],
+        max_retries=config.get('max_retries', 3),
+        concurrent_requests=config.get('concurrent_requests', 5)
     )
     
+    logger.info(f"开始分类 {len(sample_inputs)} 条标题...")
+
     # 批量分类
     results = await generator.classify_batch(sample_inputs)
     
@@ -378,8 +419,8 @@ async def main():
     
     # 追加到训练数据
     if formatted_results:
-        generator.append_to_training_data(formatted_results, TRAINING_DATA_PATH)
-        
+        generator.append_to_training_data(formatted_results, config['training_data_path'])
+
         # 打印统计信息
         label_counts = {}
         for item in formatted_results:

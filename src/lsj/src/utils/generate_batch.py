@@ -7,25 +7,49 @@ from pathlib import Path
 from smart_auto_generate import SmartAutoGenerator
 
 async def main():
+    import sys
+
     # Load config
     config_path = Path(__file__).parent / "config.json"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-    
-    # Use absolute path
-    script_dir = Path(__file__).parent
-    training_data_path = script_dir.parent / 'training_data' / 'training_data.json'
-    
+
+    if not config_path.exists():
+        print(f"错误: 配置文件不存在: {config_path}")
+        print("\n请创建 config.json 文件，包含以下字段:")
+        print("  - api_key: API密钥")
+        print("  - base_url: API基础URL")
+        print("  - model: 模型名称")
+        print("  - training_data_path: 训练数据文件路径")
+        print("  - max_retries: 最大重试次数（可选，默认3）")
+        print("  - concurrent_requests: 并发请求数（可选，默认5）")
+        sys.exit(1)
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        print(f"错误: 读取配置文件失败: {str(e)}")
+        sys.exit(1)
+
+    # 验证必需字段
+    required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
+    missing_fields = [field for field in required_fields if field not in config]
+    if missing_fields:
+        print(f"错误: 配置文件缺少必需字段: {', '.join(missing_fields)}")
+        sys.exit(1)
+
+    # 创建生成器
     generator = SmartAutoGenerator(
-        api_key=config.get('api_key'),
-        base_url=config.get('base_url'),
-        model=config.get('model'),
-        training_data_path=str(training_data_path)
+        api_key=config['api_key'],
+        base_url=config['base_url'],
+        model=config['model'],
+        training_data_path=config['training_data_path'],
+        max_retries=config.get('max_retries', 3),
+        concurrent_requests=config.get('concurrent_requests', 5)
     )
     
     # 智能批量生成配置
     TARGET_TOTAL = 200000  # 目标总数
-    BATCH_SIZE_PER_CATEGORY = 10  # 每个类别每批生成数量
+    BATCH_SIZE_PER_CATEGORY = 20  # 每个类别每批生成数量
     MAX_BATCHES = 100000  # 最大批次数
     BALANCE_THRESHOLD = 0.15  # 平衡阈值（15%）
     COOLDOWN_SECONDS = 5  # 批次间冷却时间

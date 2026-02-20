@@ -146,14 +146,18 @@ class SmartAutoGenerator:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-4o-mini",
-        training_data_path: str = "../training_data/training_data.json"
+        base_url: str,
+        model: str,
+        training_data_path: str,
+        max_retries: int = 3,
+        concurrent_requests: int = 5
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
         self.model = model
         self.training_data_path = training_data_path
+        self.max_retries = max_retries
+        self.concurrent_requests = concurrent_requests
         self.existing_titles: Set[str] = set()
         self._load_existing_titles()
 
@@ -347,7 +351,7 @@ class SmartAutoGenerator:
             # 轮换子类别以增加多样性
             subcat = subcategories[batch_idx % len(subcategories)]
 
-            # 构建更详细的提示词 - 直接生成带label的训练数据格式
+            # 构建更详细的提示词 - 使用对象格式包装数组
             prompt = f"""你是一个浏览器标签页训练数据生成专家。请生成{batch_count}条{category}类别中{subcat['name']}子类别的训练数据。
 
 ## 类别说明
@@ -386,22 +390,18 @@ class SmartAutoGenerator:
 - 生成更加具体和细节化的标题
 
 ## 输出格式
-请以JSON数组格式返回训练数据，每条数据包含input和label字段。
-label必须是以下7个类别之一：News, Tools, Learning, Shopping, Social, Entertainment, Other
+请以JSON格式返回，包含一个titles数组，每个元素只是标题字符串。
 
-只返回JSON数组，不要有任何其他文字：
-[
-  {{
-    "input": "具体的标签页标题1",
-    "label": "{category}"
-  }},
-  {{
-    "input": "具体的标签页标题2",
-    "label": "{category}"
-  }}
-]
+只返回JSON对象，不要有任何其他文字：
+{{
+  "titles": [
+    "具体的标签页标题1",
+    "具体的标签页标题2",
+    "具体的标签页标题3"
+  ]
+}}
 
-现在开始生成{batch_count}条高质量的训练数据。"""
+现在开始生成{batch_count}条高质量的标签页标题。"""
 
             titles = await self._call_api_for_titles(prompt, temperature)
 
@@ -494,25 +494,35 @@ label必须是以下7个类别之一：News, Tools, Learning, Shopping, Social, 
                             result = await response.json()
                             content = result['choices'][0]['message']['content']
 
-                            # 尝试解析JSON - 新格式是数组
+                            # 尝试解析JSON
                             try:
                                 data = json.loads(content)
 
-                                # 支持两种格式：新格式（数组）和旧格式（对象）
-                                if isinstance(data, list):
-                                    # 新格式：直接是训练数据数组
-                                    titles = [item['input'] for item in data if 'input' in item]
-                                elif isinstance(data, dict) and 'titles' in data:
-                                    # 旧格式：兼容性支持
+                                # 提取标题列表
+                                titles = []
+                                if isinstance(data, dict) and 'titles' in data:
+                                    # 标准格式：{"titles": [...]}
                                     titles = data['titles']
-                                else:
-                                    titles = []
+                                elif isinstance(data, list):
+                                    # 数组格式（兼容）
+                                    titles = data
+                                elif isinstance(data, dict):
+                                    # 尝试从其他可能的字段提取
+                                    for key in ['data', 'items', 'results']:
+                                        if key in data and isinstance(data[key], list):
+                                            titles = data[key]
+                                            break
 
                                 # 验证返回的标题
-                                if titles and isinstance(titles, list):
-                                    return titles
-                                else:
-                                    logger.warning(f"API返回格式异常，重试 {retry+1}/{max_retries}")
+                                if titles and isinstance(titles, list) and len(titles) > 0:
+                                    # 确保都是字符串
+                                    titles = [str(t) for t in titles if t]
+                                    if titles:
+                                        logger.info(f"成功解析 {len(titles)} 个标题")
+                                        return titles
+
+                                logger.warning(f"API返回格式异常，重试 {retry+1}/{max_retries}")
+                                logger.debug(f"返回内容: {content[:300]}")
 
                             except json.JSONDecodeError as je:
                                 logger.error(f"JSON解析失败: {str(je)}, 内容: {content[:200]}")
@@ -603,8 +613,8 @@ label必须是以下7个类别之一：News, Tools, Learning, Shopping, Social, 
             api_key=self.api_key,
             base_url=self.base_url,
             model=self.model,
-            max_retries=3,
-            concurrent_requests=5
+            max_retries=self.max_retries,
+            concurrent_requests=self.concurrent_requests
         )
         
         results = await classifier.classify_batch(all_titles)
@@ -691,9 +701,9 @@ async def main():
     
     parser = argparse.ArgumentParser(description='智能自动训练数据生成器')
     parser.add_argument(
-        '--api-key',
-        default='your-api-key-here',
-        help='API密钥'
+        '--config',
+        default='config.json',
+        help='配置文件路径（默认: config.json）'
     )
     parser.add_argument(
         '--target',
@@ -708,10 +718,41 @@ async def main():
     
     args = parser.parse_args()
     
+    # 加载配置文件
+    config_path = Path(__file__).parent / args.config
+    if not config_path.exists():
+        logger.error(f"配置文件不存在: {config_path}")
+        logger.info("请创建 config.json 文件，包含以下字段:")
+        logger.info("  - api_key: API密钥")
+        logger.info("  - base_url: API基础URL")
+        logger.info("  - model: 模型名称")
+        logger.info("  - training_data_path: 训练数据文件路径")
+        logger.info("  - max_retries: 最大重试次数（可选，默认3）")
+        logger.info("  - concurrent_requests: 并发请求数（可选，默认5）")
+        sys.exit(1)
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        logger.error(f"读取配置文件失败: {str(e)}")
+        sys.exit(1)
+
+    # 验证必需字段
+    required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
+    missing_fields = [field for field in required_fields if field not in config]
+    if missing_fields:
+        logger.error(f"配置文件缺少必需字段: {', '.join(missing_fields)}")
+        sys.exit(1)
+
+    # 创建生成器
     generator = SmartAutoGenerator(
-        api_key=args.api_key,
-        base_url="https://api.openai.com/v1",
-        model="gpt-4o-mini"
+        api_key=config['api_key'],
+        base_url=config['base_url'],
+        model=config['model'],
+        training_data_path=config['training_data_path'],
+        max_retries=config.get('max_retries', 3),
+        concurrent_requests=config.get('concurrent_requests', 5)
     )
     
     await generator.auto_generate(
