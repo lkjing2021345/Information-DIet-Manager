@@ -27,21 +27,21 @@ async def main():
     # Target: 10000 total, currently have ~5700, need ~4300 more
     # Generate 100 per category at a time
     
-    for batch_num in range(1, 20):  # 7 batches of ~600 each
+    for batch_num in range(1, 100000):  # 7 batches of ~600 each
         print(f"\n{'='*60}")
-        print(f"Batch {batch_num}/20")
+        print(f"Batch {batch_num}/100000")
         print(f"{'='*60}")
         
         # Analyze current data
         current_counts = generator.analyze_existing_data()
         total_current = sum(current_counts.values())
         
-        if total_current >= 10000:
+        if total_current >= 200000:
             print(f"Target reached! Total: {total_current}")
             break
         
         # Generate 100 per category
-        plan = {cat: 8 for cat in generator.CATEGORY_INFO.keys()}
+        plan = {cat: 10 for cat in generator.CATEGORY_INFO.keys()}
         
         await generator.execute_generation_plan(plan)
         

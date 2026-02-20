@@ -7,11 +7,12 @@
 import asyncio
 import json
 import aiohttp
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Set
 from pathlib import Path
 import logging
 import sys
 from collections import Counter
+import hashlib
 
 sys.path.insert(0, str(Path(__file__).parent))
 from generate_training_data import TrainingDataGenerator
@@ -95,7 +96,39 @@ class SmartAutoGenerator:
         self.base_url = base_url.rstrip('/')
         self.model = model
         self.training_data_path = training_data_path
-    
+        self.existing_titles: Set[str] = set()
+        self._load_existing_titles()
+
+    def _load_existing_titles(self):
+        """加载现有标题用于去重"""
+        path = Path(self.training_data_path)
+        if path.exists():
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                self.existing_titles = {self._normalize_title(item['input']) for item in data}
+                logger.info(f"已加载 {len(self.existing_titles)} 个现有标题用于去重")
+            except Exception as e:
+                logger.error(f"加载现有标题失败: {str(e)}")
+                self.existing_titles = set()
+
+    def _normalize_title(self, title: str) -> str:
+        """标准化标题用于去重比较"""
+        # 移除空格、转小写、移除特殊字符
+        normalized = ''.join(title.lower().split())
+        normalized = ''.join(c for c in normalized if c.isalnum() or ord(c) > 127)
+        return normalized
+
+    def _is_duplicate(self, title: str) -> bool:
+        """检查标题是否重复"""
+        normalized = self._normalize_title(title)
+        return normalized in self.existing_titles
+
+    def _add_title(self, title: str):
+        """添加标题到去重集合"""
+        normalized = self._normalize_title(title)
+        self.existing_titles.add(normalized)
+
     def analyze_existing_data(self) -> Dict[str, int]:
         """
         分析现有训练数据的分布
@@ -178,36 +211,64 @@ class SmartAutoGenerator:
     async def generate_titles_for_category(
         self,
         category: str,
-        count: int
+        count: int,
+        batch_size: int = 20
     ) -> List[str]:
         """
-        为特定类别生成标题
-        
+        为特定类别生成标题（分批生成以提高多样性）
+
         Args:
             category: 类别名称
             count: 生成数量
-            
+            batch_size: 每批生成数量
+
         Returns:
             生成的标题列表
         """
         cat_info = self.CATEGORY_INFO[category]
-        
-        prompt = f"""请生成{count}个{category}类别的真实浏览器标签页标题。
+        all_titles = []
+
+        # 分批生成，每批使用不同的temperature和提示词变化
+        batches = (count + batch_size - 1) // batch_size
+
+        for batch_idx in range(batches):
+            batch_count = min(batch_size, count - len(all_titles))
+            if batch_count <= 0:
+                break
+
+            # 动态调整temperature以增加多样性
+            temperature = 0.9 + (batch_idx * 0.1)
+            temperature = min(temperature, 1.5)
+
+            # 添加批次特定的提示词变化
+            focus_areas = [
+                "专注于具体的产品、服务或内容名称",
+                "专注于用户操作场景（搜索、浏览、购买等）",
+                "专注于不同的子领域和细分市场",
+                "专注于不同的网站类型和平台"
+            ]
+            focus = focus_areas[batch_idx % len(focus_areas)]
+
+            prompt = f"""请生成{batch_count}个{category}类别的真实浏览器标签页标题。
 
 类别说明: {cat_info['description']}
 
 包括但不限于:
 {chr(10).join('- ' + ex for ex in cat_info['examples'])}
 
+本批次重点: {focus}
+
 要求:
-1. 标题要真实、自然，像真实用户浏览器中的标签页
+1. 标题要真实、自然、具体，像真实用户浏览器中的标签页
 2. 同时包含中文和英文网站（各占一半）
 3. 标题格式多样化：
-   - 网站名称 + 页面描述
-   - 具体内容标题
-   - 产品/服务名称
-4. 避免重复和相似的标题
-5. 标题长度适中（10-80字符）
+   - 网站名称 + 具体页面/内容
+   - 详细的内容标题（包含数字、日期、版本号等）
+   - 产品/服务的具体型号或名称
+   - 包含动作词（如：如何、教程、指南、评测等）
+4. 每个标题都要独特，避免模板化
+5. 标题长度适中（15-80字符）
+6. 包含具体细节（如：版本号、日期、作者、系列名等）
 
 请以JSON格式返回：
 {{
@@ -215,7 +276,34 @@ class SmartAutoGenerator:
 }}
 
 只返回JSON，不要有其他文字。"""
-        
+
+            titles = await self._call_api_for_titles(prompt, temperature)
+
+            # 去重过滤
+            unique_titles = []
+            for title in titles:
+                if not self._is_duplicate(title):
+                    unique_titles.append(title)
+                    self._add_title(title)
+                else:
+                    logger.debug(f"跳过重复标题: {title}")
+
+            all_titles.extend(unique_titles)
+            logger.info(f"✓ {category} 批次{batch_idx+1}/{batches}: 生成 {len(unique_titles)}/{len(titles)} 个唯一标题")
+
+            # 避免速率限制
+            if batch_idx < batches - 1:
+                await asyncio.sleep(1)
+
+        return all_titles
+
+    async def _call_api_for_titles(
+        self,
+        prompt: str,
+        temperature: float = 0.9
+    ) -> List[str]:
+        """调用API生成标题"""
+
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -228,7 +316,7 @@ class SmartAutoGenerator:
                     "messages": [
                         {"role": "user", "content": prompt}
                     ],
-                    "temperature": 0.9,
+                    "temperature": temperature,
                     "response_format": {"type": "json_object"}
                 }
                 
@@ -243,8 +331,6 @@ class SmartAutoGenerator:
                         content = result['choices'][0]['message']['content']
                         data = json.loads(content)
                         titles = data.get('titles', [])
-                        
-                        logger.info(f"✓ {category}: 生成 {len(titles)} 个标题")
                         return titles
                     else:
                         error_text = await response.text()
@@ -252,7 +338,7 @@ class SmartAutoGenerator:
                         return []
                         
         except Exception as e:
-            logger.error(f"生成{category}标题失败: {str(e)}")
+            logger.error(f"API调用失败: {str(e)}")
             return []
     
     async def execute_generation_plan(
@@ -269,14 +355,32 @@ class SmartAutoGenerator:
             执行结果统计
         """
         all_titles = []
-        
+        total_generated = 0  # 记录API生成的总数
+        total_duplicates = 0  # 记录被过滤的重复数
+
         # 为每个类别生成标题
         for category, count in plan.items():
             if count > 0:
                 logger.info(f"\n生成 {category} 类别的 {count} 个标题...")
-                titles = await self.generate_titles_for_category(category, count)
+                # 多生成20%以应对去重损失
+                target_count = int(count * 1.2)
+
+                # 记录生成前的标题数
+                before_count = len(self.existing_titles)
+                titles = await self.generate_titles_for_category(category, target_count)
+                after_count = len(self.existing_titles)
+
+                # 计算本批次的统计
+                batch_duplicates = target_count - len(titles)
+                total_generated += target_count
+                total_duplicates += batch_duplicates
+
+                # 只取需要的数量
+                titles = titles[:count]
                 all_titles.extend(titles)
                 
+                logger.info(f"实际获得 {len(titles)} 个唯一标题（过滤了 {batch_duplicates} 个重复）")
+
                 # 避免速率限制
                 await asyncio.sleep(2)
         
@@ -312,10 +416,17 @@ class SmartAutoGenerator:
             # 统计
             label_counts = Counter(r['label'] for r in formatted_results)
             
+            # 计算去重率（被过滤的重复数 / API生成的总数）
+            duplicate_rate = (total_duplicates / total_generated) if total_generated > 0 else 0
+
             logger.info("\n" + "="*60)
             logger.info("生成完成")
             logger.info("="*60)
-            logger.info(f"成功: {len(formatted_results)}/{len(all_titles)}")
+            logger.info(f"API生成总数: {total_generated}")
+            logger.info(f"过滤重复数: {total_duplicates}")
+            logger.info(f"唯一标题数: {len(all_titles)}")
+            logger.info(f"重复率: {duplicate_rate:.2%}")
+            logger.info(f"分类成功: {len(formatted_results)}/{len(all_titles)}")
             logger.info("\n实际分类分布:")
             for label, count in sorted(label_counts.items()):
                 logger.info(f"  {label:15}: {count}")
