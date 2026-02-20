@@ -47,21 +47,85 @@ class TrainingDataGenerator:
         self.concurrent_requests = concurrent_requests
         self.semaphore = asyncio.Semaphore(concurrent_requests)
         
-        # 分类提示词
-        self.system_prompt = """你是一个专业的浏览器标签页分类助手。
-请根据标签页的标题和URL，将其分类到以下类别之一：
-- Shopping: 购物、电商相关
-- Learning: 学习、教育、文档相关
-- News: 新闻、资讯相关
-- Entertainment: 娱乐、视频、音乐、游戏相关
-- Social: 社交媒体、论坛、社区相关
-- Tools: 工具、实用程序相关
+        # 分类提示词（增强版）- 7大类别
+        self.system_prompt = """你是一个专业的浏览器标签页分类专家。请根据标签页标题，精确分类到以下7个类别之一。
 
-请以JSON格式返回结果，格式如下：
+## 类别定义（共7类）
+
+### News（新闻）
+- 新闻门户：人民网、新华网、CNN、BBC
+- 科技资讯：36氪、虎嗅、TechCrunch、The Verge
+- 财经新闻：华尔街日报、财新、Bloomberg
+- 地方新闻：各地日报、地方媒体
+- 特征词：新闻、资讯、报道、快讯、头条、最新、今日、突发
+
+### Tools（工具）
+- 在线工具：翻译、转换、压缩、格式化
+- 云存储：百度网盘、Google Drive、Dropbox
+- 办公协作：腾讯文档、Notion、飞书、石墨
+- 开发工具：GitHub、GitLab、Postman、VS Code
+- 效率工具：Trello、Todoist、印象笔记
+- 特征词：工具、在线、转换、编辑、文档、云盘、API、仓库、协作
+
+### Learning（学习）
+- 编程文档：Python Docs、MDN、API文档
+- 在线课程：Coursera、网易云课堂、慕课、Udemy
+- 技术社区：CSDN、Stack Overflow、掘金
+- 学术资源：论文、arXiv、知网、Google Scholar
+- 语言学习：多邻国、扇贝单词、Quizlet
+- 特征词：教程、文档、课程、学习、如何、指南、文献、论文
+
+### Shopping（购物）
+- 电商平台：淘宝、京东、亚马逊、拼多多
+- 品牌官网：Apple Store、Nike官网
+- 二手交易：闲鱼、转转、eBay
+- 垂直电商：唯品会、网易严选、小红书商城
+- 特征词：购买、购物车、商品、价格、促销、优惠券、订单、特卖
+
+### Social（社交）
+- 社交网络：微博、Twitter、Facebook、Instagram
+- 即时通讯：微信、QQ、Telegram、Discord
+- 论坛社区：知乎、Reddit、豆瓣、贴吧
+- 问答平台：Quora、SegmentFault、V2EX
+- 内容社区：小红书、即刻、少数派
+- 特征词：动态、评论、点赞、关注、话题、讨论、问答、社区、分享
+
+### Entertainment（娱乐）
+- 视频平台：B站、YouTube、抖音、爱奇艺
+- 音乐平台：网易云音乐、Spotify、QQ音乐
+- 游戏相关：Steam、原神、游戏攻略、TapTap
+- 影视剧集：豆瓣电影、Netflix、腾讯视频
+- 直播平台：斗鱼、虎牙、Twitch
+- 特征词：视频、音乐、游戏、电影、电视剧、番剧、直播、UP主、播放
+
+### Other（其他）
+- 系统设置：Windows设置、浏览器设置、扩展管理
+- 本地文件：文件管理器、本地HTML、PDF阅读
+- 帮助文档：软件帮助、用户手册、FAQ
+- 错误页面：404错误、500错误、网络错误
+- 其他：空白页、新标签页、书签管理、历史记录
+- 特征词：设置、配置、帮助、错误、本地、file://
+
+## 分类规则
+
+1. 优先根据核心功能分类，而非网站类型
+2. 如果标题包含多个特征，选择最主要的功能
+3. 技术文档和教程归类为Learning
+4. 开发工具（GitHub、VS Code等）归类为Tools
+5. 科技新闻归类为News，而非Learning
+6. 无法明确分类或系统相关的归为Other
+7. 必须从7个类别中选择一个：News, Tools, Learning, Shopping, Social, Entertainment, Other
+
+## 输出格式
+
+返回JSON格式，包含分类标签和置信度：
 {
-  "label": "分类标签",
-  "confidence": 0.95
+  "label": "类别名称",
+  "confidence": 0.95,
+  "reasoning": "简短的分类理由"
 }
+
+label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entertainment, Other
 
 只返回JSON，不要有其他文字。"""
 
@@ -93,10 +157,11 @@ class TrainingDataGenerator:
                     "model": self.model,
                     "messages": [
                         {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": f"请分类这个标签页标题：{input_text}"}
+                        {"role": "user", "content": f"请分析并分类这个标签页标题：\n\n标题：{input_text}\n\n请给出分类、置信度和理由。"}
                     ],
-                    "temperature": 0.3,
-                    "response_format": {"type": "json_object"}
+                    "temperature": 0.2,
+                    "response_format": {"type": "json_object"},
+                    "max_tokens": 200
                 }
                 
                 async with session.post(
@@ -110,7 +175,18 @@ class TrainingDataGenerator:
                         content = result['choices'][0]['message']['content']
                         classification = json.loads(content)
                         
-                        logger.info(f"✓ 分类成功: {input_text[:50]}... -> {classification['label']}")
+                        # 验证分类结果 - 7大类别
+                        valid_labels = ['News', 'Tools', 'Learning', 'Shopping', 'Social', 'Entertainment', 'Other']
+                        if classification['label'] not in valid_labels:
+                            logger.warning(f"无效分类标签: {classification['label']}, 标题: {input_text[:50]}")
+                            return None
+
+                        confidence = classification.get('confidence', 1.0)
+                        reasoning = classification.get('reasoning', '')
+                        logger.info(
+                            f"✓ 分类成功: {input_text[:40]}... -> {classification['label']} "
+                            f"(置信度: {confidence:.2f}) {reasoning[:30] if reasoning else ''}"
+                        )
                         return {
                             "input": input_text,
                             "label": classification['label'],
@@ -118,25 +194,40 @@ class TrainingDataGenerator:
                         }
                     else:
                         error_text = await response.text()
-                        logger.error(f"API错误 {response.status}: {error_text}")
-                        
+
+                        # 处理速率限制
+                        if response.status == 429:
+                            wait_time = 2 ** (retry_count + 1)
+                            logger.warning(f"触发速率限制，等待{wait_time}秒: {input_text[:40]}...")
+                            await asyncio.sleep(wait_time)
+                            return await self.classify_single(session, input_text, retry_count + 1)
+
+                        logger.error(f"API错误 {response.status}: {error_text[:200]}")
+
                         if retry_count < self.max_retries:
-                            logger.info(f"重试 {retry_count + 1}/{self.max_retries}: {input_text[:50]}...")
-                            await asyncio.sleep(2 ** retry_count)  # 指数退避
+                            logger.info(f"重试 {retry_count + 1}/{self.max_retries}: {input_text[:40]}...")
+                            await asyncio.sleep(2 ** retry_count)
                             return await self.classify_single(session, input_text, retry_count + 1)
                         
                         return None
                         
             except asyncio.TimeoutError:
-                logger.error(f"请求超时: {input_text[:50]}...")
+                logger.error(f"请求超时: {input_text[:40]}...")
                 if retry_count < self.max_retries:
                     logger.info(f"重试 {retry_count + 1}/{self.max_retries}")
                     await asyncio.sleep(2 ** retry_count)
                     return await self.classify_single(session, input_text, retry_count + 1)
                 return None
-                
+
+            except json.JSONDecodeError as je:
+                logger.error(f"JSON解析失败: {input_text[:40]}... - {str(je)}")
+                if retry_count < self.max_retries:
+                    await asyncio.sleep(2 ** retry_count)
+                    return await self.classify_single(session, input_text, retry_count + 1)
+                return None
+
             except Exception as e:
-                logger.error(f"分类失败: {input_text[:50]}... - {str(e)}")
+                logger.error(f"分类失败: {input_text[:40]}... - {str(e)}")
                 if retry_count < self.max_retries:
                     logger.info(f"重试 {retry_count + 1}/{self.max_retries}")
                     await asyncio.sleep(2 ** retry_count)
@@ -159,10 +250,24 @@ class TrainingDataGenerator:
             tasks = [self.classify_single(session, input_text) for input_text in inputs]
             results = await asyncio.gather(*tasks)
             
-        # 过滤掉失败的结果
+        # 过滤掉失败的结果并统计
         valid_results = [r for r in results if r is not None]
-        logger.info(f"分类完成: 成功 {len(valid_results)}/{len(inputs)}")
-        
+        failed_count = len(inputs) - len(valid_results)
+
+        # 统计各类别分布
+        if valid_results:
+            label_dist = {}
+            for r in valid_results:
+                label = r['label']
+                label_dist[label] = label_dist.get(label, 0) + 1
+
+            logger.info(f"\n分类完成: 成功 {len(valid_results)}/{len(inputs)}, 失败 {failed_count}")
+            logger.info("分类分布:")
+            for label, count in sorted(label_dist.items()):
+                logger.info(f"  {label}: {count}")
+        else:
+            logger.warning(f"分类失败: 0/{len(inputs)} 成功")
+
         return valid_results
 
     def append_to_training_data(
