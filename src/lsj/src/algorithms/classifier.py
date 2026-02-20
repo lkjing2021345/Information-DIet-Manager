@@ -3,17 +3,7 @@
 
 功能概述：
     对浏览记录的标题/URL进行自动分类，判断用户访问的是新闻、娱乐、学习等哪类内容
-
-主要技术：
-    - jieba: 中文分词
-    - sklearn: TF-IDF 特征提取 + 朴素贝叶斯分类器
-
-学习要点：
-    - 类的封装设计
-    - 规则匹配 vs 机器学习方法的选择
-    - 文本预处理流程
 """
-
 import jieba
 import pandas as pd
 import os
@@ -28,9 +18,7 @@ from pandas.core.interchange.dataframe_protocol import DataFrame
 # removed import
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+import numpy as np
 
 # logger 基本设置
 logs_folder_path = "../../logs"
@@ -101,8 +89,9 @@ class ContentClassifier:
         self.categories = list(self.rules.keys())
 
         # TODO: 初始化机器学习相关属性（初始为 None）
-        self.model = None       # 朴素贝叶斯模型
+        self.model = None       # 集成模型
         self.vectorizer = None  # TF-IDF 向量化器
+        self.char_vectorizer = None  # 字符级向量化器
 
         # 如果提供了模型路径，尝试加载模型
         if model_path:
@@ -234,6 +223,32 @@ class ContentClassifier:
             logger.error(f"域名提取失败: {url}, 错误: {e}")
             return ""
 
+    def _extract_features(self, text: str) -> np.ndarray:
+        """
+        提取多种特征
+
+        参数:
+            text: 待处理的文本
+
+        返回:
+            特征向量
+        """
+        # 词级特征
+        words = self._segment_text(text)
+        clean_words = self._remove_stopwords(words)
+        word_text = " ".join(clean_words)
+        word_vec = self.vectorizer.transform([word_text])
+
+        # 字符级特征（如果有）
+        if self.char_vectorizer:
+            char_vec = self.char_vectorizer.transform([text])
+            # 合并特征
+            from scipy.sparse import hstack
+            combined = hstack([word_vec, char_vec])
+            return combined
+
+        return word_vec
+
     def _predict_by_model(self, text: str) -> str:
         """
         使用机器学习模型进行预测
@@ -249,13 +264,8 @@ class ContentClassifier:
             return self.CATEGORY_OTHER
 
         try:
-            words = self._segment_text(text)
-            clean_words = self._remove_stopwords(words)
-            processed_text = "".join(clean_words)
-
-            text_vec = self.vectorizer.transform([processed_text])
-
-            prediction = self.model.predict(text_vec)[0]
+            features = self._extract_features(text)
+            prediction = self.model.predict(features)[0]
             return prediction
 
         except Exception as e:
@@ -298,152 +308,7 @@ class ContentClassifier:
         logger.debug("规则匹配失败，返回 None")
         return None
 
-    def train_model(self,
-                    texts: List[str],
-                    labels: List[str],
-                    test_size: float = 0.2,
-                    fixed_test_set: Optional[Tuple[List[str], List[str]]] = None,
-                    random_state: int = 42,
-                    remove_duplicates: bool = True) -> Dict[str, Union[float, int, str]]:
-        """
-        训练朴素贝叶斯分类器
 
-        参数:
-            texts: 训练文本列表
-            labels: 对应的标签列表
-            test_size: 测试集比例，默认 0.2
-            fixed_test_set: 固定测试集 (texts, labels)，用于稳定评估
-            random_state: 随机种子
-
-        返回:
-            Dict[str, float]: 包含准确率等评估指标的字典
-        """
-        logger.info("正在训练模型")
-
-        # 数据质量检查
-        logger.info(f"原始数据: {len(texts)} 条")
-
-        # 检查标签分布
-        from collections import Counter
-        label_dist = Counter(labels)
-        logger.info(f"标签分布: {dict(label_dist)}")
-
-        # 去重处理
-        if remove_duplicates:
-            unique_pairs = list(set(zip(texts, labels)))
-            if len(unique_pairs) < len(texts):
-                dup_count = len(texts) - len(unique_pairs)
-                dup_rate = dup_count / len(texts)
-                logger.warning(f"发现重复数据: {dup_count} 条 ({dup_rate:.2%})")
-                texts, labels = zip(*unique_pairs)
-                texts, labels = list(texts), list(labels)
-                logger.info(f"去重后数据量: {len(texts)} 条")
-        else:
-            logger.info("跳过去重处理")
-
-        # 数据预处理
-        processed_texts = []
-        valid_indices = []
-
-        for i, text in enumerate(texts):
-            if not text or not text.strip():
-                logger.warning(f"跳过空文本: index {i}")
-                continue
-
-            words = self._segment_text(text)
-            clean_words = self._remove_stopwords(words)
-
-            if not clean_words:
-                logger.warning(f"预处理后为空: '{text[:50]}...'")
-                continue
-
-            # 用空格连接，保持词边界
-            processed_texts.append(" ".join(clean_words))
-            valid_indices.append(i)
-
-        # 过滤对应的标签
-        valid_labels = [labels[i] for i in valid_indices]
-
-        logger.info(f"有效数据: {len(processed_texts)} 条")
-
-        if len(processed_texts) < 10:
-            logger.error("有效数据太少，无法训练")
-            return {"accuracy": 0.0, "error": "insufficient_data"}
-
-        # 使用固定测试集或划分新测试集
-        if fixed_test_set:
-            X_train, y_train = processed_texts, valid_labels
-            X_test_raw, y_test = fixed_test_set
-
-            # 预处理固定测试集
-            X_test = []
-            for text in X_test_raw:
-                words = self._segment_text(text)
-                clean_words = self._remove_stopwords(words)
-                X_test.append(" ".join(clean_words))
-
-            logger.info(f"使用固定测试集: {len(X_test)} 条")
-        else:
-            X_train, X_test, y_train, y_test = train_test_split(
-                processed_texts, valid_labels,
-                test_size=test_size,
-                random_state=random_state,
-                stratify=valid_labels  # 保持标签分布
-            )
-            logger.info(f"划分数据集 - 训练: {len(X_train)}, 测试: {len(X_test)}")
-
-        # 动态调整 TF-IDF 参数
-        vocab_size = min(len(processed_texts) * 5, 20000)
-        vocab_size = max(vocab_size, 1000)
-
-        self.vectorizer = TfidfVectorizer(
-            max_features=vocab_size,
-            min_df=2,  # 至少出现2次
-            max_df=0.95,  # 最多95%文档包含
-            ngram_range=(1, 2)  # 1-2gram
-        )
-
-        try:
-            X_train_vec = self.vectorizer.fit_transform(X_train)
-            X_test_vec = self.vectorizer.transform(X_test)
-
-            logger.info(f"特征维度: {X_train_vec.shape[1]}")
-
-            # 训练模型
-            self.model = MultinomialNB(alpha=0.1)  # 平滑参数
-            self.model.fit(X_train_vec, y_train)
-
-            # 评估
-            train_accuracy = self.model.score(X_train_vec, y_train)
-            test_accuracy = self.model.score(X_test_vec, y_test)
-
-            logger.info(f"训练准确率: {train_accuracy:.4f}")
-            logger.info(f"测试准确率: {test_accuracy:.4f}")
-
-            # 详细分类报告
-            y_pred = self.model.predict(X_test_vec)
-            report = classification_report(y_test, y_pred, output_dict=True)
-
-            # 打印每类指标
-            logger.info("\n各类别性能:")
-            for label in sorted(set(y_test)):
-                if label in report:
-                    metrics = report[label]
-                    logger.info(f"  {label:12}: P={metrics['precision']:.3f} R={metrics['recall']:.3f} F1={metrics['f1-score']:.3f} ({metrics['support']} samples)")
-
-            return {
-                "train_accuracy": train_accuracy,
-                "test_accuracy": test_accuracy,
-                "macro_f1": report['macro avg']['f1-score'],
-                "weighted_f1": report['weighted avg']['f1-score'],
-                "feature_count": X_train_vec.shape[1],
-                "train_samples": len(X_train),
-                "test_samples": len(X_test)
-            }
-
-        except Exception as e:
-            logger.error(f"训练失败: {e}")
-            return {"accuracy": 0.0, "error": str(e)}
 
     def predict(self, text: str, url: Optional[str] = None) -> str:
         """
@@ -529,6 +394,7 @@ class ContentClassifier:
             model_data = {
                 'model': self.model,
                 'vectorizer': self.vectorizer,
+                'char_vectorizer': self.char_vectorizer,
                 'categories': self.categories
             }
 
@@ -563,6 +429,7 @@ class ContentClassifier:
 
             self.model = model_data['model']
             self.vectorizer = model_data['vectorizer']
+            self.char_vectorizer = model_data.get('char_vectorizer', None)
             self.categories = model_data['categories']
 
             logger.info(f"✅ 模型已加载: {path}")
