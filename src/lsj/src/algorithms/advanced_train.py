@@ -1,10 +1,8 @@
-import sys
-import json
-import random
 import logging
 import os
+import random
+import sys
 from pathlib import Path
-from collections import Counter
 
 from scipy.sparse import hstack
 from sklearn.ensemble import VotingClassifier
@@ -17,7 +15,16 @@ from sklearn.naive_bayes import MultinomialNB
 
 sys.path.insert(0, str(Path(__file__).parent))
 from classifier import ContentClassifier
-from data_cleaning import step1_load_and_inspect, step6_remove_short_texts, step7_remove_duplicates
+from data_cleaning import (
+    step1_load_and_inspect,
+    step2_check_text_length,
+    step3_check_duplicates,
+    step4_check_label_distribution,
+    step5_check_label_consistency,
+    step6_remove_short_texts,
+    step7_remove_duplicates,
+    step8_balance_data
+)
 
 # 配置日志
 logs_folder_path = "../../logs"
@@ -36,62 +43,71 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_and_prepare_data(data_path, min_length=3):
+def load_and_prepare_data(data_path, min_length=3, balance_strategy='downsample'):
     """
-    加载并准备训练数据（使用 data_cleaning 模块的函数）
+    加载并准备训练数据（使用 data_cleaning 模块的完整清洗流程）
 
     Args:
         data_path: 数据文件路径
         min_length: 最小文本长度
+        balance_strategy: 数据平衡策略 ('downsample' 或 'upsample')
 
     Returns:
         清洗后的数据列表
     """
-    logger.info("开始加载和准备数据")
+    logger.info("="*60)
+    logger.info("开始完整数据清洗流程")
+    logger.info("="*60)
 
     try:
-        # 使用 data_cleaning 的函数加载数据
+        # 步骤1：加载并检查数据
         data = step1_load_and_inspect(data_path)
 
+        # 步骤2：检查文本长度
+        step2_check_text_length(data)
+
+        # 步骤3：检查重复数据
+        step3_check_duplicates(data)
+
+        # 步骤4：检查标签分布
+        step4_check_label_distribution(data)
+
+        # 步骤5：检查标签一致性
+        step5_check_label_consistency(data)
+
         # 转换数据格式
+        logger.info("转换数据格式...")
         formatted_data = []
         for item in data:
             text = item.get('input', '').strip()
             label = item.get('label', '')
             if text and label:
-                formatted_data.append({'text': text, 'label': label})
+                formatted_data.append({'input': text, 'label': label})
 
         logger.info(f"格式化后数据: {len(formatted_data)} 条")
 
-        # 使用 data_cleaning 的函数过滤短文本
-        filtered_data = []
-        for item in formatted_data:
-            if len(item['text']) >= min_length:
-                filtered_data.append(item)
+        # 步骤6：移除短文本
+        cleaned_data = step6_remove_short_texts(formatted_data, min_length=min_length)
 
-        logger.info(f"过滤短文本后: {len(filtered_data)} 条")
+        # 步骤7：去重
+        cleaned_data = step7_remove_duplicates(cleaned_data)
 
-        # 去重
-        seen_texts = {}
-        dedup_data = []
-        for item in filtered_data:
-            text = item['text']
-            if text not in seen_texts:
-                seen_texts[text] = True
-                dedup_data.append(item)
+        # 步骤8：平衡数据
+        cleaned_data = step8_balance_data(cleaned_data, strategy=balance_strategy)
 
-        logger.info(f"去重后: {len(dedup_data)} 条")
+        # 转换为训练格式
+        final_data = []
+        for item in cleaned_data:
+            final_data.append({
+                'text': item['input'],
+                'label': item['label']
+            })
 
-        # 检查标签分布
-        labels = [item['label'] for item in dedup_data]
-        label_counts = Counter(labels)
+        logger.info("="*60)
+        logger.info(f"数据清洗完成，最终数据量: {len(final_data)} 条")
+        logger.info("="*60)
 
-        logger.info("标签分布:")
-        for label, count in sorted(label_counts.items()):
-            percentage = count / len(dedup_data) * 100
-            logger.info(f"  {label}: {count} ({percentage:.1f}%)")
-
-        return dedup_data
+        return final_data
 
     except Exception as e:
         logger.exception("加载和准备数据时发生错误")
@@ -195,26 +211,41 @@ def train_with_cross_validation(train_data, n_folds=5):
         logger.info("预处理文本...")
         processed_texts = extract_advanced_features(texts, classifier)
 
-        # 特征提取配置
+        # 优化的特征提取配置
         feature_configs = [
             {
-                'name': '词级(1-4gram)',
+                'name': '词级(1-5gram)',
                 'vectorizer': TfidfVectorizer(
-                    max_features=35000,
+                    max_features=50000,  # 增加特征数
                     min_df=2,
-                    max_df=0.85,
-                    ngram_range=(1, 4),
-                    sublinear_tf=True
+                    max_df=0.80,  # 降低最大文档频率阈值
+                    ngram_range=(1, 5),  # 扩展到5-gram
+                    sublinear_tf=True,
+                    norm='l2',
+                    use_idf=True,
+                    smooth_idf=True
                 )
             },
             {
-                'name': '字符级(2-5gram)',
+                'name': '字符级(2-6gram)',
                 'vectorizer': TfidfVectorizer(
-                    max_features=20000,
+                    max_features=30000,  # 增加字符特征数
                     analyzer='char',
-                    ngram_range=(2, 5),
-                    min_df=3,
-                    max_df=0.9
+                    ngram_range=(2, 6),  # 扩展到6-gram
+                    min_df=2,  # 降低最小文档频率
+                    max_df=0.85,
+                    sublinear_tf=True,
+                    norm='l2'
+                )
+            },
+            {
+                'name': '词级(1-2gram)高频',
+                'vectorizer': TfidfVectorizer(
+                    max_features=15000,
+                    min_df=5,  # 只保留高频词
+                    max_df=0.70,
+                    ngram_range=(1, 2),
+                    sublinear_tf=True
                 )
             }
         ]
@@ -235,16 +266,17 @@ def train_with_cross_validation(train_data, n_folds=5):
         X_combined = hstack(feature_matrices)
         logger.info(f"总特征维度: {X_combined.shape[1]}")
 
-        # 模型配置
+        # 优化的模型配置
         models = {
-            'NB': MultinomialNB(alpha=0.03),
+            'NB': MultinomialNB(alpha=0.01),  # 降低平滑参数
             'LR': LogisticRegression(
-                max_iter=20000,  # 增加迭代次数
-                C=3.0,
-                solver='lbfgs',
+                max_iter=30000,  # 增加迭代次数确保收敛
+                C=5.0,  # 增加正则化强度
+                solver='saga',  # 使用更快的求解器
                 class_weight='balanced',
                 random_state=42,
-                verbose=0  # 减少输出
+                verbose=0,
+                # n_jobs=-1  # 使用所有CPU核心
             )
         }
 
@@ -275,11 +307,13 @@ def train_with_cross_validation(train_data, n_folds=5):
             weights=[1, 3]
         )
 
-        # 超参数网格
+        # 优化的超参数网格
         param_grid = {
-            'lr__C': [1.0, 2.0, 3.0, 5.0],
-            'lr__max_iter': [10000],  # 固定较大的迭代次数
-            'nb__alpha': [0.01, 0.03, 0.05, 0.1]
+            'lr__C': [3.0, 5.0, 7.0, 10.0],  # 更大的C值范围
+            'lr__max_iter': [30000],  # 固定更大的迭代次数
+            'lr__solver': ['saga', 'lbfgs'],  # 测试不同求解器
+            'nb__alpha': [0.001, 0.01, 0.03, 0.05],  # 更小的alpha值
+            'weights': [[1, 2], [1, 3], [1, 4], [1, 5]]  # 测试不同的投票权重
         }
 
         logger.info("使用 GridSearchCV 进行超参数搜索（可能较慢）...")
@@ -288,9 +322,10 @@ def train_with_cross_validation(train_data, n_folds=5):
             param_grid=param_grid,
             cv=cv,
             scoring='accuracy',
-            n_jobs=1,
+            # n_jobs=-1,  # 使用所有CPU核心加速
             refit=True,
-            verbose=2
+            verbose=2,
+            error_score='raise'  # 遇到错误时抛出异常
         )
 
         grid_search.fit(X_combined, labels)
@@ -303,6 +338,7 @@ def train_with_cross_validation(train_data, n_folds=5):
         classifier.model = best_ensemble
         classifier.vectorizer = vectorizers[0]
         classifier.char_vectorizer = vectorizers[1]
+        classifier.high_freq_vectorizer = vectorizers[2]  # 保存第三个向量化器
 
         # 训练集准确率
         train_pred = classifier.model.predict(X_combined)
@@ -338,10 +374,11 @@ def evaluate_on_test_set(classifier, test_data):
         # 预处理
         processed_texts = extract_advanced_features(test_texts, classifier)
 
-        # 提取特征
+        # 提取特征（使用所有三个向量化器）
         X_test_word = classifier.vectorizer.transform(processed_texts)
         X_test_char = classifier.char_vectorizer.transform(processed_texts)
-        X_test = hstack([X_test_word, X_test_char])
+        X_test_high_freq = classifier.high_freq_vectorizer.transform(processed_texts)
+        X_test = hstack([X_test_word, X_test_char, X_test_high_freq])
 
         # 预测
         predictions = classifier.model.predict(X_test)
@@ -403,9 +440,13 @@ def main():
         logger.info("高级模型训练 - 目标准确率 98%+")
         logger.info("=" * 60)
 
-        # 1. 加载和清洗数据
-        logger.info("步骤 1: 数据清洗")
-        clean_data = load_and_prepare_data(data_path, min_length=3)
+        # 1. 加载和清洗数据（使用完整清洗流程）
+        logger.info("步骤 1: 完整数据清洗")
+        clean_data = load_and_prepare_data(
+            data_path,
+            min_length=3,
+            balance_strategy='upsample'  # 使用下采样平衡数据
+        )
 
         # 2. 划分数据集
         logger.info("步骤 2: 划分数据集")
