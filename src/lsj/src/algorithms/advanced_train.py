@@ -239,11 +239,12 @@ def train_with_cross_validation(train_data, n_folds=5):
         models = {
             'NB': MultinomialNB(alpha=0.03),
             'LR': LogisticRegression(
-                max_iter=5000,
+                max_iter=20000,  # 增加迭代次数
                 C=3.0,
-                solver='saga',
+                solver='lbfgs',
                 class_weight='balanced',
-                random_state=42
+                random_state=42,
+                verbose=0  # 减少输出
             )
         }
 
@@ -277,6 +278,7 @@ def train_with_cross_validation(train_data, n_folds=5):
         # 超参数网格
         param_grid = {
             'lr__C': [1.0, 2.0, 3.0, 5.0],
+            'lr__max_iter': [10000],  # 固定较大的迭代次数
             'nb__alpha': [0.01, 0.03, 0.05, 0.1]
         }
 
