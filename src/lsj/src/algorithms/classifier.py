@@ -84,8 +84,9 @@ class ContentClassifier:
         self.categories = list(self.rules.keys())
 
         self.model = None       # 集成模型
-        self.vectorizer = None  # TF-IDF 向量化器
+        self.vectorizer = None  # TF-IDF 向量化器（词级）
         self.char_vectorizer = None  # 字符级向量化器
+        self.high_freq_vectorizer = None  # 高频词向量化器
 
         if model_path:
             self.load_model(model_path)
@@ -218,7 +219,7 @@ class ContentClassifier:
 
     def _extract_features(self, text: str) -> np.ndarray:
         """
-        提取多种特征
+        提取多种特征（必须与训练时保持一致）
 
         参数:
             text: 待处理的文本
@@ -226,21 +227,39 @@ class ContentClassifier:
         返回:
             特征向量
         """
-        # 词级特征
+        from scipy.sparse import hstack
+
+        # 预处理文本
         words = self._segment_text(text)
         clean_words = self._remove_stopwords(words)
         word_text = " ".join(clean_words)
-        word_vec = self.vectorizer.transform([word_text])
 
-        # 字符级特征（如果有）
+        # 提取所有特征
+        feature_list = []
+
+        # 1. 词级特征（1-5gram）
+        if self.vectorizer:
+            word_vec = self.vectorizer.transform([word_text])
+            feature_list.append(word_vec)
+
+        # 2. 字符级特征（2-6gram）
         if self.char_vectorizer:
             char_vec = self.char_vectorizer.transform([text])
-            # 合并特征
-            from scipy.sparse import hstack
-            combined = hstack([word_vec, char_vec])
-            return combined
+            feature_list.append(char_vec)
 
-        return word_vec
+        # 3. 高频词特征（1-2gram）
+        if self.high_freq_vectorizer:
+            high_freq_vec = self.high_freq_vectorizer.transform([word_text])
+            feature_list.append(high_freq_vec)
+
+        # 合并所有特征
+        if len(feature_list) > 1:
+            combined = hstack(feature_list)
+            return combined
+        elif len(feature_list) == 1:
+            return feature_list[0]
+        else:
+            raise ValueError("没有可用的向量化器")
 
     def _predict_by_model(self, text: str) -> str:
         """
@@ -455,14 +474,30 @@ class ContentClassifier:
                     word_text = " ".join(clean_words)
                     features_list.append(word_text)
 
-                word_vecs = self.vectorizer.transform(features_list)
+                # 提取所有特征
+                feature_matrices = []
 
+                # 词级特征
+                if self.vectorizer:
+                    word_vecs = self.vectorizer.transform(features_list)
+                    feature_matrices.append(word_vecs)
+
+                # 字符级特征
                 if self.char_vectorizer:
                     char_vecs = self.char_vectorizer.transform(texts)
-                    from scipy.sparse import hstack
-                    combined_features = hstack([word_vecs, char_vecs])
+                    feature_matrices.append(char_vecs)
+
+                # 高频词特征
+                if self.high_freq_vectorizer:
+                    high_freq_vecs = self.high_freq_vectorizer.transform(features_list)
+                    feature_matrices.append(high_freq_vecs)
+
+                # 合并特征
+                from scipy.sparse import hstack
+                if len(feature_matrices) > 1:
+                    combined_features = hstack(feature_matrices)
                 else:
-                    combined_features = word_vecs
+                    combined_features = feature_matrices[0]
 
                 predictions = self.model.predict(combined_features)
 
@@ -582,11 +617,12 @@ class ContentClassifier:
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
-            # 保存模型、向量化器和类别列表
+            # 保存模型、所有向量化器和类别列表
             model_data = {
                 'model': self.model,
                 'vectorizer': self.vectorizer,
                 'char_vectorizer': self.char_vectorizer,
+                'high_freq_vectorizer': self.high_freq_vectorizer,
                 'categories': self.categories
             }
 
@@ -622,6 +658,7 @@ class ContentClassifier:
             self.model = model_data['model']
             self.vectorizer = model_data['vectorizer']
             self.char_vectorizer = model_data.get('char_vectorizer', None)
+            self.high_freq_vectorizer = model_data.get('high_freq_vectorizer', None)
             self.categories = model_data['categories']
 
             logger.info(f"✅ 模型已加载: {path}")
