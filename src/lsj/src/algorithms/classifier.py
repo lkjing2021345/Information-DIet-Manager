@@ -4,21 +4,16 @@
 功能概述：
     对浏览记录的标题/URL进行自动分类，判断用户访问的是新闻、娱乐、学习等哪类内容
 """
-import jieba
-import pandas as pd
+import json
+import logging
 import os
 import pickle
-import logging
-import json
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Union, Any
+from typing import List, Dict, Optional, Tuple
 
-from pandas.core.interchange.dataframe_protocol import DataFrame
-# removed import
-# removed import
-
-from sklearn.feature_extraction.text import TfidfVectorizer
+import jieba
 import numpy as np
+import pandas as pd
 
 # logger 基本设置
 logs_folder_path = "../../logs"
@@ -88,16 +83,14 @@ class ContentClassifier:
 
         self.categories = list(self.rules.keys())
 
-        # TODO: 初始化机器学习相关属性（初始为 None）
         self.model = None       # 集成模型
         self.vectorizer = None  # TF-IDF 向量化器
         self.char_vectorizer = None  # 字符级向量化器
 
-        # 如果提供了模型路径，尝试加载模型
         if model_path:
             self.load_model(model_path)
 
-        logger.info("✅ ContentClassifier 初始化完成")
+        logger.info("ContentClassifier 初始化完成")
 
     # ==================== 私有方法（内部使用）====================
 
@@ -308,8 +301,6 @@ class ContentClassifier:
         logger.debug("规则匹配失败，返回 None")
         return None
 
-
-
     def predict(self, text: str, url: Optional[str] = None) -> str:
         """
         预测单条文本的类别（主入口方法）
@@ -334,42 +325,243 @@ class ContentClassifier:
 
         return self.CATEGORY_OTHER
 
-
-    def batch_predict(self, df: pd.DataFrame) -> pd.DataFrame:
+    def batch_predict(self, df: pd.DataFrame,
+                      use_parallel: bool = True,
+                      n_workers: int = None) -> pd.DataFrame:
         """
         批量预测 DataFrame 中的数据
+        优化策略：
+        1. 向量化规则匹配（快速处理大部分数据）
+        2. 多进程模型预测（处理规则未匹配的数据）
 
         参数:
             df: 包含 'title' 和 'url' 列的 DataFrame
+            use_parallel: 是否使用多进程（默认True）
+            n_workers: 进程数（默认为CPU核心数）
 
         返回:
             pd.DataFrame: 添加了 'category' 列的 DataFrame
         """
-        # TODO: 多线程优化
-        # TODO: 向量化操作
+        import time
 
         if df.empty:
             logger.warning("输入数据为空")
             return df
 
-        if df is None:
-            logger.warning("输出数据为 None")
-            return DataFrame
+        start_time = time.time()
+        logger.info(f"开始处理 {len(df)} 条数据...")
 
-        logger.info(f"正在处理 {len(df)} 条数据...")
+        logger.info("阶段1: 向量化规则匹配")
+        df = self._batch_predict_by_rules_vectorized(df)
 
-        result_df = df.copy()
-        result_df['category'] = result_df.apply(
-            lambda row: self.predict(
-                text=row.get('title', ''),
-                url=row.get('url', '')
-            ),
-            axis=1
-        )
+        # 统计规则匹配结果
+        rule_matched = df['category'].notna().sum()
+        rule_ratio = rule_matched / len(df) * 100
+        logger.info(f"  规则匹配: {rule_matched}/{len(df)} ({rule_ratio:.1f}%)")
 
-        logger.info("处理完成")
+        need_model = df['category'].isna()
+        need_model_count = need_model.sum()
 
-        return result_df
+        if need_model_count == 0:
+            logger.info("所有数据都通过规则匹配完成")
+            elapsed = time.time() - start_time
+            logger.info(f"处理完成，耗时: {elapsed:.2f}秒")
+            return df
+
+        logger.info(f"阶段2: 模型预测 ({need_model_count} 条)")
+
+        if use_parallel and need_model_count > 100:
+            df = self._batch_predict_by_model_parallel(df, need_model, n_workers)
+        else:
+            df = self._batch_predict_by_model_sequential(df, need_model)
+
+        df['category'] = df['category'].fillna(self.CATEGORY_OTHER)
+
+        elapsed = time.time() - start_time
+        logger.info(f"处理完成，耗时: {elapsed:.2f}秒")
+        logger.info(f"  规则匹配: {rule_matched} 条")
+        logger.info(f"  模型预测: {need_model_count} 条")
+        logger.info(f"  平均速度: {len(df)/elapsed:.0f} 条/秒")
+
+        return df
+
+    def _batch_predict_by_rules_vectorized(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        向量化的规则匹配
+        """
+        import re
+
+        df = df.copy()
+        df['category'] = None
+
+        df['title'] = df['title'].fillna('')
+        df['url'] = df['url'].fillna('')
+
+        df['title_lower'] = df['title'].str.lower()
+        df['url_lower'] = df['url'].str.lower()
+
+        for category, keywords in self.rules.items():
+            if not keywords:
+                continue
+
+            # 构建正则表达式
+            escaped_keywords = [re.escape(kw.lower()) for kw in keywords]
+            pattern = '|'.join(escaped_keywords)
+
+            try:
+                title_match = df['title_lower'].str.contains(
+                    pattern,
+                    case=False,
+                    na=False,
+                    regex=True
+                )
+
+                url_match = df['url_lower'].str.contains(
+                    pattern,
+                    case=False,
+                    na=False,
+                    regex=True
+                )
+
+                matched = title_match | url_match
+
+                need_update = matched & df['category'].isna()
+
+                df.loc[need_update, 'category'] = category
+
+            except Exception as e:
+                logger.warning(f"类别 {category} 的规则匹配失败: {e}")
+                continue
+
+        df = df.drop(columns=['title_lower', 'url_lower'])
+
+        return df
+
+    def _batch_predict_by_model_sequential(self, df: pd.DataFrame,
+                                           need_model: pd.Series) -> pd.DataFrame:
+        """
+        单进程模型预测
+        """
+        need_model_df = df[need_model]
+
+        texts = need_model_df['title'].tolist()
+
+        if self.model and self.vectorizer:
+            try:
+                features_list = []
+                for text in texts:
+                    words = self._segment_text(text)
+                    clean_words = self._remove_stopwords(words)
+                    word_text = " ".join(clean_words)
+                    features_list.append(word_text)
+
+                word_vecs = self.vectorizer.transform(features_list)
+
+                if self.char_vectorizer:
+                    char_vecs = self.char_vectorizer.transform(texts)
+                    from scipy.sparse import hstack
+                    combined_features = hstack([word_vecs, char_vecs])
+                else:
+                    combined_features = word_vecs
+
+                predictions = self.model.predict(combined_features)
+
+                df.loc[need_model, 'category'] = predictions
+
+            except Exception as e:
+                logger.error(f"批量模型预测失败: {e}")
+                for idx, text in zip(need_model_df.index, texts):
+                    try:
+                        category = self._predict_by_model(text)
+                        df.loc[idx, 'category'] = category
+                    except Exception as e2:
+                        logger.error(f"预测失败 (索引 {idx}): {e2}")
+                        df.loc[idx, 'category'] = self.CATEGORY_OTHER
+        else:
+            df.loc[need_model, 'category'] = self.CATEGORY_OTHER
+
+        return df
+
+    def _batch_predict_by_model_parallel(self, df: pd.DataFrame,
+                                         need_model: pd.Series,
+                                         n_workers: int = None) -> pd.DataFrame:
+        """
+        多进程模型预测（内部方法）
+        """
+        from concurrent.futures import ProcessPoolExecutor
+        import multiprocessing
+
+        if n_workers is None:
+            n_workers = min(multiprocessing.cpu_count(), 4)
+
+        need_model_df = df[need_model].copy().reset_index(drop=False)
+        original_indices = need_model_df['index'].tolist()
+
+        chunk_size = max(1, len(need_model_df) // n_workers)
+        chunks = []
+        for i in range(0, len(need_model_df), chunk_size):
+            chunk_data = need_model_df.iloc[i:i + chunk_size]
+            if len(chunk_data) > 0:
+                chunks.append(chunk_data)
+
+        logger.info(f"  使用 {n_workers} 个进程并行处理")
+
+        try:
+            with ProcessPoolExecutor(max_workers=n_workers) as executor:
+                futures = [
+                    executor.submit(self._predict_chunk_worker, chunk.to_dict('records'), chunk['index'].tolist())
+                    for chunk in chunks
+                ]
+
+                all_results = []
+                all_indices = []
+                for i, future in enumerate(futures):
+                    try:
+                        results, indices = future.result(timeout=300)
+                        all_results.extend(results)
+                        all_indices.extend(indices)
+                        logger.debug(f"  进程 {i+1}/{n_workers} 完成")
+                    except Exception as e:
+                        logger.error(f"  进程 {i+1} 失败: {e}")
+                        # 使用当前块的索引和默认类别
+                        all_results.extend([self.CATEGORY_OTHER] * len(chunks[i]))
+                        all_indices.extend(chunks[i].index.tolist())
+
+            # 使用索引来正确设置结果
+            for idx, category in zip(all_indices, all_results):
+                df.loc[idx, 'category'] = category
+
+        except Exception as e:
+            logger.error(f"多进程预测失败，降级为单进程: {e}")
+            df = self._batch_predict_by_model_sequential(df, need_model)
+
+        return df
+
+    def _predict_chunk_worker(self, chunk_records: List[Dict], indices: List[int]) -> Tuple[List[str], List[int]]:
+        """
+        工作函数：在子进程中运行
+
+        参数:
+            chunk_records: 记录列表（字典格式）
+            indices: 对应的索引列表
+
+        返回:
+            Tuple[List[str], List[int]]: (预测结果列表, 索引列表)
+        """
+        results = []
+
+        for record in chunk_records:
+            text = record.get('title', '')
+
+            try:
+                # 调用模型预测
+                category = self._predict_by_model(text)
+                results.append(category)
+            except Exception:
+                # 预测失败，标记为 Other
+                results.append(self.CATEGORY_OTHER)
+
+        return results, indices
 
     # ==================== 模型持久化方法 ====================
 
@@ -463,78 +655,12 @@ class ContentClassifier:
 
 # ==================== 测试代码 ====================
 if __name__ == "__main__":
-    """
-    单元测试：直接运行此文件来测试分类器功能
-    
-    测试步骤:
-        1. 实例化分类器
-        2. 测试单条文本预测
-        3. 测试批量预测
-        4. (可选) 测试模型训练和保存
-    """
+    classifier = ContentClassifier(
+        model_path="./models/advanced_model.pkl"
+    )
 
-    print("=" * 50)
-    print("ContentClassifier 单元测试")
-    print("=" * 50)
+    history_df = pd.read_json('../utils/output/history_data.jsonl', lines=True)
 
-    # 1. 实例化分类器
-    classifier = ContentClassifier()
+    result_df = classifier.batch_predict(history_df)
 
-    # 2. 测试分词功能
-    print("\n--- 测试分词 ---")
-    words = classifier._segment_text("我爱用Python写代码")
-    print(f"分词结果: {words}")
-    # 预期输出: ['我', '爱', '用', 'Python', '写', '代码']
-
-    # 3. 测试规则预测功能
-    print("\n--- 测试规则预测 ---")
-
-    # 测试1: URL 包含 "jd" (购物)
-    res1 = classifier.predict_by_rules("首页", "https://www.jd.com")
-    print(f"京东测试: {res1}")  # 预期输出: Shopping
-
-    # 测试2: 标题包含 "Python" (学习)
-    res2 = classifier.predict_by_rules("Python基础教程", "https://www.baidu.com")
-    print(f"Python测试: {res2}")  # 预期输出: Learning
-
-    # 测试3: 都不匹配
-    res3 = classifier.predict_by_rules("今天天气真好", "https://www.unknown.com")
-    print(f"未知测试: {res3}")  # 预期输出: None
-
-    print("\n--- 测试 predict 主入口 ---")
-    res = classifier.predict("Python入门教程", None)
-    print(f"预测结果: {res}")  # 预期: learning
-
-    res = classifier.predict("未知标题", "https://unknown.com")
-    print(f"预测结果: {res}")  # 预期: other
-
-    # 测试批量预测
-    print("\n--- 测试 batch_predict ---")
-    test_data = pd.DataFrame([
-        {"title": "GitHub - 开源项目", "url": "https://github.com"},
-        {"title": "京东购物", "url": "https://www.jd.com"},
-        {"title": "今日新闻", "url": "https://news.baidu.com"},
-    ])
-    result_df = classifier.batch_predict(test_data)
-    # print(result_df.columns.tolist())
-    print(result_df[['title', 'category']])
-
-    print("\n--- 测试域名提取 ---")
-    url1 = "https://www.bilibili.com/video/BV1xx"
-    domain1 = classifier._extract_domain(url1)
-    print(f"提取结果: {domain1}")  # 预期: bilibili.com
-
-    # 5. 测试分类统计
-    print("\n--- 测试分类统计 ---")
-    # 假设我们有一些已分类的数据
-    test_df = pd.DataFrame({
-        'title': ['Python教程', '淘宝购物', '微博热搜', '京东下单'],
-        'category': ['Learning', 'Shopping', 'Social', 'Shopping']
-    })
-    dist = classifier.get_category_distribution(test_df)
-    print("分类统计结果:")
-    print(dist)
-    # 预期输出:
-    # Shopping    2
-    # Learning    1
-    # Social      1
+    result_df.to_csv('../utils/output/result.csv', index=False)
