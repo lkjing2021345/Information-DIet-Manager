@@ -145,21 +145,42 @@ class SmartAutoGenerator:
     
     def __init__(
         self,
-        api_key: str,
-        base_url: str,
-        model: str,
+        models_config: List[Dict],
         training_data_path: str,
-        max_retries: int = 3,
-        concurrent_requests: int = 5
+        load_balance_strategy: str = 'round_robin'
     ):
-        self.api_key = api_key
-        self.base_url = base_url.rstrip('/')
-        self.model = model
+        self.models_config = models_config
         self.training_data_path = training_data_path
-        self.max_retries = max_retries
-        self.concurrent_requests = concurrent_requests
+        self.load_balance_strategy = load_balance_strategy
+        self.current_model_index = 0
         self.existing_titles: Set[str] = set()
         self._load_existing_titles()
+
+        logger.info(f"初始化多模型生成器，共 {len(models_config)} 个模型")
+        for i, model in enumerate(models_config):
+            logger.info(f"  模型{i+1}: {model['name']} ({model['model']})")
+
+    def _get_next_model(self) -> Dict:
+        """获取下一个模型配置（负载均衡）"""
+        if self.load_balance_strategy == 'round_robin':
+            # 轮询策略
+            model = self.models_config[self.current_model_index]
+            self.current_model_index = (self.current_model_index + 1) % len(self.models_config)
+            return model
+
+        elif self.load_balance_strategy == 'random':
+            # 随机策略
+            import random
+            return random.choice(self.models_config)
+
+        elif self.load_balance_strategy == 'weighted':
+            # 加权随机策略
+            import random
+            weights = [m.get('weight', 1.0) for m in self.models_config]
+            return random.choices(self.models_config, weights=weights)[0]
+
+        else:
+            return self.models_config[0]
 
     def _load_existing_titles(self):
         """加载现有标题用于去重"""
@@ -459,15 +480,27 @@ class SmartAutoGenerator:
         self,
         prompt: str,
         temperature: float = 0.9,
-        max_retries: int = 3
+        model_config: Dict = None
     ) -> List[str]:
         """调用API生成标题（带重试和降级策略）"""
+
+        # 如果没有指定模型，自动选择
+        if model_config is None:
+            model_config = self._get_next_model()
+
+        api_key = model_config['api_key']
+        base_url = model_config['base_url'].rstrip('/')
+        model = model_config['model']
+        max_retries = model_config.get('max_retries', 3)
+        model_name = model_config.get('name', 'unknown')
+
+        logger.debug(f"使用模型: {model_name} ({model})")
 
         for retry in range(max_retries):
             try:
                 async with aiohttp.ClientSession() as session:
                     headers = {
-                        "Authorization": f"Bearer {self.api_key}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     }
 
@@ -475,7 +508,7 @@ class SmartAutoGenerator:
                     adjusted_temp = temperature - (retry * 0.1)
 
                     payload = {
-                        "model": self.model,
+                        "model": model,
                         "messages": [
                             {"role": "user", "content": prompt}
                         ],
@@ -485,7 +518,7 @@ class SmartAutoGenerator:
                     }
 
                     async with session.post(
-                        f"{self.base_url}/chat/completions",
+                        f"{base_url}/chat/completions",
                         headers=headers,
                         json=payload,
                         timeout=aiohttp.ClientTimeout(total=90)
@@ -518,7 +551,7 @@ class SmartAutoGenerator:
                                     # 确保都是字符串
                                     titles = [str(t) for t in titles if t]
                                     if titles:
-                                        logger.info(f"成功解析 {len(titles)} 个标题")
+                                        logger.info(f"[{model_name}] 成功解析 {len(titles)} 个标题")
                                         return titles
 
                                 logger.warning(f"API返回格式异常，重试 {retry+1}/{max_retries}")
@@ -608,13 +641,9 @@ class SmartAutoGenerator:
         
         logger.info(f"\n总共生成了 {len(all_titles)} 个标题，开始分类...")
         
-        # 分类所有标题
+        # 分类所有标题（使用所有模型）
         classifier = TrainingDataGenerator(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            model=self.model,
-            max_retries=self.max_retries,
-            concurrent_requests=self.concurrent_requests
+            models_config=self.models_config
         )
         
         results = await classifier.classify_batch(all_titles)
@@ -745,14 +774,31 @@ async def main():
         logger.error(f"配置文件缺少必需字段: {', '.join(missing_fields)}")
         sys.exit(1)
 
+    # 检查是否启用多模型模式
+    enable_multi_model = config.get('enable_multi_model', False)
+
+    if enable_multi_model and 'models' in config:
+        # 多模型模式
+        models_config = config['models']
+        logger.info(f"启用多模型模式，共 {len(models_config)} 个模型")
+    else:
+        # 单模型模式（向后兼容）
+        models_config = [{
+            'name': 'default',
+            'api_key': config['api_key'],
+            'base_url': config['base_url'],
+            'model': config['model'],
+            'max_retries': config.get('max_retries', 3),
+            'concurrent_requests': config.get('concurrent_requests', 5),
+            'weight': 1.0
+        }]
+        logger.info("使用单模型模式")
+
     # 创建生成器
     generator = SmartAutoGenerator(
-        api_key=config['api_key'],
-        base_url=config['base_url'],
-        model=config['model'],
+        models_config=models_config,
         training_data_path=config['training_data_path'],
-        max_retries=config.get('max_retries', 3),
-        concurrent_requests=config.get('concurrent_requests', 5)
+        load_balance_strategy=config.get('load_balance_strategy', 'round_robin')
     )
     
     await generator.auto_generate(

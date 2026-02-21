@@ -24,9 +24,10 @@ class TrainingDataGenerator:
     
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-4o-mini",
+        models_config: List[Dict] = None,
+        api_key: str = None,
+        base_url: str = None,
+        model: str = None,
         max_retries: int = 3,
         concurrent_requests: int = 5
     ):
@@ -34,19 +35,42 @@ class TrainingDataGenerator:
         初始化生成器
         
         Args:
-            api_key: OpenAI API密钥
-            base_url: API基础URL
-            model: 使用的模型名称
+            models_config: 多模型配置列表（优先）
+            api_key: 单模型API密钥（向后兼容）
+            base_url: 单模型API基础URL
+            model: 单模型名称
             max_retries: 最大重试次数
             concurrent_requests: 并发请求数
         """
-        self.api_key = api_key
-        self.base_url = base_url.rstrip('/')
-        self.model = model
-        self.max_retries = max_retries
-        self.concurrent_requests = concurrent_requests
-        self.semaphore = asyncio.Semaphore(concurrent_requests)
-        
+        # 多模型模式
+        if models_config:
+            self.models_config = models_config
+            self.multi_model_mode = True
+            self.current_model_index = 0
+            # 计算总并发数
+            total_concurrent = sum(m.get('concurrent_requests', 5) for m in models_config)
+            self.semaphore = asyncio.Semaphore(total_concurrent)
+            logger.info(f"多模型模式：{len(models_config)} 个模型，总并发数: {total_concurrent}")
+        # 单模型模式（向后兼容）
+        else:
+            self.models_config = [{
+                'name': 'default',
+                'api_key': api_key,
+                'base_url': base_url.rstrip('/') if base_url else '',
+                'model': model,
+                'max_retries': max_retries,
+                'concurrent_requests': concurrent_requests
+            }]
+            self.multi_model_mode = False
+            self.current_model_index = 0
+            self.semaphore = asyncio.Semaphore(concurrent_requests)
+            logger.info("单模型模式")
+
+    def _get_next_model(self) -> Dict:
+        """轮询获取下一个模型配置"""
+        model = self.models_config[self.current_model_index]
+        self.current_model_index = (self.current_model_index + 1) % len(self.models_config)
+
         # 分类提示词（增强版）- 7大类别
         self.system_prompt = """你是一个专业的浏览器标签页分类专家。请根据标签页标题，精确分类到以下7个类别之一。
 
@@ -128,6 +152,7 @@ class TrainingDataGenerator:
 label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entertainment, Other
 
 只返回JSON，不要有其他文字。"""
+        return model
 
     async def classify_single(
         self,
@@ -147,14 +172,22 @@ label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entert
             分类结果字典，包含label和confidence
         """
         async with self.semaphore:
+            # 获取模型配置
+            model_config = self._get_next_model()
+            api_key = model_config['api_key']
+            base_url = model_config['base_url']
+            model = model_config['model']
+            model_name = model_config.get('name', 'unknown')
+            max_retries = model_config.get('max_retries', 3)
+
             try:
                 headers = {
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
                 
                 payload = {
-                    "model": self.model,
+                    "model": model,
                     "messages": [
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": f"请分析并分类这个标签页标题：\n\n标题：{input_text}\n\n请给出分类、置信度和理由。"}
@@ -165,7 +198,7 @@ label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entert
                 }
                 
                 async with session.post(
-                    f"{self.base_url}/chat/completions",
+                    f"{base_url}/chat/completions",
                     headers=headers,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=30)
@@ -184,8 +217,8 @@ label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entert
                         confidence = classification.get('confidence', 1.0)
                         reasoning = classification.get('reasoning', '')
                         logger.info(
-                            f"✓ 分类成功: {input_text[:40]}... -> {classification['label']} "
-                            f"(置信度: {confidence:.2f}) {reasoning[:30] if reasoning else ''}"
+                            f"✓ [{model_name}] 分类成功: {input_text[:40]}... -> {classification['label']} "
+                            f"(置信度: {confidence:.2f})"
                         )
                         return {
                             "input": input_text,
@@ -204,32 +237,32 @@ label必须是以下7个之一：News, Tools, Learning, Shopping, Social, Entert
 
                         logger.error(f"API错误 {response.status}: {error_text[:200]}")
 
-                        if retry_count < self.max_retries:
-                            logger.info(f"重试 {retry_count + 1}/{self.max_retries}: {input_text[:40]}...")
+                        if retry_count < max_retries:
+                            logger.info(f"重试 {retry_count + 1}/{max_retries}: {input_text[:40]}...")
                             await asyncio.sleep(2 ** retry_count)
                             return await self.classify_single(session, input_text, retry_count + 1)
                         
                         return None
                         
             except asyncio.TimeoutError:
-                logger.error(f"请求超时: {input_text[:40]}...")
-                if retry_count < self.max_retries:
-                    logger.info(f"重试 {retry_count + 1}/{self.max_retries}")
+                logger.error(f"[{model_name}] 请求超时: {input_text[:40]}...")
+                if retry_count < max_retries:
+                    logger.info(f"重试 {retry_count + 1}/{max_retries}")
                     await asyncio.sleep(2 ** retry_count)
                     return await self.classify_single(session, input_text, retry_count + 1)
                 return None
 
             except json.JSONDecodeError as je:
-                logger.error(f"JSON解析失败: {input_text[:40]}... - {str(je)}")
-                if retry_count < self.max_retries:
+                logger.error(f"[{model_name}] JSON解析失败: {input_text[:40]}... - {str(je)}")
+                if retry_count < max_retries:
                     await asyncio.sleep(2 ** retry_count)
                     return await self.classify_single(session, input_text, retry_count + 1)
                 return None
 
             except Exception as e:
-                logger.error(f"分类失败: {input_text[:40]}... - {str(e)}")
-                if retry_count < self.max_retries:
-                    logger.info(f"重试 {retry_count + 1}/{self.max_retries}")
+                logger.error(f"[{model_name}] 分类失败: {input_text[:40]}... - {str(e)}")
+                if retry_count < max_retries:
+                    logger.info(f"重试 {retry_count + 1}/{max_retries}")
                     await asyncio.sleep(2 ** retry_count)
                     return await self.classify_single(session, input_text, retry_count + 1)
                 return None
@@ -397,15 +430,25 @@ async def main():
             "网易云音乐 - 听见好时光",
         ]
 
-    # 创建生成器
-    generator = TrainingDataGenerator(
-        api_key=config['api_key'],
-        base_url=config['base_url'],
-        model=config['model'],
-        max_retries=config.get('max_retries', 3),
-        concurrent_requests=config.get('concurrent_requests', 5)
-    )
-    
+    # 检查是否启用多模型模式
+    enable_multi_model = config.get('enable_multi_model', False)
+
+    if enable_multi_model and 'models' in config:
+        # 多模型模式
+        models_config = config['models']
+        logger.info(f"启用多模型模式，共 {len(models_config)} 个模型")
+        generator = TrainingDataGenerator(models_config=models_config)
+    else:
+        # 单模型模式（向后兼容）
+        logger.info("使用单模型模式")
+        generator = TrainingDataGenerator(
+            api_key=config['api_key'],
+            base_url=config['base_url'],
+            model=config['model'],
+            max_retries=config.get('max_retries', 3),
+            concurrent_requests=config.get('concurrent_requests', 5)
+        )
+
     logger.info(f"开始分类 {len(sample_inputs)} 条标题...")
 
     # 批量分类

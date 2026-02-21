@@ -31,28 +31,47 @@ async def main():
         sys.exit(1)
 
     # 验证必需字段
-    required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
-    missing_fields = [field for field in required_fields if field not in config]
-    if missing_fields:
-        print(f"错误: 配置文件缺少必需字段: {', '.join(missing_fields)}")
-        sys.exit(1)
+    # required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
+    # missing_fields = [field for field in required_fields if field not in config]
+    # if missing_fields:
+    #     print(f"错误: 配置文件缺少必需字段: {', '.join(missing_fields)}")
+    #     sys.exit(1)
+
+    # 检查是否启用多模型模式
+    enable_multi_model = config.get('enable_multi_model', False)
+
+    if enable_multi_model and 'models' in config:
+        # 多模型模式
+        models_config = config['models']
+        print(f"✓ 启用多模型模式，共 {len(models_config)} 个模型")
+        for i, model in enumerate(models_config, 1):
+            print(f"  模型{i}: {model['name']} - {model['model']}")
+    else:
+        # 单模型模式（向后兼容）
+        models_config = [{
+            'name': 'default',
+            'api_key': config['api_key'],
+            'base_url': config['base_url'],
+            'model': config['model'],
+            'max_retries': config.get('max_retries', 3),
+            'concurrent_requests': config.get('concurrent_requests', 5),
+            'weight': 1.0
+        }]
+        print("✓ 使用单模型模式")
 
     # 创建生成器
     generator = SmartAutoGenerator(
-        api_key=config['api_key'],
-        base_url=config['base_url'],
-        model=config['model'],
+        models_config=models_config,
         training_data_path=config['training_data_path'],
-        max_retries=config.get('max_retries', 3),
-        concurrent_requests=config.get('concurrent_requests', 5)
+        load_balance_strategy=config.get('load_balance_strategy', 'round_robin')
     )
     
     # 智能批量生成配置
-    TARGET_TOTAL = 200000  # 目标总数
-    BATCH_SIZE_PER_CATEGORY = 20  # 每个类别每批生成数量
+    TARGET_TOTAL = 1000000  # 目标总数
+    BATCH_SIZE_PER_CATEGORY = 100  # 每个类别每批生成数量
     MAX_BATCHES = 100000  # 最大批次数
     BALANCE_THRESHOLD = 0.15  # 平衡阈值（15%）
-    COOLDOWN_SECONDS = 5  # 批次间冷却时间
+    COOLDOWN_SECONDS = 10  # 批次间冷却时间
 
     print(f"\n{'#'*60}")
     print(f"# 智能批量数据生成")
