@@ -199,15 +199,15 @@ class SentimentAnalyzer:
                 data = yaml.safe_load(sample)
                 if isinstance(data, (dict, list)):
                     return 'yaml'
-            except:
-                pass
+            except Exception as e:
+                logger.exception(f"读取 YAML 类型词典出现异常: {e}")
 
             try:
                 dialect = csv.Sniffer().sniff(sample)
                 if dialect.delimiter in [',', '\t', ';', '|']:
                     return 'csv'
-            except:
-                pass
+            except Exception as e:
+                logger.exception(f"读取 CSV 类型词典出现异常: {e}")
 
             return 'unknown'
 
@@ -228,7 +228,7 @@ class SentimentAnalyzer:
             Dict[str, Any]: 自定义词典
         """
 
-        FILE_TYPE = self._identify_file_format(file_path=path)
+        FILE_TYPE = self.identify_file_format(file_path=path)
 
         if FILE_TYPE == 'yaml':
             try:
@@ -305,10 +305,6 @@ class SentimentAnalyzer:
                 'pos_word': 积极词列表,
                 'neg_word': 消极词列表
             }
-            
-        提示:
-            - 使用 ct.sentiment(text, diction=self.diction)
-            - 如果有自定义词典，使用 ct.sentiment(text, diction=self.custom_dict)
         """
         if not text or pd.isna(text):
             return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': []}
@@ -317,7 +313,7 @@ class SentimentAnalyzer:
             if self.custom_dict:
                 result = ct.sentiment(str(text), diction=self.custom_dict)
             else:
-                result = ct.sentiment(str(text), diction=ct.read_yaml_dict('zh_common_DUTIR.yaml'))
+                result = ct.sentiment(str(text), diction=ct.read_yaml_dict(self.diction))
             return result
         except Exception as e:
             logger.exception(f"情感分析失败: {e}")
