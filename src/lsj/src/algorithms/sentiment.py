@@ -23,12 +23,15 @@
 import logging
 import os
 import pickle
+import magic
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
 import jieba
 import numpy as np
 import pandas as pd
+import yaml
+import csv
 
 # logger 基本设置
 logs_folder_path = "../../logs"
@@ -54,7 +57,6 @@ try:
 except ImportError:
     CNTEXT_AVAILABLE = False
     logger.warning('cntext 未安装，请运行: pip install cntext')
-
 
 class SentimentAnalyzer:
     """
@@ -171,14 +173,11 @@ class SentimentAnalyzer:
         
         返回:
             List[str]: 可用词典名称列表
-            
-        提示:
-            使用 ct.get_dict_list() 获取
         """
         cntext_dict_lists = ct.get_dict_list()
         return cntext_dict_lists
-    
-    # ==================== 私有方法（内部使用）====================
+
+    @staticmethod
     def _identify_file_format(self, file_path: str) -> str:
         """
         识别文件格式
@@ -216,6 +215,8 @@ class SentimentAnalyzer:
             logger.error(f"识别文件格式失败: {e}")
             return 'unknown'
 
+    # ==================== 私有方法（内部使用）====================
+
     def _load_custom_dict(self, path: str) -> Dict[str, Any]:
         """
         加载自定义词典（补充 cntext）
@@ -225,10 +226,6 @@ class SentimentAnalyzer:
 
         返回:
             Dict[str, Any]: 自定义词典
-            
-        提示:
-            - 支持 YAML 格式：使用 ct.read_yaml_dict()
-            - 支持 CSV 格式：读取后转换为 {'pos': [...], 'neg': [...]} 格式
         """
 
         FILE_TYPE = self._identify_file_format(file_path=path)
