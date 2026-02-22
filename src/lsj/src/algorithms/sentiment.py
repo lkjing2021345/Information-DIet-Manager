@@ -107,16 +107,60 @@ class SentimentAnalyzer:
             custom_dict_path: 自定义词典文件路径（可选）
             model_path: 已训练模型的路径（可选）
         """
-        # TODO: 检查 cntext 是否可用
-        
-        # TODO: 保存词典名称
-        
-        # TODO: 加载自定义词典（如果提供）
-        
-        # TODO: 初始化可选的自定义模型（如果提供）
-        
-        # TODO: 记录初始化日志
-        pass
+        if not CNTEXT_AVAILABLE:
+            logger.error("没有安装 cntext 库，建议使用指令 pip install cntext 安装。否则"
+                        "将有很多功能无法使用")
+            raise ImportError("cntext is required but not installed. Run: pip install cntext")
+
+        self.diction = diction
+
+        if custom_dict_path is not None:
+            try:
+                self.custom_dict = self._load_custom_dict(custom_dict_path)
+            except OSError as e:
+                logger.error(f"自定义词典不存在，请检查路径: {e}")
+                self.custom_dict = None
+            except UnicodeError as e:
+                logger.error(f"自定义词典内容编码损坏: {e}")
+                self.custom_dict = None
+            except Exception as e:
+                logger.exception(f"加载自定义词典时发生异常: {e}")
+                self.custom_dict = None
+        else:
+            self.custom_dict = None
+
+        if model_path is not None:
+            try:
+                with open(model_path, 'rb') as f:
+                    data = pickle.load(f)
+
+                if isinstance(data, dict):
+                    self.model = data.get('model')
+                    self.vectorizer = data.get('vectorizer')
+                else:
+                    self.model = data
+                    self.vectorizer = None
+                    logger.warning("模型文件中没有 vectorizer，predict_by_model() 将无法使用")
+
+            except OSError as e:
+                logger.error(f"模型不存在，请检查路径: {e}")
+                self.model = None
+                self.vectorizer = None
+            except UnicodeError as e:
+                logger.error(f"模型内容编码损坏: {e}")
+                self.model = None
+                self.vectorizer = None
+            except Exception as e:
+                logger.exception(f"加载模型时发生异常: {e}")
+                self.model = None
+                self.vectorizer = None
+        else:
+            self.model = None
+            self.vectorizer = None
+
+        model_status = "已加载" if self.model is not None else "未加载"
+        custom_dict_status = "已加载" if self.custom_dict is not None else "未加载"
+        logger.info(f"初始化完成 - 词典: {diction}, 自定义词典: {custom_dict_status}, 模型: {model_status}")
     
     # ==================== 静态方法 ====================
     
