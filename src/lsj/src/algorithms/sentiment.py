@@ -1,5 +1,5 @@
 """
-情感分析模块（基于 cntext）
+情感分析模块（基于 cntext）- 开发骨架
 
 功能概述：
     使用 cntext 库对浏览记录进行多维度情感和心理分析
@@ -15,6 +15,10 @@
     
 安装 cntext：
     pip install cntext
+    
+参考文档：
+    - cntext GitHub: https://github.com/hidadeng/cntext
+    - 教程文档: sentiment_tutorial.md
 """
 import logging
 import os
@@ -25,13 +29,6 @@ from typing import List, Dict, Optional, Tuple, Any
 import jieba
 import numpy as np
 import pandas as pd
-
-# cntext 相关导入
-try:
-    import cntext as ct
-    CNTEXT_AVAILABLE = True
-except ImportError:
-    CNTEXT_AVAILABLE = False
 
 # logger 基本设置
 logs_folder_path = "../../logs"
@@ -49,8 +46,14 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-if not CNTEXT_AVAILABLE:
-    logger.warning("cntext 未安装，部分功能将不可用。请运行: pip install cntext")
+# cntext 相关导入
+try:
+    import cntext as ct
+    CNTEXT_AVAILABLE = True
+    logger.info(f'cntext 版本: {ct.__version__}')
+except ImportError:
+    CNTEXT_AVAILABLE = False
+    logger.warning('cntext 未安装，请运行: pip install cntext')
 
 
 class SentimentAnalyzer:
@@ -64,20 +67,13 @@ class SentimentAnalyzer:
         3. 心理特征分析：测量态度、认知、价值观等抽象构念
         4. 语义分析：主题提取、关键词、语义相似度
         5. 可选的自定义模型：支持用户训练的机器学习模型
-    
-    属性说明：
-        sentiment_dict: cntext 情感词典对象
-        emotion_dict: cntext 情绪词典对象
-        psychological_dict: 心理特征词典
-        model: 可选的自定义机器学习模型
-        vectorizer: 文本向量化器（用于自定义模型）
     """
     
     # ==================== 类常量 ====================
     # 基础情感类别
-    SENTIMENT_POSITIVE = "Positive"    # 积极
-    SENTIMENT_NEGATIVE = "Negative"    # 消极
-    SENTIMENT_NEUTRAL = "Neutral"      # 中性
+    SENTIMENT_POSITIVE = "Positive"
+    SENTIMENT_NEGATIVE = "Negative"
+    SENTIMENT_NEUTRAL = "Neutral"
     
     # 具体情绪类别（基于大连理工情感词典）
     EMOTION_JOY = "Joy"              # 喜悦 (乐)
@@ -89,64 +85,56 @@ class SentimentAnalyzer:
     EMOTION_GOOD = "Good"            # 好评
     
     # 心理维度
-    PSYCH_ATTITUDE = "Attitude"      # 态度
-    PSYCH_COGNITION = "Cognition"    # 认知
-    PSYCH_EMOTION = "Emotion"        # 情感
+    PSYCH_ATTITUDE = "Attitude"
+    PSYCH_COGNITION = "Cognition"
+    PSYCH_EMOTION = "Emotion"
     
     # ==================== 初始化方法 ====================
     
     def __init__(self,
-                 use_cntext: bool = True,
+                 diction: str = 'DUTIR',
                  custom_dict_path: Optional[str] = None,
                  model_path: Optional[str] = None):
         """
         初始化情感分析器
 
         参数:
-            use_cntext: 是否使用 cntext 库（推荐）
+            diction: 使用的词典名称
+                - 'DUTIR': 大连理工（推荐，七大类情绪）
+                - 'HowNet': 知网（正负面）
+                - 'NTUSD': 台湾大学（正负面）
+                - 'FinanceSenti': 金融领域
             custom_dict_path: 自定义词典文件路径（可选）
             model_path: 已训练模型的路径（可选）
         """
-        if not CNTEXT_AVAILABLE and use_cntext:
-            logger.error("cntext 未安装，请运行: pip install cntext")
-            raise ImportError("cntext is required but not installed")
+        # TODO: 检查 cntext 是否可用
         
-        self.use_cntext = use_cntext
-        
-        # TODO: 初始化 cntext 词典对象
-        self.sentiment_dict = None  # cntext.sentiment.Sentiment() 对象
-        self.emotion_dict = None    # cntext.emotion.Emotion() 对象
+        # TODO: 保存词典名称
         
         # TODO: 加载自定义词典（如果提供）
-        self.custom_dict = None
-        if custom_dict_path:
-            self.custom_dict = self._load_custom_dict(custom_dict_path)
         
-        # TODO: 初始化可选的自定义模型
-        self.model = None
-        self.vectorizer = None
-        if model_path:
-            self.load_model(model_path)
+        # TODO: 初始化可选的自定义模型（如果提供）
         
-        logger.info("SentimentAnalyzer 初始化完成")
+        # TODO: 记录初始化日志
+        pass
+    
+    # ==================== 静态方法 ====================
+    
+    @staticmethod
+    def get_available_dicts() -> List[str]:
+        """
+        获取 cntext 可用的内置词典列表
+        
+        返回:
+            List[str]: 可用词典名称列表
+            
+        提示:
+            使用 ct.get_dict_list() 获取
+        """
+        # TODO: 调用 cntext 获取词典列表
+        pass
     
     # ==================== 私有方法（内部使用）====================
-    
-    def _init_cntext_dicts(self) -> None:
-        """
-        初始化 cntext 内置词典
-        
-        cntext 提供多种内置词典：
-        - 大连理工情感词典（DUTIR）
-        - 知网情感词典（HowNet）
-        - 情绪词典
-        """
-        # TODO: 初始化 cntext 情感词典
-        # 示例：self.sentiment_dict = ct.sentiment.Sentiment()
-        
-        # TODO: 初始化 cntext 情绪词典
-        # 示例：self.emotion_dict = ct.emotion.Emotion()
-        pass
     
     def _load_custom_dict(self, path: str) -> Dict[str, Any]:
         """
@@ -157,10 +145,16 @@ class SentimentAnalyzer:
 
         返回:
             Dict[str, Any]: 自定义词典
+            
+        提示:
+            - 支持 YAML 格式：使用 ct.read_yaml_dict()
+            - 支持 CSV 格式：读取后转换为 {'pos': [...], 'neg': [...]} 格式
         """
-        # TODO: 从文件加载自定义词典
-        # 支持 CSV、JSON 等格式
-        # 格式示例：词语,情感分数,情绪类型
+        # TODO: 判断文件格式（.yaml/.yml 或 .csv）
+        
+        # TODO: 根据格式加载词典
+        
+        # TODO: 返回词典或 None（如果失败）
         pass
     
     def _segment_text(self, text: str) -> List[str]:
@@ -172,12 +166,22 @@ class SentimentAnalyzer:
 
         返回:
             List[str]: 分词结果
+            
+        提示:
+            - cntext 内部会自动分词，这个方法主要用于自定义模型
+            - 使用 jieba.lcut() 进行分词
+            - 过滤空白字符
         """
-        # TODO: 使用 jieba 进行分词
-        # cntext 内部也会自动分词，这个方法主要用于自定义处理
+        # TODO: 检查文本是否为空
+        
+        # TODO: 使用 jieba 分词
+        
+        # TODO: 过滤停用词和标点
+        
+        # TODO: 返回分词结果
         pass
     
-    def _calculate_sentiment_score_cntext(self, text: str) -> Dict[str, float]:
+    def _calculate_sentiment_score_cntext(self, text: str) -> Dict[str, Any]:
         """
         使用 cntext 计算情感分数
 
@@ -185,48 +189,85 @@ class SentimentAnalyzer:
             text: 待分析的文本
 
         返回:
-            Dict[str, float]: {
+            Dict[str, Any]: {
                 'pos': 积极词数量,
                 'neg': 消极词数量,
-                'pos_score': 积极分数,
-                'neg_score': 消极分数
+                'pos_word': 积极词列表,
+                'neg_word': 消极词列表
             }
+            
+        提示:
+            - 使用 ct.sentiment(text, diction=self.diction)
+            - 如果有自定义词典，使用 ct.sentiment(text, diction=self.custom_dict)
         """
-        # TODO: 使用 cntext 的情感分析功能
-        # 示例：sentiment_result = self.sentiment_dict.sentiment_count(text)
-        # cntext 会自动处理否定词和程度副词
+        # TODO: 检查文本是否为空
+        
+        # TODO: 调用 cntext 的 sentiment 函数
+        
+        # TODO: 返回结果（包含 pos, neg, pos_word, neg_word）
         pass
     
-    def _analyze_emotions_cntext(self, text: str) -> Dict[str, int]:
+    def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
         """
-        使用 cntext 分析具体情绪
+        使用 cntext 分析具体情绪（仅 DUTIR 词典支持）
 
         参数:
             text: 待分析的文本
 
         返回:
-            Dict[str, int]: 各情绪类型的词数统计
+            Dict[str, Any]: 各情绪类型的词数统计
+            
+        提示:
+            - 只有 DUTIR 词典支持细粒度情绪分析
+            - 使用 ct.sentiment(text, diction='DUTIR')
         """
-        # TODO: 使用 cntext 的情绪分析功能
-        # 示例：emotion_result = self.emotion_dict.emotion_count(text)
-        # 返回：喜、怒、哀、惧、恶、惊等情绪的统计
+        # TODO: 检查文本是否为空
+        
+        # TODO: 检查是否使用 DUTIR 词典
+        
+        # TODO: 调用 cntext 进行情绪分析
+        
+        # TODO: 返回情绪统计结果
         pass
     
-    def _score_to_sentiment(self, pos_score: float, neg_score: float, 
-                           threshold: float = 0.5) -> str:
+    def _score_to_sentiment(self, pos_count: int, neg_count: int, 
+                           threshold: float = 0.3) -> str:
         """
         将情感分数转换为情感类别
 
         参数:
-            pos_score: 积极分数
-            neg_score: 消极分数
+            pos_count: 积极词数量
+            neg_count: 消极词数量
             threshold: 判断阈值
 
         返回:
-            str: 情感类别
+            str: 情感类别（SENTIMENT_POSITIVE/NEGATIVE/NEUTRAL）
+            
+        提示:
+            - 计算极性：polarity = (pos - neg) / (pos + neg)
+            - 如果 polarity > threshold: 积极
+            - 如果 polarity < -threshold: 消极
+            - 否则: 中性
         """
-        # TODO: 根据积极和消极分数判断情感类别
-        # 计算净情感分数：polarity = (pos - neg) / (pos + neg + 1)
+        # TODO: 计算总词数
+        
+        # TODO: 处理总词数为 0 的情况
+        
+        # TODO: 计算极性分数
+        
+        # TODO: 根据阈值判断情感类别
+        
+        # TODO: 返回情感类别
+        pass
+    
+    def _empty_result(self) -> Dict[str, Any]:
+        """
+        返回空文本的默认结果
+        
+        返回:
+            Dict[str, Any]: 默认结果
+        """
+        # TODO: 返回默认的空结果字典
         pass
     
     # ==================== 核心公共方法 ====================
@@ -240,17 +281,33 @@ class SentimentAnalyzer:
 
         返回:
             Dict[str, Any]: {
-                'sentiment': 情感类别 (Positive/Negative/Neutral),
-                'sentiment_scores': {pos: 积极分数, neg: 消极分数},
-                'emotions': {Joy: 喜悦词数, Anger: 愤怒词数, ...},
-                'dominant_emotion': 主导情绪,
-                'polarity': 情感极性分数 (-1 到 1)
+                'sentiment': 情感类别,
+                'polarity': 情感极性分数 (-1 到 1),
+                'sentiment_scores': {pos: 积极词数, neg: 消极词数},
+                'emotions': 情绪分析结果,
+                'pos_words': 积极词列表,
+                'neg_words': 消极词列表
             }
+            
+        提示:
+            1. 调用 _calculate_sentiment_score_cntext() 获取基础分数
+            2. 调用 calculate_polarity() 计算极性
+            3. 调用 _score_to_sentiment() 确定类别
+            4. 如果使用 DUTIR，调用 _analyze_emotions_cntext() 分析情绪
         """
-        # TODO: 调用 cntext 情感分析
-        # TODO: 调用 cntext 情绪分析
+        # TODO: 检查文本是否为空
+        
+        # TODO: 调用 cntext 进行基础情感分析
+        
+        # TODO: 提取 pos_count, neg_count, pos_words, neg_words
+        
         # TODO: 计算情感极性
-        # TODO: 确定主导情绪
+        
+        # TODO: 确定情感类别
+        
+        # TODO: 如果使用 DUTIR，进行情绪分析
+        
+        # TODO: 构建并返回结果字典
         pass
     
     def predict_by_model(self, text: str) -> str:
@@ -262,14 +319,26 @@ class SentimentAnalyzer:
 
         返回:
             str: 情感类别
+            
+        提示:
+            - 检查模型和向量化器是否已加载
+            - 使用 self.vectorizer.transform() 向量化文本
+            - 使用 self.model.predict() 预测
         """
+        # TODO: 检查模型是否已加载
+        
+        # TODO: 检查文本是否为空
+        
         # TODO: 文本向量化
+        
         # TODO: 模型预测
+        
+        # TODO: 返回预测结果
         pass
     
     def predict(self, text: str, 
                include_emotions: bool = True,
-               include_psychological: bool = False,
+               include_words: bool = True,
                use_custom_model: bool = False) -> Dict[str, Any]:
         """
         综合预测情感（主入口方法）
@@ -277,32 +346,48 @@ class SentimentAnalyzer:
         参数:
             text: 待分析的文本
             include_emotions: 是否包含具体情绪分析
-            include_psychological: 是否包含心理特征分析
+            include_words: 是否包含匹配的词语列表
             use_custom_model: 是否使用自定义模型
 
         返回:
             Dict: {
                 'sentiment': 情感类别,
                 'polarity': 情感极性 (-1 到 1),
-                'sentiment_scores': {pos: 积极分数, neg: 消极分数},
-                'emotions': {Joy: 喜悦词数, ...},  # 如果 include_emotions=True
-                'dominant_emotion': 主导情绪,
-                'psychological': {...},  # 如果 include_psychological=True
-                'confidence': 置信度
+                'pos_count': 积极词数,
+                'neg_count': 消极词数,
+                'confidence': 置信度,
+                'pos_words': 积极词列表 (可选),
+                'neg_words': 消极词列表 (可选),
+                'emotions': 情绪分析结果 (可选)
             }
+            
+        提示:
+            1. 调用 predict_by_cntext() 获取基础结果
+            2. 计算置信度（基于情感词数量占比）
+            3. 如果启用自定义模型，调用 predict_by_model() 并综合判断
+            4. 根据参数决定是否包含词语列表和情绪分析
         """
+        # TODO: 检查文本是否为空
+        
         # TODO: 使用 cntext 进行基础情感分析
-        # TODO: 如果启用，进行情绪分析
-        # TODO: 如果启用，进行心理特征分析
-        # TODO: 如果启用，使用自定义模型
-        # TODO: 综合多种方法的结果
+        
+        # TODO: 提取情感、极性、词数等信息
+        
+        # TODO: 计算置信度
+        
+        # TODO: 如果启用自定义模型，进行综合判断
+        
+        # TODO: 构建结果字典
+        
+        # TODO: 根据参数添加可选信息（词语列表、情绪）
+        
+        # TODO: 返回完整结果
         pass
     
     def batch_predict(self, df: pd.DataFrame,
                      text_column: str = 'title',
-                     include_emotions: bool = True,
-                     include_psychological: bool = False,
-                     use_parallel: bool = True) -> pd.DataFrame:
+                     include_emotions: bool = False,
+                     batch_size: int = 1000) -> pd.DataFrame:
         """
         批量预测 DataFrame 中的情感
 
@@ -310,30 +395,39 @@ class SentimentAnalyzer:
             df: 输入数据
             text_column: 文本列名
             include_emotions: 是否包含情绪分析
-            include_psychological: 是否包含心理特征分析
-            use_parallel: 是否使用并行处理
+            batch_size: 批处理大小
 
         返回:
-            pd.DataFrame: 添加了以下列的 DataFrame:
-                - sentiment: 情感类别
-                - polarity: 情感极性
-                - pos_score: 积极分数
-                - neg_score: 消极分数
-                - dominant_emotion: 主导情绪（如果启用）
-                - emotion_joy, emotion_anger, ...: 各情绪词数（如果启用）
+            pd.DataFrame: 添加了情感分析列的 DataFrame
+            
+        提示:
+            - 分批处理避免内存溢出
+            - 对每条文本调用 predict()
+            - 将结果添加为新列：sentiment, polarity, pos_count, neg_count, confidence
         """
-        # TODO: 使用 cntext 批量处理
-        # TODO: cntext 支持 DataFrame 直接处理，性能优化
-        # TODO: 添加情感分析结果列
-        # TODO: 如果启用，添加情绪分析列
-        # TODO: 如果启用，添加心理特征列
+        # TODO: 检查文本列是否存在
+        
+        # TODO: 初始化结果列表
+        
+        # TODO: 分批处理数据
+        
+        # TODO: 对每条文本调用 predict()
+        
+        # TODO: 记录处理进度
+        
+        # TODO: 将结果添加到 DataFrame
+        
+        # TODO: 如果包含情绪分析，添加 emotions 列
+        
+        # TODO: 返回处理后的 DataFrame
         pass
     
     # ==================== 模型训练方法 ====================
     
     def train_model(self, train_df: pd.DataFrame,
                    text_column: str = 'text',
-                   label_column: str = 'sentiment'):
+                   label_column: str = 'sentiment',
+                   test_size: float = 0.2):
         """
         训练自定义情感分析模型（补充 cntext）
 
@@ -341,32 +435,79 @@ class SentimentAnalyzer:
             train_df: 训练数据
             text_column: 文本列名
             label_column: 标签列名
+            test_size: 测试集比例
+            
+        提示:
+            1. 使用 _segment_text() 对文本分词
+            2. 使用 TfidfVectorizer 提取特征
+            3. 使用 train_test_split 划分数据集
+            4. 使用 MultinomialNB 训练模型
+            5. 使用 classification_report 评估模型
         """
-        # TODO: 数据预处理
+        # TODO: 导入必要的 sklearn 模块
+        
+        # TODO: 数据预处理（分词）
+        
+        # TODO: 划分训练集和测试集
+        
         # TODO: 特征提取（TF-IDF）
-        # TODO: 模型训练（朴素贝叶斯/SVM/深度学习）
+        
+        # TODO: 模型训练（朴素贝叶斯）
+        
         # TODO: 模型评估
+        
+        # TODO: 记录训练结果
+        
+        # TODO: 返回准确率
         pass
     
     # ==================== 高级分析方法 ====================
     
-    def analyze_psychological_features(self, text: str) -> Dict[str, Any]:
+    def calculate_polarity(self, pos_count: int, neg_count: int) -> float:
         """
-        分析心理特征（基于 cntext）
+        计算情感极性分数
+        
+        参数:
+            pos_count: 积极词数量
+            neg_count: 消极词数量
+            
+        返回:
+            float: 极性分数，范围 [-1, 1]
+            
+        提示:
+            - 公式：(pos - neg) / (pos + neg)
+            - 处理分母为 0 的情况
+        """
+        # TODO: 计算总词数
+        
+        # TODO: 处理总词数为 0 的情况
+        
+        # TODO: 计算并返回极性
+        pass
+    
+    def analyze_readability(self, text: str) -> Dict[str, float]:
+        """
+        分析文本可读性
         
         参数:
             text: 待分析的文本
             
         返回:
-            Dict[str, Any]: 心理特征分析结果
+            可读性指标字典
+            
+        提示:
+            使用 ct.readability(text, lang='chinese')
         """
-        # TODO: 使用 cntext 的心理词典
-        # TODO: 分析态度、认知、价值观等维度
+        # TODO: 检查文本是否为空
+        
+        # TODO: 调用 cntext 的可读性分析
+        
+        # TODO: 返回可读性指标
         pass
     
     def extract_keywords(self, text: str, top_k: int = 10) -> List[Tuple[str, float]]:
         """
-        提取关键词（基于 cntext）
+        提取关键词（基于 TF-IDF）
         
         参数:
             text: 待分析的文本
@@ -374,14 +515,20 @@ class SentimentAnalyzer:
             
         返回:
             List[Tuple[str, float]]: [(关键词, 权重), ...]
+            
+        提示:
+            使用 jieba.analyse.extract_tags(text, topK=top_k, withWeight=True)
         """
-        # TODO: 使用 cntext 的关键词提取功能
-        # TODO: 支持 TF-IDF、TextRank 等方法
+        # TODO: 检查文本是否为空
+        
+        # TODO: 使用 jieba 提取关键词
+        
+        # TODO: 返回关键词列表
         pass
     
     def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
         """
-        计算两段文本的语义相似度（基于 cntext）
+        计算两段文本的余弦相似度
         
         参数:
             text1: 文本1
@@ -389,9 +536,15 @@ class SentimentAnalyzer:
             
         返回:
             float: 相似度分数 (0-1)
+            
+        提示:
+            使用 ct.cosine_sim(text1, text2, lang='chinese')
         """
-        # TODO: 使用 cntext 的语义相似度计算
-        # TODO: 基于词向量或语义投影
+        # TODO: 检查文本是否为空
+        
+        # TODO: 调用 cntext 计算相似度
+        
+        # TODO: 返回相似度分数
         pass
     
     # ==================== 模型持久化方法 ====================
@@ -402,8 +555,18 @@ class SentimentAnalyzer:
 
         参数:
             path: 模型保存路径
+            
+        提示:
+            - 使用 pickle 保存模型和向量化器
+            - 同时保存词典名称
         """
-        # TODO: 保存模型和向量化器
+        # TODO: 检查模型是否存在
+        
+        # TODO: 创建保存目录
+        
+        # TODO: 使用 pickle 保存模型、向量化器和词典名称
+        
+        # TODO: 记录保存日志
         pass
     
     def load_model(self, path: str) -> bool:
@@ -415,8 +578,17 @@ class SentimentAnalyzer:
 
         返回:
             bool: 是否加载成功
+            
+        提示:
+            使用 pickle 加载模型和向量化器
         """
-        # TODO: 加载模型和向量化器
+        # TODO: 使用 pickle 加载模型数据
+        
+        # TODO: 恢复模型、向量化器和词典名称
+        
+        # TODO: 记录加载日志
+        
+        # TODO: 返回加载结果
         pass
     
     # ==================== 统计分析方法 ====================
@@ -430,8 +602,15 @@ class SentimentAnalyzer:
 
         返回:
             pd.Series: 各情感类别的数量统计
+            
+        提示:
+            使用 df['sentiment'].value_counts()
         """
+        # TODO: 检查 sentiment 列是否存在
+        
         # TODO: 统计各情感类别的数量
+        
+        # TODO: 返回统计结果
         pass
     
     def get_emotion_distribution(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -443,9 +622,18 @@ class SentimentAnalyzer:
             
         返回:
             pd.DataFrame: 各情绪类型的统计
+            
+        提示:
+            - 展开 emotions 列中的字典
+            - 统计各情绪的总数
         """
-        # TODO: 统计各情绪类型的分布
-        # TODO: 可视化情绪分布
+        # TODO: 检查 emotions 列是否存在
+        
+        # TODO: 展开情绪字典
+        
+        # TODO: 统计各情绪类型的总数
+        
+        # TODO: 返回统计结果
         pass
     
     def analyze_sentiment_trend(self, df: pd.DataFrame,
@@ -461,10 +649,21 @@ class SentimentAnalyzer:
 
         返回:
             pd.DataFrame: 时间序列的情感统计
+            
+        提示:
+            - 使用 pd.Grouper 按时间分组
+            - 计算每个时间段的平均极性、标准差、数量
+            - 可选：计算移动平均
         """
-        # TODO: 按时间分组统计情感
-        # TODO: 计算情感变化趋势
-        # TODO: 计算移动平均
+        # TODO: 检查必要的列是否存在
+        
+        # TODO: 确保时间列是 datetime 类型
+        
+        # TODO: 按时间分组统计
+        
+        # TODO: 计算移动平均（可选）
+        
+        # TODO: 返回趋势数据
         pass
     
     def generate_sentiment_report(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -476,19 +675,83 @@ class SentimentAnalyzer:
             
         返回:
             Dict[str, Any]: 综合报告
+            
+        提示:
+            包含：情感分布、极性统计、情绪分布、置信度统计、总体统计
         """
+        # TODO: 初始化报告字典
+        
         # TODO: 统计整体情感分布
-        # TODO: 分析情感趋势
-        # TODO: 识别情感异常点
-        # TODO: 生成可视化图表
+        
+        # TODO: 统计情感极性（均值、标准差、最小值、最大值）
+        
+        # TODO: 统计情绪分布（如果有）
+        
+        # TODO: 统计置信度
+        
+        # TODO: 添加总体统计信息
+        
+        # TODO: 返回完整报告
         pass
 
 
 # ==================== 测试代码 ====================
+def test_basic_sentiment():
+    """测试基础情感分析"""
+    # TODO: 初始化分析器
+    
+    # TODO: 准备测试文本
+    
+    # TODO: 对每条文本进行分析
+    
+    # TODO: 打印结果
+    pass
+
+
+def test_batch_prediction():
+    """测试批量预测"""
+    # TODO: 初始化分析器
+    
+    # TODO: 创建测试 DataFrame
+    
+    # TODO: 批量分析
+    
+    # TODO: 打印结果和统计
+    pass
+
+
+def test_advanced_features():
+    """测试高级功能"""
+    # TODO: 初始化分析器
+    
+    # TODO: 测试关键词提取
+    
+    # TODO: 测试可读性分析
+    
+    # TODO: 测试语义相似度
+    pass
+
+
+def test_cntext_dicts():
+    """测试 cntext 内置词典"""
+    # TODO: 显示可用词典
+    
+    # TODO: 测试不同词典的效果
+    pass
+
+
+def test_custom_dict():
+    """测试自定义词典"""
+    # TODO: 创建自定义词典
+    
+    # TODO: 使用自定义词典进行分析
+    pass
+
+
 if __name__ == "__main__":
-    # TODO: 测试情感分析器
-    # 示例：
-    # analyzer = SentimentAnalyzer()
-    # result = analyzer.predict("今天天气真好，心情很愉快！")
-    # print(result)
+    # TODO: 检查 cntext 是否可用
+    
+    # TODO: 显示 cntext 版本
+    
+    # TODO: 运行所有测试
     pass
