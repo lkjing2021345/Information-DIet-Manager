@@ -179,7 +179,43 @@ class SentimentAnalyzer:
         return cntext_dict_lists
     
     # ==================== 私有方法（内部使用）====================
-    
+    def _identify_file_format(self, file_path: str) -> str:
+        """
+        识别文件格式
+
+        返回:
+            'yaml', 'csv', 或 'unknown'
+        """
+        try:
+            ext = Path(file_path).suffix.lower()
+            if ext in ['.yaml', '.yml']:
+                return 'yaml'
+            elif ext in ['.csv', '.tsv']:
+                return 'csv'
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                sample = f.read(2048)
+
+            try:
+                data = yaml.safe_load(sample)
+                if isinstance(data, (dict, list)):
+                    return 'yaml'
+            except:
+                pass
+
+            try:
+                dialect = csv.Sniffer().sniff(sample)
+                if dialect.delimiter in [',', '\t', ';', '|']:
+                    return 'csv'
+            except:
+                pass
+
+            return 'unknown'
+
+        except Exception as e:
+            logger.error(f"识别文件格式失败: {e}")
+            return 'unknown'
+
     def _load_custom_dict(self, path: str) -> Dict[str, Any]:
         """
         加载自定义词典（补充 cntext）
