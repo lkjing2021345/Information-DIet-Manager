@@ -94,7 +94,7 @@ class SentimentAnalyzer:
     # ==================== 初始化方法 ====================
     
     def __init__(self,
-                 diction: str = 'DUTIR',
+                 diction: str = 'zh_common_DUTIR.yaml',
                  custom_dict_path: Optional[str] = None,
                  model_path: Optional[str] = None):
         """
