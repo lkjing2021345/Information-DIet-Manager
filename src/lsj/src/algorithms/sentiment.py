@@ -178,7 +178,7 @@ class SentimentAnalyzer:
         return cntext_dict_lists
 
     @staticmethod
-    def _identify_file_format(self, file_path: str) -> str:
+    def identify_file_format(file_path: str) -> str:
         """
         识别文件格式
 
