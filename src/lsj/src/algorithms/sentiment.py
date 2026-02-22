@@ -588,12 +588,10 @@ class SentimentAnalyzer:
             - 公式：(pos - neg) / (pos + neg)
             - 处理分母为 0 的情况
         """
-        # TODO: 计算总词数
-        
-        # TODO: 处理总词数为 0 的情况
-        
-        # TODO: 计算并返回极性
-        pass
+        total_count = pos_count + neg_count
+        if total_count == 0:
+            return 0.0
+        return (pos_count - neg_count) / total_count
     
     def analyze_readability(self, text: str) -> Dict[str, float]:
         """
