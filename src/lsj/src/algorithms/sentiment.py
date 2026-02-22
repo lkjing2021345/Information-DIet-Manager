@@ -230,12 +230,45 @@ class SentimentAnalyzer:
             - 支持 YAML 格式：使用 ct.read_yaml_dict()
             - 支持 CSV 格式：读取后转换为 {'pos': [...], 'neg': [...]} 格式
         """
-        # TODO: 判断文件格式（.yaml/.yml 或 .csv）
-        
-        # TODO: 根据格式加载词典
-        
-        # TODO: 返回词典或 None（如果失败）
-        pass
+
+        FILE_TYPE = self._identify_file_format(file_path=path)
+
+        if FILE_TYPE == 'yaml':
+            try:
+                yaml_dict = ct.read_yaml_dict(path)
+                logger.info(f"成功加载 YAML 词典: {path}")
+                return yaml_dict
+            except OSError as e:
+                logger.error(f"YAML 词典不存在或者损坏: {e}")
+                return {}
+            except Exception as e:
+                logger.exception(f"出现未知异常，加载 YAML 词典失败: {e}")
+                return {}
+
+        elif FILE_TYPE == 'csv':
+            try:
+                df = pd.read_csv(path, encoding='utf-8', sep=None, engine='python')
+                if 'word' not in df.columns or 'sentiment' not in df.columns:
+                    logger.error(f"CSV 缺少必要的列 (word, sentiment)")
+                    return {}
+
+                custom_dict = {
+                    'pos': df[df['sentiment'].str.lower() == 'positive']['word'].tolist(),
+                    'neg': df[df['sentiment'].str.lower() == 'negative']['word'].tolist(),
+                }
+
+                logger.info(f"成功加载 CSV 词典: {len(custom_dict['pos'])} 积极词, {len(custom_dict['neg'])} 消极词")
+
+                return custom_dict
+            except OSError as e:
+                logger.error(f"CSV 词典不存在或者损坏: {e}")
+                return {}
+            except Exception as e:
+                logger.exception(f"出现未知异常，加载 CSV 词典失败: {e}")
+                return {}
+        else:
+            logger.error(f"不支持的文件格式: {path}")
+            return {}
     
     def _segment_text(self, text: str) -> List[str]:
         """
