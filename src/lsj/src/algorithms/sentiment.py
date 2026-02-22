@@ -252,8 +252,8 @@ class SentimentAnalyzer:
                 df['sentiment'] = df['sentiment'].fillna('').astype(str).str.strip().str.lower()
 
                 custom_dict = {
-                    'pos': df[df['sentiment'].str == 'positive']['word'].tolist(),
-                    'neg': df[df['sentiment'].str == 'negative']['word'].tolist(),
+                    'pos': df[df['sentiment'] == 'positive']['word'].dropna().astype(str).tolist(),
+                    'neg': df[df['sentiment'] == 'negative']['word'].dropna().astype(str).tolist(),
                 }
 
                 logger.info(f"成功加载 CSV 词典: {len(custom_dict['pos'])} 积极词, {len(custom_dict['neg'])} 消极词")
