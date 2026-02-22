@@ -310,12 +310,19 @@ class SentimentAnalyzer:
             - 使用 ct.sentiment(text, diction=self.diction)
             - 如果有自定义词典，使用 ct.sentiment(text, diction=self.custom_dict)
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 调用 cntext 的 sentiment 函数
-        
-        # TODO: 返回结果（包含 pos, neg, pos_word, neg_word）
-        pass
+        if not text or pd.isna(text):
+            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': []}
+
+        try:
+            if self.custom_dict:
+                result = ct.sentiment(str(text), diction=self.custom_dict)
+            else:
+                result = ct.sentiment(str(text), diction=ct.read_yaml_dict('zh_common_DUTIR.yaml'))
+            return result
+        except Exception as e:
+            logger.exception(f"情感分析失败: {e}")
+            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': []}
+
     
     def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
         """
