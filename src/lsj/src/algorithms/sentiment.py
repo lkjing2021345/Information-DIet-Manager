@@ -175,8 +175,8 @@ class SentimentAnalyzer:
         提示:
             使用 ct.get_dict_list() 获取
         """
-        # TODO: 调用 cntext 获取词典列表
-        pass
+        cntext_dict_lists = ct.get_dict_list()
+        return cntext_dict_lists
     
     # ==================== 私有方法（内部使用）====================
     
