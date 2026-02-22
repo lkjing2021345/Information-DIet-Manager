@@ -59,9 +59,10 @@ logs/
 *.sqlite3
 
 # Data files (uncomment if needed)
-# *.csv
-# *.json
-# *.xml
+ *.csv
+ *.json
+ *.xml
+ *.jsonl
 
 # Model files
 *.model
@@ -74,3 +75,13 @@ logs/
 *.swp
 *.swo
 *~
+
+train_classifier.py
+功能开发计划.md
+开发计划.md
+
+src/lsj/src/utils/output/
+src/lsj/tests/files/
+src/lsj/src/utils/config.json
+
+.continue
