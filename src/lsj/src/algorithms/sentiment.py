@@ -374,8 +374,15 @@ class SentimentAnalyzer:
         返回:
             Dict[str, Any]: 默认结果
         """
-        # TODO: 返回默认的空结果字典
-        pass
+        return {
+            'sentiment': self.SENTIMENT_NEUTRAL,
+            'polarity': 0.0,
+            'pos_count': 0,
+            'neg_count': 0,
+            'confidence': 0.0,
+            'pos_words': [],
+            'neg_words': []
+        }
     
     # ==================== 核心公共方法 ====================
     
