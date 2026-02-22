@@ -1,5 +1,5 @@
 """
-情感分析模块（基于 cntext）- 开发骨架
+情感分析模块
 
 功能概述：
     使用 cntext 库对浏览记录进行多维度情感和心理分析
@@ -18,7 +18,6 @@
     
 参考文档：
     - cntext GitHub: https://github.com/hidadeng/cntext
-    - 教程文档: sentiment_tutorial.md
 """
 import logging
 import os
@@ -101,11 +100,16 @@ class SentimentAnalyzer:
         初始化情感分析器
 
         参数:
-            diction: 使用的词典名称
-                - 'DUTIR': 大连理工（推荐，七大类情绪）
-                - 'HowNet': 知网（正负面）
-                - 'NTUSD': 台湾大学（正负面）
-                - 'FinanceSenti': 金融领域
+            diction: 使用的词典
+
+                因此本参数推荐直接传入 cntext 的内置 yaml 文件名，例如：
+                - 'zh_common_DUTIR.yaml'
+                - 'zh_common_HowNet.yaml'
+                - 'zh_common_NTUSD.yaml'
+                - 'zh_common_FinanceSenti.yaml'
+
+                也支持你直接传入一个 Python dict（格式参考 cntext 文档中的 diction 示例）。
+
             custom_dict_path: 自定义词典文件路径（可选）
             model_path: 已训练模型的路径（可选）
         """
@@ -115,10 +119,38 @@ class SentimentAnalyzer:
             raise ImportError("cntext is required but not installed. Run: pip install cntext")
 
         self.diction = diction
+        self._cntext_dict_cache: Optional[Dict[str, Any]] = None
+
+        if isinstance(self.diction, dict):
+            loaded = self.diction
+        elif isinstance(self.diction, str):
+            try:
+                if self.diction.lower().endswith((".yaml", ".yml")):
+                    loaded = ct.read_yaml_dict(self.diction)
+                else:
+                    logger.warning(
+                        "diction 建议使用内置词典的 yaml 文件名（例如 zh_common_DUTIR.yaml）。"
+                        f"当前收到: {self.diction!r}"
+                    )
+                    loaded = None
+            except Exception as e:
+                logger.exception(f"读取 YAML 词典失败: {self.diction}, error={e}")
+                loaded = None
+        else:
+            loaded = None
+
+        if isinstance(loaded, dict):
+            self._cntext_dict_cache = loaded.get('Dictionary', loaded)
+        else:
+            self._cntext_dict_cache = None
 
         if custom_dict_path is not None:
             try:
                 self.custom_dict = self._load_custom_dict(custom_dict_path)
+
+                if isinstance(self.custom_dict, dict) and 'Dictionary' in self.custom_dict:
+                    self.custom_dict = self.custom_dict.get('Dictionary')
+
             except OSError as e:
                 logger.error(f"自定义词典不存在，请检查路径: {e}")
                 self.custom_dict = None
@@ -161,7 +193,7 @@ class SentimentAnalyzer:
             self.vectorizer = None
 
         model_status = "已加载" if self.model is not None else "未加载"
-        custom_dict_status = "已加载" if self.custom_dict is not None else "未加载"
+        custom_dict_status = "已加载" if self.custom_dict else "未加载"
         logger.info(f"初始化完成 - 词典: {diction}, 自定义词典: {custom_dict_status}, 模型: {model_status}")
     
     # ==================== 静态方法 ====================
@@ -295,31 +327,67 @@ class SentimentAnalyzer:
     
     def _calculate_sentiment_score_cntext(self, text: str) -> Dict[str, Any]:
         """
-        使用 cntext 计算情感分数
+        使用 cntext 计算情感相关统计
 
         参数:
             text: 待分析的文本
 
         返回:
             Dict[str, Any]: {
-                'pos': 积极词数量,
-                'neg': 消极词数量,
-                'pos_word': 积极词列表,
-                'neg_word': 消极词列表
+                'pos': int,              # 正向词数（若词典不提供则为 0）
+                'neg': int,              # 负向词数（若词典不提供则为 0）
+                'pos_word': List[str],   # cntext 文档的标准返回不一定包含，保留兼容
+                'neg_word': List[str],
+                'categories': Dict[str, int],  # 其它维度的计数（*_num）
+                'raw': Dict[str, Any],   # 原始返回，便于调试
             }
         """
         if not text or pd.isna(text):
-            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': []}
+            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
 
         try:
             if self.custom_dict:
-                result = ct.sentiment(str(text), diction=self.custom_dict)
+                raw = ct.sentiment(str(text), diction=self.custom_dict)
+            elif self._cntext_dict_cache is not None:
+                raw = ct.sentiment(str(text), diction=self._cntext_dict_cache)
             else:
-                result = ct.sentiment(str(text), diction=ct.read_yaml_dict(self.diction))
-            return result
+                logger.warning(
+                    "未能加载任何可用词典（custom_dict 和 _cntext_dict_cache 都为空），返回空结果。"
+                )
+                return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
+
+            # ---- 字段归一化：兼容不同版本/不同词典的返回格式 ----
+            pos = raw.get('pos', raw.get('pos_num', 0))
+            neg = raw.get('neg', raw.get('neg_num', 0))
+
+            pos_words = raw.get('pos_word', raw.get('pos_words', []))
+            neg_words = raw.get('neg_word', raw.get('neg_words', []))
+
+            # 收集其它 *_num 计数字段（排除通用统计字段）
+            exclude = {'stopword_num', 'word_num', 'sentence_num'}
+            categories = {
+                k: v for k, v in raw.items()
+                if isinstance(k, str) and k.endswith('_num') and k not in exclude
+            }
+
+            if pos == 0 and neg == 0 and categories:
+                logger.debug(
+                    "当前 diction 返回的结果未包含 pos/neg 维度，可能是多维度计数词典。"
+                    "你可以用 categories 做进一步的情绪/心理维度分析。"
+                )
+
+            return {
+                'pos': int(pos) if pd.notna(pos) else 0,
+                'neg': int(neg) if pd.notna(neg) else 0,
+                'pos_word': list(pos_words) if isinstance(pos_words, list) else [],
+                'neg_word': list(neg_words) if isinstance(neg_words, list) else [],
+                'categories': categories,
+                'raw': raw,
+            }
+
         except Exception as e:
             logger.exception(f"情感分析失败: {e}")
-            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': []}
+            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
 
     
     def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
@@ -333,8 +401,8 @@ class SentimentAnalyzer:
             Dict[str, Any]: 各情绪类型的词数统计
             
         提示:
-            - 只有 DUTIR 词典支持细粒度情绪分析
-            - 使用 ct.sentiment(text, diction='DUTIR')
+            - 只有 DUTIR 词典支持细粒度情绪分析（具体是否支持，取决于你加载的词典内容）
+            - 对于 cntext 内置词典，请使用 yaml 文件名：例如 'zh_common_DUTIR.yaml'
         """
         # TODO: 检查文本是否为空
         
