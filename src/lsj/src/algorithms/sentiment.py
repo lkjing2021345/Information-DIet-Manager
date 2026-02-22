@@ -339,7 +339,7 @@ class SentimentAnalyzer:
         
         # TODO: 返回情绪统计结果
         pass
-    
+
     def _score_to_sentiment(self, pos_count: int, neg_count: int, 
                            threshold: float = 0.3) -> str:
         """
@@ -352,23 +352,20 @@ class SentimentAnalyzer:
 
         返回:
             str: 情感类别（SENTIMENT_POSITIVE/NEGATIVE/NEUTRAL）
-            
-        提示:
-            - 计算极性：polarity = (pos - neg) / (pos + neg)
-            - 如果 polarity > threshold: 积极
-            - 如果 polarity < -threshold: 消极
-            - 否则: 中性
         """
-        # TODO: 计算总词数
-        
-        # TODO: 处理总词数为 0 的情况
-        
-        # TODO: 计算极性分数
-        
-        # TODO: 根据阈值判断情感类别
-        
-        # TODO: 返回情感类别
-        pass
+        total_count = pos_count + neg_count
+
+        if total_count == 0:
+            return self.SENTIMENT_NEUTRAL
+
+        polarity_score = (pos_count - neg_count) / total_count
+
+        if polarity_score > threshold:
+            return self.SENTIMENT_POSITIVE
+        elif polarity_score < -threshold:
+            return self.SENTIMENT_NEGATIVE
+        else:
+            return self.SENTIMENT_NEUTRAL
     
     def _empty_result(self) -> Dict[str, Any]:
         """
@@ -583,10 +580,6 @@ class SentimentAnalyzer:
             
         返回:
             float: 极性分数，范围 [-1, 1]
-            
-        提示:
-            - 公式：(pos - neg) / (pos + neg)
-            - 处理分母为 0 的情况
         """
         total_count = pos_count + neg_count
         if total_count == 0:
