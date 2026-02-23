@@ -310,20 +310,36 @@ class SentimentAnalyzer:
 
         返回:
             List[str]: 分词结果
-            
-        提示:
-            - cntext 内部会自动分词，这个方法主要用于自定义模型
-            - 使用 jieba.lcut() 进行分词
-            - 过滤空白字符
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 使用 jieba 分词
-        
-        # TODO: 过滤停用词和标点
-        
-        # TODO: 返回分词结果
-        pass
+        if text is None:
+            logger.error("传入文本为 None")
+            return []
+
+        try:
+            words = jieba.lcut(text)
+        except Exception as e:
+            logger.exception(f"出现异常，分词失败: {e}")
+            return []
+
+        def load_stopwords(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    stopwords = {line.strip() for line in f if line.strip()}
+                return stopwords
+            except OSError:
+                logger.error(f"停用词词典不存在: {path}")
+                return {}
+            except Exception as e:
+                logger.exception(f"出现未知错误: {e}")
+                return {}
+
+        rules_path = Path(__file__).parent.joinpath("rules")
+        stopwords_path = rules_path.joinpath("hit_stopwords.txt")
+        stopwords_set = load_stopwords(stopwords_path)
+
+        filtered_words = [word for word in words if word not in stopwords_set and len(word.strip()) > 0]
+
+        return filtered_words
     
     def _calculate_sentiment_score_cntext(self, text: str) -> Dict[str, Any]:
         """
