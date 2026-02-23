@@ -22,12 +22,10 @@
 import logging
 import os
 import pickle
-import magic
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
 import jieba
-import numpy as np
 import pandas as pd
 import yaml
 import csv
@@ -311,7 +309,7 @@ class SentimentAnalyzer:
         返回:
             List[str]: 分词结果
         """
-        if text is None:
+        if text is None or pd.isna(text) or str(text).strip() == "":
             logger.error("传入文本为 None")
             return []
 
@@ -358,7 +356,7 @@ class SentimentAnalyzer:
                 'raw': Dict[str, Any],   # 原始返回，便于调试
             }
         """
-        if not text or pd.isna(text):
+        if text is None or pd.isna(text) or str(text).strip() == "":
             return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
 
         try:
@@ -407,29 +405,97 @@ class SentimentAnalyzer:
 
     
     def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
-        """
-        使用 cntext 分析具体情绪（仅 DUTIR 词典支持）
+        """使用 cntext 分析具体情绪（仅“情绪类别型词典”支持；DUTIR 属于这一类）
+
+        核心思路（对应 cntext 官方文档 stats）：
+            - `ct.sentiment(text, diction=...)` 会对 diction 的每个“类别 key”分别计数，并返回 `xxx_num`
+            - 因此我们只要：
+                1) 确认当前 diction 的 key 像情绪类别（例如：乐/怒/哀/惧/恶/惊/好）
+                2) 调用 `ct.sentiment()`
+                3) 把返回的 `xxx_num` 映射为本项目统一的英文标签（Joy/Anger/...）
 
         参数:
-            text: 待分析的文本
+            text: 待分析文本
 
         返回:
-            Dict[str, Any]: 各情绪类型的词数统计
-            
-        提示:
-            - 只有 DUTIR 词典支持细粒度情绪分析（具体是否支持，取决于你加载的词典内容）
-            - 对于 cntext 内置词典，请使用 yaml 文件名：例如 'zh_common_DUTIR.yaml'
+            Dict[str, Any]: {"Joy": 1, "Anger": 0, ...}
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 检查是否使用 DUTIR 词典
-        
-        # TODO: 调用 cntext 进行情绪分析
-        
-        # TODO: 返回情绪统计结果
-        pass
+        if text is None or pd.isna(text) or str(text).strip() == "":
+            logger.error("传入文本为空")
+            return {}
 
-    def _score_to_sentiment(self, pos_count: int, neg_count: int, 
+        expected_emotion_keys = {
+            '乐', '怒', '哀', '惧', '恶', '惊', '好',
+            '喜', '愤', '悲', '恐', '厌', '惊讶',
+        }
+
+        def _looks_like_emotion_dict(d: Any) -> bool:
+            """判断一个 diction（Python dict）是否像“情绪类别型词典”。"""
+            if not isinstance(d, dict) or not d:
+                return False
+            return any((k in expected_emotion_keys) for k in d.keys())
+
+        diction_for_emotion: Optional[Dict[str, Any]] = None
+        if _looks_like_emotion_dict(self.custom_dict):
+            diction_for_emotion = self.custom_dict
+        elif _looks_like_emotion_dict(self._cntext_dict_cache):
+            diction_for_emotion = self._cntext_dict_cache
+        else:
+            logger.info(
+                "当前词典不包含情绪类别 key（如 乐/怒/哀/惧/恶/惊/好），跳过情绪分析。"
+            )
+            return {}
+
+        emotion_key_mapping = {
+            '乐': self.EMOTION_JOY,
+            '喜': self.EMOTION_JOY,
+            '怒': self.EMOTION_ANGER,
+            '愤': self.EMOTION_ANGER,
+            '哀': self.EMOTION_SADNESS,
+            '悲': self.EMOTION_SADNESS,
+            '惧': self.EMOTION_FEAR,
+            '恐': self.EMOTION_FEAR,
+            '恶': self.EMOTION_DISGUST,
+            '厌': self.EMOTION_DISGUST,
+            '惊': self.EMOTION_SURPRISE,
+            '惊讶': self.EMOTION_SURPRISE,
+            '好': self.EMOTION_GOOD,
+        }
+
+        try:
+            raw = ct.sentiment(str(text), diction=diction_for_emotion)
+
+            exclude = {'stopword_num', 'word_num', 'sentence_num'}
+
+            emotions: Dict[str, int] = {}
+            for key, value in raw.items():
+                if not (isinstance(key, str) and key.endswith('_num')):
+                    continue
+                if key in exclude:
+                    continue
+
+                category = key[:-4]
+
+                if category not in expected_emotion_keys:
+                    continue
+
+                mapped = emotion_key_mapping.get(category)
+                if mapped is None:
+                    logger.debug(f"发现未映射的情绪类别: {category}")
+                    continue
+
+                try:
+                    emotions[mapped] = emotions.get(mapped, 0) + int(value)
+                except Exception:
+                    continue
+
+            return emotions
+
+        except Exception as e:
+            logger.exception(f"情绪分析失败: {e}")
+            return {}
+
+    def _score_to_sentiment(self, pos_count: int, neg_count: int,
                            threshold: float = 0.3) -> str:
         """
         将情感分数转换为情感类别
@@ -513,7 +579,7 @@ class SentimentAnalyzer:
         # TODO: 构建并返回结果字典
         pass
     
-    def predict_by_model(self, text: str) -> str:
+    def predict_by_model(self, text: str) -> str | None:
         """
         基于自定义机器学习模型进行情感分析
 
@@ -529,7 +595,9 @@ class SentimentAnalyzer:
             - 使用 self.model.predict() 预测
         """
         # TODO: 检查模型是否已加载
-        
+        if self.model is None:
+            logger.error("模型未加载成功")
+            return None
         # TODO: 检查文本是否为空
         
         # TODO: 文本向量化
