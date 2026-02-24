@@ -783,12 +783,17 @@ class SentimentAnalyzer:
         提示:
             使用 ct.readability(text, lang='chinese')
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 调用 cntext 的可读性分析
-        
-        # TODO: 返回可读性指标
-        pass
+        if text is None or pd.isna(text) or str(text).strip() == '':
+            logger.error("文本为空，无法分析文本可读性")
+            return None
+
+        try:
+            readability_dict = ct.readability(text)
+            logger.debug(f"可读性分析完成: {readability_dict}")
+            return readability_dict
+        except Exception as e:
+            logger.exception(f"可读性分析失败: {e}")
+            return None
     
     def extract_keywords(self, text: str, top_k: int = 10) -> List[Tuple[str, float]]:
         """
