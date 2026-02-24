@@ -93,7 +93,8 @@ class SentimentAnalyzer:
     def __init__(self,
                  diction: str = 'zh_common_DUTIR.yaml',
                  custom_dict_path: Optional[str] = None,
-                 model_path: Optional[str] = None):
+                 model_path: Optional[str] = None,
+                 stopwords_path: Optional[str] = './rules/hit_stopwords.txt'):
         """
         初始化情感分析器
 
@@ -118,6 +119,7 @@ class SentimentAnalyzer:
 
         self.diction = diction
         self._cntext_dict_cache: Optional[Dict[str, Any]] = None
+        self.stopwords_path = stopwords_path
 
         if isinstance(self.diction, dict):
             loaded = self.diction
@@ -325,15 +327,13 @@ class SentimentAnalyzer:
                     stopwords = {line.strip() for line in f if line.strip()}
                 return stopwords
             except OSError:
-                logger.error(f"停用词词典不存在: {path}")
+                logger.warning(f"停用词词典不存在: {path}")
                 return {}
             except Exception as e:
                 logger.exception(f"出现未知错误: {e}")
                 return {}
 
-        rules_path = Path(__file__).parent.joinpath("rules")
-        stopwords_path = rules_path.joinpath("hit_stopwords.txt")
-        stopwords_set = load_stopwords(stopwords_path)
+        stopwords_set = load_stopwords(self.stopwords_path)
 
         filtered_words = [word for word in words if word not in stopwords_set and len(word.strip()) > 0]
 
@@ -406,13 +406,6 @@ class SentimentAnalyzer:
     
     def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
         """使用 cntext 分析具体情绪（仅“情绪类别型词典”支持；DUTIR 属于这一类）
-
-        核心思路（对应 cntext 官方文档 stats）：
-            - `ct.sentiment(text, diction=...)` 会对 diction 的每个“类别 key”分别计数，并返回 `xxx_num`
-            - 因此我们只要：
-                1) 确认当前 diction 的 key 像情绪类别（例如：乐/怒/哀/惧/恶/惊/好）
-                2) 调用 `ct.sentiment()`
-                3) 把返回的 `xxx_num` 映射为本项目统一的英文标签（Joy/Anger/...）
 
         参数:
             text: 待分析文本
@@ -745,6 +738,13 @@ class SentimentAnalyzer:
         返回:
             float: 极性分数，范围 [-1, 1]
         """
+        if pos_count < 0:
+            logger.error(f"积极词不能为负: {pos_count}")
+            return 0.0
+        if neg_count < 0:
+            logger.error(f"消极词不能为负: {neg_count}")
+            return 0.0
+
         total_count = pos_count + neg_count
         if total_count == 0:
             return 0.0
