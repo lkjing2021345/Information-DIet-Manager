@@ -770,7 +770,7 @@ class SentimentAnalyzer:
             return 0.0
         return (pos_count - neg_count) / total_count
     
-    def analyze_readability(self, text: str) -> Dict[str, float]:
+    def analyze_readability(self, text: str) -> dict[Any, Any] | None:
         """
         分析文本可读性
         
@@ -779,9 +779,6 @@ class SentimentAnalyzer:
             
         返回:
             可读性指标字典
-            
-        提示:
-            使用 ct.readability(text, lang='chinese')
         """
         if text is None or pd.isna(text) or str(text).strip() == '':
             logger.error("文本为空，无法分析文本可读性")
@@ -805,10 +802,7 @@ class SentimentAnalyzer:
             
         返回:
             List[Tuple[str, float]]: [(关键词, 权重), ...]
-            
-        提示:
-            使用 jieba.analyse.extract_tags(text, topK=top_k, withWeight=True)
-        """
+         """
         if text is None or pd.isna(text) or str(text).strip() == '':
             logger.error("文本为空，无法提取关键词")
             return []
@@ -822,7 +816,7 @@ class SentimentAnalyzer:
             logger.error(f"提取关键词失败: {e}")
             return []
     
-    def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
+    def calculate_semantic_similarity(self, text1: str, text2: str) -> float | None:
         """
         计算两段文本的余弦相似度
         
@@ -832,16 +826,22 @@ class SentimentAnalyzer:
             
         返回:
             float: 相似度分数 (0-1)
-            
-        提示:
-            使用 ct.cosine_sim(text1, text2, lang='chinese')
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 调用 cntext 计算相似度
-        
-        # TODO: 返回相似度分数
-        pass
+        def is_text_Empty(text) -> bool:
+            if text is None or pd.isna(text) or str(text).strip() == '':
+                return True
+            return False
+        if is_text_Empty(text1) or is_text_Empty(text2):
+            logger.error("传入的文本1或文本2为空，无法计算余弦相似度")
+            return None
+
+        try:
+            similarity = ct.cosine_sim(text1, text2, lang='chinese')
+            logger.debug(f"相似度: {similarity}")
+            return float(similarity)
+        except Exception as e:
+            logger.exception(f"相似度计算失败: {e}")
+            return 0.0
     
     # ==================== 模型持久化方法 ====================
     
