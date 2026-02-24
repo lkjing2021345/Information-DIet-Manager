@@ -550,28 +550,48 @@ class SentimentAnalyzer:
                 'pos_words': 积极词列表,
                 'neg_words': 消极词列表
             }
-            
-        提示:
-            1. 调用 _calculate_sentiment_score_cntext() 获取基础分数
-            2. 调用 calculate_polarity() 计算极性
-            3. 调用 _score_to_sentiment() 确定类别
-            4. 如果使用 DUTIR，调用 _analyze_emotions_cntext() 分析情绪
         """
-        # TODO: 检查文本是否为空
-        
-        # TODO: 调用 cntext 进行基础情感分析
-        
-        # TODO: 提取 pos_count, neg_count, pos_words, neg_words
-        
-        # TODO: 计算情感极性
-        
-        # TODO: 确定情感类别
-        
-        # TODO: 如果使用 DUTIR，进行情绪分析
-        
-        # TODO: 构建并返回结果字典
-        pass
-    
+        if text is None or pd.isna(text) or str(text).strip() == '':
+            logger.error("传入文本为 None")
+            return {
+                'sentiment': self.SENTIMENT_NEUTRAL,
+                'polarity': 0,
+                'sentiment_scores': {'pos': 0, 'neg': 0},
+                'emotions': None,
+                'pos_words': [],
+                'neg_words': []
+            }
+
+        sentiment_score = self._calculate_sentiment_score_cntext(text)
+
+        pos_count = sentiment_score['pos']
+        neg_count = sentiment_score['neg']
+        pos_words = sentiment_score['pos_words']
+        neg_words = sentiment_score['neg_words']
+
+        polarity = self.calculate_polarity(pos_count=pos_count, neg_count=neg_count)
+
+        sentiment = self._score_to_sentiment(pos_count=pos_count, neg_count=neg_count)
+
+        result = {
+            'sentiment': sentiment,
+            'polarity': polarity,
+            'sentiment_scores': {
+                'pos': pos_count,
+                'neg': neg_count
+            },
+            'pos_words': pos_words,
+            'neg_words': neg_words
+        }
+
+        emotions = self._analyze_emotions_cntext(text)
+        if emotions:
+            result['emotions'] = emotions
+            logger.debug(f"情绪分析结果: {emotions}")
+
+        logger.debug(f"情感分析完成: {sentiment}, 极性: {polarity:.3f}")
+        return result
+
     def predict_by_model(self, text: str) -> str | None:
         """
         基于自定义机器学习模型进行情感分析
