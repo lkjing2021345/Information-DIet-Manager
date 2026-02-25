@@ -69,9 +69,10 @@ class HealthLevel(Enum):
 
 class RiskType(Enum):
     """风险类型"""
-    # TODO: 定义风险类型（信息茧房/信息毒品/时间浪费/情绪污染等）
-    pass
-
+    IT_COCOONS = 1
+    IT_DRUGS = 2
+    WASTE_TIME = 3
+    EMO_CONTAMINATION = 4
 
 # ========= 数据类定义 =========
 @dataclass
