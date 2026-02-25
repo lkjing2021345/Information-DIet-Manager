@@ -957,23 +957,103 @@ class SentimentAnalyzer:
             - 对每条文本调用 predict()
             - 将结果添加为新列：sentiment, polarity, pos_count, neg_count, confidence
         """
-        # TODO: 检查文本列是否存在
-        
-        # TODO: 初始化结果列表
-        
-        # TODO: 分批处理数据
-        
-        # TODO: 对每条文本调用 predict()
-        
-        # TODO: 记录处理进度
-        
-        # TODO: 将结果添加到 DataFrame
-        
-        # TODO: 如果包含情绪分析，添加 emotions 列
-        
-        # TODO: 返回处理后的 DataFrame
-        pass
-    
+        if text_column not in df.columns:
+            logger.error(f"列 '{text_column}' 不存在于 DataFrame 中")
+            raise ValueError(f"Column '{text_column}' not found in DataFrame")
+
+        if df.empty:
+            logger.warning("输入 DataFrame 为空")
+            return df
+
+        logger.info(f"开始批量预测，总数据量: {len(df)}, 批次大小: {batch_size}")
+
+        sentiments = []
+        polarities = []
+        pos_counts = []
+        neg_counts = []
+        confidences = []
+        emotions_list = [] if include_emotions else None
+
+        total_batches = (len(df) + batch_size - 1) // batch_size
+
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, len(df))
+            batch_df = df.iloc[start_idx:end_idx]
+
+            logger.info(f"处理批次 {batch_idx + 1}/{total_batches} (行 {start_idx}-{end_idx})")
+
+            for idx, row in batch_df.iterrows():
+                text = row[text_column]
+
+                if text is None or pd.isna(text) or str(text).strip() == '':
+                    sentiments.append(self.SENTIMENT_NEUTRAL)
+                    polarities.append(0.0)
+                    pos_counts.append(0)
+                    neg_counts.append(0)
+                    confidences.append(0.0)
+                    if include_emotions:
+                        emotions_list.append({})
+                    continue
+
+                try:
+                    result = self.predict(
+                        text=str(text),
+                        include_emotions=include_emotions,
+                        include_words=False,
+                        use_custom_model=True
+                    )
+
+                    if result is None:
+                        # 预测失败，使用默认值
+                        sentiments.append(self.SENTIMENT_NEUTRAL)
+                        polarities.append(0.0)
+                        pos_counts.append(0)
+                        neg_counts.append(0)
+                        confidences.append(0.0)
+                        if include_emotions:
+                            emotions_list.append({})
+                    else:
+                        # 提取结果
+                        sentiments.append(result.get('sentiment', self.SENTIMENT_NEUTRAL))
+                        polarities.append(result.get('polarity', 0.0))
+                        pos_counts.append(result.get('pos_count', 0))
+                        neg_counts.append(result.get('neg_count', 0))
+                        confidences.append(result.get('confidence', 0.0))
+
+                        if include_emotions:
+                            emotions_list.append(result.get('emotions', {}))
+
+                except Exception as e:
+                    logger.error(f"处理索引 {idx} 时出错: {e}")
+                    sentiments.append(self.SENTIMENT_NEUTRAL)
+                    polarities.append(0.0)
+                    pos_counts.append(0)
+                    neg_counts.append(0)
+                    confidences.append(0.0)
+                    if include_emotions:
+                        emotions_list.append({})
+
+            processed = end_idx
+            progress = (processed / len(df)) * 100
+            logger.info(f"已处理: {processed}/{len(df)} ({progress:.1f}%)")
+
+        # 将结果添加到 DataFrame
+        # 创建副本避免修改原数据
+        result_df = df.copy()
+        result_df['sentiment'] = sentiments
+        result_df['polarity'] = polarities
+        result_df['pos_count'] = pos_counts
+        result_df['neg_count'] = neg_counts
+        result_df['confidence'] = confidences
+
+        if include_emotions and emotions_list is not None:
+            result_df['emotions'] = emotions_list
+
+        logger.info(f"批量预测完成，共处理 {len(result_df)} 条数据")
+
+        return result_df
+
     # ==================== 模型训练方法 ====================
     
     def train_model(self,
