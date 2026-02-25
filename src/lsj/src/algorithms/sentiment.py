@@ -886,6 +886,9 @@ class SentimentAnalyzer:
             return None
 
         try:
+            if ct is None:
+                logger.error("cntext 未安装，无法计算相似度")
+                return None
             similarity = ct.cosine_sim(text1, text2, lang='chinese')
             logger.debug(f"相似度: {similarity}")
             return float(similarity)
