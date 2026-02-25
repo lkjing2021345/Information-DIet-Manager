@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-input_path = "../training_data/Simplified_Chinese_Multi-Emotion_Dialogue_Dataset.csv"
-output_path = "../training_data/converted_dataset.csv"
+input_path = "../../training_data/Simplified_Chinese_Multi-Emotion_Dialogue_Dataset.csv"
+output_path = "../../training_data/converted_dataset.csv"
 df = pd.read_csv(input_path, encoding="utf-8")
 
 # ====== 2. 定义映射表（中文 -> 常量） ======

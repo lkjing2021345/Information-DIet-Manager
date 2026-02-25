@@ -720,7 +720,7 @@ if __name__ == "__main__":
         model_path="./models/classifier_model.pkl"
     )
 
-    history_df = pd.read_json('../utils/output/history_data.jsonl', lines=True)
+    history_df = pd.read_json('utils/output/history_data.jsonl', lines=True)
 
     result_df = classifier.batch_predict(history_df)
 

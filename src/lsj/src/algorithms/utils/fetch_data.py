@@ -11,7 +11,7 @@ import logging
 import json
 from typing import Literal
 
-logs_folder_path = "../../logs"
+logs_folder_path = "../../../logs"
 if not os.path.exists(logs_folder_path):
     os.makedirs(logs_folder_path)
 
@@ -19,7 +19,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('../../logs/fetch_data.log', encoding='utf-8'),
+        logging.FileHandler('../../../logs/fetch_data.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -63,7 +63,7 @@ def safe_extract_history():
         return None
 
     # 复制文件
-    temp_dir = "..\\cache"
+    temp_dir = "../../cache"
     try:
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
@@ -443,8 +443,8 @@ if __name__ == "__main__":
         filtered_df = filter_by_date_range(clean_df, '2025-01-01', '2026-12-31')
 
         # 保存为符合 IngestItem 契约的格式
-        save_as_csv(filtered_df, "./output", source="import")
-        save_as_jsonl(filtered_df, "./output", source="import")
+        save_as_csv(filtered_df, "output", source="import")
+        save_as_jsonl(filtered_df, "output", source="import")
 
         items = to_ingest_items(filtered_df, source="import")
 

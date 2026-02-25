@@ -81,9 +81,9 @@ train_classifier.py
 功能开发计划.md
 开发计划.md
 
-src/lsj/src/utils/output/
+src/lsj/src/algorithms/utils/output/
 src/lsj/tests/files/
-src/lsj/src/utils/config.json
+src/lsj/src/algorithms/utils/config.json
 
 .continue
 

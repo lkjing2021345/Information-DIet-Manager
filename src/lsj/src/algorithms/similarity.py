@@ -687,7 +687,7 @@ class SimilarityAnalyzer:
 if __name__ == "__main__":
     analyzer = SimilarityAnalyzer()
 
-    df = pd.read_csv("../utils/output/result.csv")
+    df = pd.read_csv("utils/output/result.csv")
 
     texts = df['title'].values.tolist()
     # print(texts)
