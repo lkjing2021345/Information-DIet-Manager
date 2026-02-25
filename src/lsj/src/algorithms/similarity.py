@@ -227,6 +227,7 @@ class SimilarityAnalyzer:
     def _calculate_edit_distance(self, text1: str, text2: str) -> int:
         """
         计算编辑距离（Levenshtein Distance）
+        使用滚动数组优化，空间复杂度 O(min(m,n))
 
         参数:
             text1: 文本1
@@ -238,30 +239,34 @@ class SimilarityAnalyzer:
         if not text1 or not text2:
             return max(len(text1 or ""), len(text2 or ""))
 
+        # 确保 text1 是较短的字符串，减少空间占用
+        if len(text1) > len(text2):
+            text1, text2 = text2, text1
+
         m, n = len(text1), len(text2)
 
-        # DP 表：dp[i][j] 表示 text1 前 i 个字符到 text2 前 j 个字符的最小编辑代价
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-
-        # 边界初始化：全删 / 全增
-        for i in range(m + 1):
-            dp[i][0] = i
-        for j in range(n + 1):
-            dp[0][j] = j
+        # prev[j] 表示 dp[i-1][j]，curr[j] 表示 dp[i][j]
+        prev = list(range(n + 1))  # 初始化第 0 行：[0, 1, 2, ..., n]
+        curr = [0] * (n + 1)
 
         # 状态转移
         for i in range(1, m + 1):
+            curr[0] = i  # 边界：dp[i][0] = i
+
             for j in range(1, n + 1):
                 if text1[i - 1] == text2[j - 1]:
-                    dp[i][j] = dp[i - 1][j - 1]
+                    # 字符相同，不需要操作
+                    curr[j] = prev[j - 1]
                 else:
-                    dp[i][j] = min(
-                        dp[i - 1][j] + 1,      # 删除
-                        dp[i][j - 1] + 1,      # 插入
-                        dp[i - 1][j - 1] + 1   # 替换
+                    curr[j] = min(
+                        prev[j] + 1,      # 删除 text1[i-1]
+                        curr[j - 1] + 1,  # 插入 text2[j-1]
+                        prev[j - 1] + 1   # 替换 text1[i-1] -> text2[j-1]
                     )
 
-        return dp[m][n]
+            prev, curr = curr, prev
+
+        return prev[n]
 
     def _similarity_to_category(self, score: float) -> str:
         """
