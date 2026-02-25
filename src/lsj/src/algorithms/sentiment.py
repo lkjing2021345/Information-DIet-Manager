@@ -694,7 +694,8 @@ class SentimentAnalyzer:
             'confidence': confidence
         }
 
-        if use_custom_model and self.model is not None:
+        has_custom_model = (self.model is not None) or (self.use_bert and self.bert_model is not None)
+        if use_custom_model and has_custom_model:
             model_sentiment = self.predict_by_model(text)
             if model_sentiment:
                 if model_sentiment != sentiment:
