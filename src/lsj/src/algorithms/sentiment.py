@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-  # 声明文件编码，避免中文乱码
-from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
-from typing import Dict, Any
+# from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
 """
 情感分析模块
 功能概述：
@@ -1038,131 +1037,138 @@ class SentimentAnalyzer:
         返回:
             Dict[str, Any]: 训练结果
         """
-        from sklearn.model_selection import train_test_split
-        from sklearn.preprocessing import LabelEncoder
-        from sklearn.metrics import classification_report, accuracy_score, f1_score
+        global predictions, true_labels, accuracy, f1
+        from sklearn.model_selection import train_test_split  # 数据集切分
+        from sklearn.preprocessing import LabelEncoder  # 标签编码
+        from sklearn.metrics import classification_report, accuracy_score, f1_score  # 评估指标
 
         logger.info("=" * 50)
-        logger.info("开始 BERT 模型训练")
+        logger.info("开始 BERT 模型训练（优化版）")
         logger.info("=" * 50)
 
-        # 准备数据
-        texts = train_df[text_column].astype(str).tolist()
-        labels = train_df[label_column].tolist()
+        texts = train_df[text_column].astype(str).tolist()  # 文本列表
+        labels = train_df[label_column].tolist()  # 标签列表
 
-        # 标签编码
-        self.label_encoder = LabelEncoder()
-        labels_encoded = self.label_encoder.fit_transform(labels)
-        num_labels = len(self.label_encoder.classes_)
-
+        self.label_encoder = LabelEncoder()  # 初始化编码器
+        labels_encoded = self.label_encoder.fit_transform(labels)  # 转换为数字标签
+        num_labels = len(self.label_encoder.classes_)  # 类别数
         logger.info(f"标签类别: {self.label_encoder.classes_}")
         logger.info(f"类别数量: {num_labels}")
 
-        # 划分训练集和测试集
         X_train, X_test, y_train, y_test = train_test_split(
-            texts, labels_encoded, test_size=test_size, random_state=42, stratify=labels_encoded
+            texts,  # 文本
+            labels_encoded,  # 标签
+            test_size=test_size,  # 测试比例
+            random_state=42,  # 随机种子
+            stratify=labels_encoded  # 保持类别分布一致
         )
 
         logger.info(f"训练集: {len(X_train)}, 测试集: {len(X_test)}")
 
-        # 加载 BERT tokenizer 和模型
         logger.info(f"加载 BERT 模型: {self.bert_model_name}")
-        self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)
+
+        self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)  # 分词器
         self.bert_model = BertForSequenceClassification.from_pretrained(
-            self.bert_model_name,
-            num_labels=num_labels
+            self.bert_model_name,  # 模型名称
+            num_labels=num_labels  # 类别数
         )
-        self.bert_model.to(self.device)
 
-        # 创建数据集和数据加载器
-        train_dataset = SentimentDataset(X_train, y_train, self.bert_tokenizer, max_length)
-        test_dataset = SentimentDataset(X_test, y_test, self.bert_tokenizer, max_length)
+        self.bert_model.to(self.device)  # 放到 GPU/CPU
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size)
+        train_dataset = SentimentDataset(X_train, y_train, self.bert_tokenizer, max_length)  # 训练集
+        test_dataset = SentimentDataset(X_test, y_test, self.bert_tokenizer, max_length)  # 测试集
 
-        # 设置优化器和学习率调度器
-        optimizer = AdamW(self.bert_model.parameters(), lr=learning_rate)
-        total_steps = len(train_loader) * epochs
+        # DataLoader 加速参数（CPU/GPU 都可用）
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,  # 打乱数据
+            num_workers=2,  # 子进程加载（Windows 建议 0~2）
+            pin_memory=True  # GPU 加速拷贝
+        )
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            num_workers=2,
+            pin_memory=True
+        )
+
+        optimizer = AdamW(self.bert_model.parameters(), lr=learning_rate)  # AdamW 优化器
+        total_steps = len(train_loader) * epochs  # 总步数
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=0,
+            num_warmup_steps=0,  # 不做 warmup
             num_training_steps=total_steps
         )
 
-        # 训练循环
+        # 混合精度
+        use_amp = torch.cuda.is_available()  # 仅在 GPU 上用混合精度
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)  # AMP 缩放器
+
         logger.info("开始训练...")
-        training_stats = []
+        training_stats = []  # 用于记录训练指标
 
         for epoch in range(epochs):
             logger.info(f"\nEpoch {epoch + 1}/{epochs}")
             logger.info("-" * 50)
-
-            # 训练阶段
-            self.bert_model.train()
-            total_train_loss = 0
+            # ===== 训练阶段 =====
+            self.bert_model.train()  # 开启训练模式
+            total_train_loss = 0  # 训练损失累计
 
             try:
-                from tqdm import tqdm
+                from tqdm import tqdm  # 进度条
                 train_iterator = tqdm(train_loader, desc=f"训练 Epoch {epoch + 1}")
             except ImportError:
+                tqdm = None
                 train_iterator = train_loader
-
             for batch in train_iterator:
-                # 将数据移到设备
+
                 input_ids = batch['input_ids'].to(self.device)
                 attention_mask = batch['attention_mask'].to(self.device)
                 labels = batch['label'].to(self.device)
 
-                # 清零梯度
-                self.bert_model.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
 
-                # 前向传播
-                outputs = self.bert_model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels
-                )
-
-                loss = outputs.loss
-                total_train_loss += loss.item()
-
-                # 反向传播
-                loss.backward()
-
-                # 梯度裁剪
-                torch.nn.utils.clip_grad_norm_(self.bert_model.parameters(), 1.0)
-
-                # 更新参数
-                optimizer.step()
-                scheduler.step()
-
-            avg_train_loss = total_train_loss / len(train_loader)
-            logger.info(f"平均训练损失: {avg_train_loss:.4f}")
-
-            # 验证阶段
-            logger.info("开始验证...")
-            self.bert_model.eval()
-
-            predictions = []
-            true_labels = []
-            total_eval_loss = 0
-
-            with torch.no_grad():
-                for batch in test_loader:
-                    input_ids = batch['input_ids'].to(self.device)
-                    attention_mask = batch['attention_mask'].to(self.device)
-                    labels = batch['label'].to(self.device)
-
+                with torch.amp.autocast("cuda", enabled=use_amp):
                     outputs = self.bert_model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         labels=labels
                     )
+                    loss = outputs.loss  # 取 loss
+                total_train_loss += loss.item()  # 记录 loss
 
+                scaler.scale(loss).backward()  # 反向传播 + 缩放
+
+                torch.nn.utils.clip_grad_norm_(self.bert_model.parameters(), 1.0)
+
+                scaler.step(optimizer)
+                scaler.update()
+                scheduler.step()
+
+            avg_train_loss = total_train_loss / len(train_loader)
+            logger.info(f"平均训练损失: {avg_train_loss:.4f}")
+
+            logger.info("开始验证...")
+            self.bert_model.eval()  # 开启验证模式
+
+            predictions = []  # 保存预测结果
+            true_labels = []  # 保存真实标签
+            total_eval_loss = 0  # 验证损失累计
+
+            with torch.inference_mode():
+                for batch in test_loader:
+                    input_ids = batch['input_ids'].to(self.device)
+                    attention_mask = batch['attention_mask'].to(self.device)
+                    labels = batch['label'].to(self.device)
+                    outputs = self.bert_model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels
+                    )
                     loss = outputs.loss
                     total_eval_loss += loss.item()
-
                     logits = outputs.logits
                     preds = torch.argmax(logits, dim=1).cpu().numpy()
                     predictions.extend(preds)
@@ -1184,21 +1190,14 @@ class SentimentAnalyzer:
                 'f1_score': f1
             })
 
-        # 最终评估
         logger.info("\n" + "=" * 50)
         logger.info("训练完成！最终评估结果：")
         logger.info("=" * 50)
-
-        # 将预测结果转换回原始标签
         predictions_labels = self.label_encoder.inverse_transform(predictions)
         true_labels_original = self.label_encoder.inverse_transform(true_labels)
-
         report = classification_report(true_labels_original, predictions_labels)
         logger.info("\n分类报告:\n" + report)
-
-        # 标记使用 BERT
-        self.use_bert = True
-
+        self.use_bert = True  # 标记 BERT 可用
         return {
             'model_type': 'BERT',
             'accuracy': accuracy,
@@ -1728,8 +1727,8 @@ class SentimentAnalyzer:
         df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转换为数字
         df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转换为数字
         report: Dict[str, Any] = {
-            'total_records': len(df),
-            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            'total_records': len(df),  # 总记录数
+            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 分析时间
         }
 
         sentiment_dist = df['sentiment'].value_counts(dropna=True).to_dict()
