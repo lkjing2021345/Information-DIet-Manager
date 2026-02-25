@@ -1043,7 +1043,7 @@ class SentimentAnalyzer:
         from sklearn.metrics import classification_report, accuracy_score, f1_score  # 评估指标
 
         logger.info("=" * 50)
-        logger.info("开始 BERT 模型训练（优化版）")
+        logger.info("开始 BERT 模型训练")
         logger.info("=" * 50)
 
         texts = train_df[text_column].astype(str).tolist()  # 文本列表
