@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-  # 声明文件编码，避免中文乱码
-# from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
+from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
 """
 情感分析模块
 功能概述：
@@ -19,7 +19,7 @@
 参考文档：
     - cntext GitHub: https://github.com/hidadeng/cntext
 """
-# ======== 环境变量设置（必须在 transformers 之前设置） ========
+# ======== 环境变量设置 ========
 import os  # 导入系统环境变量模块
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 设置 HuggingFace 国内镜像
 # ======== 标准库导入 ========
@@ -978,7 +978,7 @@ class SentimentAnalyzer:
                     label_column: str = 'sentiment',
                     test_size: float = 0.2,
                     use_bert: bool = True,
-                    epochs: int = 3,
+                    epochs: int = 20,
                     batch_size: int = 16,
                     learning_rate: float = 2e-5,
                     max_length: int = 128) -> Dict[str, Any]:
@@ -1811,23 +1811,46 @@ if __name__ == "__main__":
         print("警告: BERT 功能不可用")
         print("如需使用 BERT，请安装: pip install torch transformers")
 
-    print("训练并保存模型")
+    print("choose:1.模型相关；2.词典相关:\n")
+    op = int(input())
 
-    df = pd.read_csv("../training_data/converted_dataset.csv")
-    df = df.rename(columns={"label": "sentiment"})
-    analyzer = SentimentAnalyzer(use_bert=True)
-    result = analyzer.train_model(
-        train_df=df,
-        text_column="text",
-        label_column="sentiment",
-        use_bert=True
-    )
-    analyzer.save_model("./models/sentiment_model.pkl")
-    logger.info("✅ 模型保存完成")
-    print(result)
+    if op == 1:
+        print("训练并保存模型")
 
-    print("验证加载模型")
-    analyzer = SentimentAnalyzer(use_bert=False)
-    success = analyzer.load_model("models/sentiment_model_bert")
-    logger.info("✅ 加载成功" if success else "❌ 加载失败")
-    print(analyzer.predict("今天心情很好！", use_custom_model=True))
+        df = pd.read_csv("../training_data/converted_dataset.csv")
+        df = df.rename(columns={"label": "sentiment"})
+        analyzer = SentimentAnalyzer(use_bert=True)
+        result = analyzer.train_model(
+            train_df=df,
+            text_column="text",
+            label_column="sentiment",
+            use_bert=True
+        )
+        analyzer.save_model("./models/sentiment_model.pkl")
+        logger.info("✅ 模型保存完成")
+        print(result)
+
+        print("验证加载模型")
+        analyzer = SentimentAnalyzer(use_bert=False)
+        success = analyzer.load_model("models/sentiment_model_bert")
+        text = """
+            我是一个积极乐观的人，我每天都过的很快乐，每天都嬉皮笑脸的，时不时的发出哈哈大笑的声音，你们见到了我千万别奇怪。但是我今天要说的最快乐的一天还是要说那天了。
+
+　　三年级的暑假，阳光明媚，太阳公公早早的就露出了笑脸，我早早的从床上起来了。树上的知了一直在叫个不停。这时候爸爸跑来了我的面前对我说：“天气太热了，走，我们一起去水上乐园玩吧。”我连忙点点头，我最开心了，因为我最喜欢玩水了，天那么热正好降降暑，还有就是我去年就学会了游泳，正好可以游个痛快了。我赶紧准备好了我的游泳帽子和眼镜，照了下镜子，哎呦妈呀，这是谁啊，也太帅了吧。
+
+　　准备就绪，我、爸爸和妈妈一起走进了水上乐园，早早的就挤满了人，爸爸买好票，我急匆匆地跑了进去，接下来就要看我的表演了，换好衣服之后，我下水了，凉飕飕的，太舒服了，我来立马来了个仰泳，像只快活的鱼儿在水里畅游，妈妈督促我不要往水深的地方游，接着我又在水里开始了自由泳，好多小朋友都羡慕我，“哇塞”哥哥姐姐们都很吃惊，我心里像吃了蜜一样甜，好多人说要我和他拍照，我摆出了各种姿势，那种感觉太爽了。
+
+　　时间过的很快，马上就中午了，妈妈说要回去了，我有点依依不舍，我期待下次还能在水里玩个痛快。
+
+　　这天我玩的很开心，我也很快乐。
+        """
+        print(analyzer.predict(text, use_custom_model=True))
+
+
+    if op == 2:
+        d = ct.read_yaml_dict("zh_common_NTUSD.yaml")
+        dict_only = d.get("Dictionary", {})
+        print("词典键:", d.keys())
+        text = "今天心情很好！"
+        raw = ct.sentiment(text, diction=dict_only)
+        print("raw:", raw)

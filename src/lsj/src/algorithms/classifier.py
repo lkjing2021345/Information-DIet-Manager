@@ -717,7 +717,7 @@ class ContentClassifier:
 # ==================== 测试代码 ====================
 if __name__ == "__main__":
     classifier = ContentClassifier(
-        model_path="./models/advanced_model.pkl"
+        model_path="./models/classifier_model.pkl"
     )
 
     history_df = pd.read_json('../utils/output/history_data.jsonl', lines=True)

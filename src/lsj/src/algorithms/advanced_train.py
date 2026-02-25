@@ -489,7 +489,7 @@ def main():
 
         model_folder = Path(__file__).parent / "models"
         model_folder.mkdir(exist_ok=True)
-        model_path = model_folder / "advanced_model.pkl"
+        model_path = model_folder / "classifier_model.pkl"
 
         classifier.save_model(str(model_path))
         logger.info(f"模型已保存: {model_path}")
