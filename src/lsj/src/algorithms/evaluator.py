@@ -50,7 +50,6 @@ def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging
     logger_obj.addHandler(file_handler)
     logger_obj.addHandler(console_handler)
 
-    # 不向 root logger 传播，避免重复输出
     logger_obj.propagate = False
     return logger_obj
 
@@ -78,13 +77,16 @@ class RiskType(Enum):
 @dataclass
 class EvaluationMetrics:
     """评估指标数据类"""
-    # TODO: 定义核心评估指标
     # - 多样性分数 (diversity_score)
+    diversity_score : int
     # - 情感健康分数 (sentiment_health_score)
+    sentiment_health_score : int
     # - 内容质量分数 (content_quality_score)
+    content_quality_score : int
     # - 时间分配合理性 (time_allocation_score)
+    time_allocation_score : int
     # - 综合健康分数 (overall_health_score)
-    pass
+    overall_health_score : int
 
 
 @dataclass
