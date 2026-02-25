@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-  # 声明文件编码，避免中文乱码
 from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
+from typing import Dict, Any
 """
 情感分析模块
 功能概述：
@@ -1714,70 +1715,60 @@ class SentimentAnalyzer:
         返回:
             Dict[str, Any]: 综合报告
         """
-        # 检查必要的列
         required_columns = ['sentiment', 'polarity', 'confidence']
         missing_columns = [col for col in required_columns if col not in df.columns]
-
         if missing_columns:
             logger.error(f"DataFrame 缺少必要的列: {missing_columns}")
             raise ValueError(f"Missing required columns: {missing_columns}")
-
         if df.empty:
             logger.warning("输入 DataFrame 为空")
             return {'error': 'Empty DataFrame'}
 
-        # 初始化报告字典
-        report = {
+        df = df.copy()  # 防止修改原数据
+        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转换为数字
+        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转换为数字
+        report: Dict[str, Any] = {
             'total_records': len(df),
             'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-        # 统计整体情感分布
-        sentiment_dist = df['sentiment'].value_counts().to_dict()
-        sentiment_pct = (df['sentiment'].value_counts(normalize=True) * 100).round(2).to_dict()
-
+        sentiment_dist = df['sentiment'].value_counts(dropna=True).to_dict()
+        sentiment_pct = (df['sentiment'].value_counts(normalize=True, dropna=True) * 100).round(2).to_dict()
         report['sentiment_distribution'] = {
             'counts': sentiment_dist,
             'percentages': sentiment_pct
         }
 
-        # 统计情感极性
         polarity_stats = df['polarity'].describe().to_dict()
         report['polarity_statistics'] = {
-            'mean': round(polarity_stats.get('mean', 0), 4),
-            'std': round(polarity_stats.get('std', 0), 4),
-            'min': round(polarity_stats.get('min', 0), 4),
-            'max': round(polarity_stats.get('max', 0), 4),
-            'median': round(df['polarity'].median(), 4),
-            'q25': round(polarity_stats.get('25%', 0), 4),
-            'q75': round(polarity_stats.get('75%', 0), 4)
+            'mean': round(polarity_stats.get('mean', 0) or 0, 4),
+            'std': round(polarity_stats.get('std', 0) or 0, 4),
+            'min': round(polarity_stats.get('min', 0) or 0, 4),
+            'max': round(polarity_stats.get('max', 0) or 0, 4),
+            'median': round(df['polarity'].median() if df['polarity'].notna().any() else 0, 4),
+            'q25': round(polarity_stats.get('25%', 0) or 0, 4),
+            'q75': round(polarity_stats.get('75%', 0) or 0, 4)
         }
 
-        # 统计情绪分布（如果有）
         if 'emotions' in df.columns:
             try:
                 emotion_df = self.get_emotion_distribution(df)
-                if not emotion_df.empty:
-                    report['emotion_distribution'] = emotion_df.to_dict('records')
-                else:
-                    report['emotion_distribution'] = None
+                report['emotion_distribution'] = emotion_df.to_dict('records') if not emotion_df.empty else None
             except Exception as e:
-                logger.warning(f"统计情绪分布时出错: {e}")
+                logger.warning(f"统计情绪分布出错: {e}")
                 report['emotion_distribution'] = None
         else:
             report['emotion_distribution'] = None
 
-        # 统计置信度
         confidence_stats = df['confidence'].describe().to_dict()
         report['confidence_statistics'] = {
-            'mean': round(confidence_stats.get('mean', 0), 4),
-            'std': round(confidence_stats.get('std', 0), 4),
-            'min': round(confidence_stats.get('min', 0), 4),
-            'max': round(confidence_stats.get('max', 0), 4),
-            'median': round(df['confidence'].median(), 4)
+            'mean': round(confidence_stats.get('mean', 0) or 0, 4),
+            'std': round(confidence_stats.get('std', 0) or 0, 4),
+            'min': round(confidence_stats.get('min', 0) or 0, 4),
+            'max': round(confidence_stats.get('max', 0) or 0, 4),
+            'median': round(df['confidence'].median() if df['confidence'].notna().any() else 0, 4)
         }
 
-        # 统计积极/消极词数量（如果有）
         if 'pos_count' in df.columns and 'neg_count' in df.columns:
             report['word_statistics'] = {
                 'total_positive_words': int(df['pos_count'].sum()),
@@ -1786,14 +1777,15 @@ class SentimentAnalyzer:
                 'avg_negative_words': round(df['neg_count'].mean(), 2)
             }
 
-        # 添加总体统计信息
+        if sentiment_dist:
+            dominant = max(sentiment_dist, key=sentiment_dist.get)
+        else:
+            dominant = 'Unknown'
         report['overall_summary'] = {
-            'dominant_sentiment': sentiment_dist.get(
-                max(sentiment_dist, key=sentiment_dist.get), 'Unknown'
-            ) if sentiment_dist else 'Unknown',
+            'dominant_sentiment': dominant,
             'overall_polarity': 'Positive' if report['polarity_statistics']['mean'] > 0.1
-                               else 'Negative' if report['polarity_statistics']['mean'] < -0.1
-                               else 'Neutral',
+            else 'Negative' if report['polarity_statistics']['mean'] < -0.1
+            else 'Neutral',
             'avg_confidence': round(report['confidence_statistics']['mean'], 4),
             'high_confidence_ratio': round(
                 (df['confidence'] >= 0.7).sum() / len(df) * 100, 2
@@ -1801,8 +1793,6 @@ class SentimentAnalyzer:
         }
 
         logger.info("情感分析报告生成完成")
-
-        # 返回完整报告
         return report
 
 if __name__ == "__main__":
