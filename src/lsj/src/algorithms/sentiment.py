@@ -109,54 +109,60 @@ except Exception as e:
     BERT_AVAILABLE = False
     logger.exception("BERT 相关依赖导入失败（不一定是未安装）。真实异常如下：%r", e)
 
-class SentimentDataset(Dataset):
-    """
-    BERT 情感分析数据集
-
-    用于将文本数据转换为 BERT 模型可接受的格式
-    """
-
-    def __init__(self, texts: List[str], labels: List[int],
-                 tokenizer, max_length: int = 128):
+if BERT_AVAILABLE:
+    class SentimentDataset(Dataset):
         """
-        初始化数据集
+        BERT 情感分析数据集
 
-        参数:
-            texts: 文本列表
-            labels: 标签列表（整数编码）
-            tokenizer: BERT tokenizer
-            max_length: 最大序列长度
+        用于将文本数据转换为 BERT 模型可接受的格式
         """
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_length = max_length
 
-    def __len__(self):
-        return len(self.texts)
+        def __init__(self, texts: List[str], labels: List[int],
+                     tokenizer, max_length: int = 128):
+            """
+            初始化数据集
 
-    def __getitem__(self, idx):
-        text = str(self.texts[idx])
-        label = self.labels[idx]
+            参数:
+                texts: 文本列表
+                labels: 标签列表（整数编码）
+                tokenizer: BERT tokenizer
+                max_length: 最大序列长度
+            """
+            self.texts = texts
+            self.labels = labels
+            self.tokenizer = tokenizer
+            self.max_length = max_length
 
-        # 使用 tokenizer 编码文本
-        encoding = self.tokenizer(
-            text,  # 需要编码的文本
-            add_special_tokens=True,  # 自动加 [CLS] [SEP]
-            max_length=self.max_length,  # 最大长度，超过就截断
-            padding="max_length",  # 不够就补到 max_length
-            truncation=True,  # 允许截断
-            return_attention_mask=True,  # 返回 attention_mask（告诉模型哪些是 padding）
-            return_tensors="pt",  # 直接返回 PyTorch 张量（torch.Tensor）
-        )
-        return {
-            # encoding['input_ids'] shape 通常是 [1, max_length]，所以 squeeze(0) 去掉 batch 维度
-            "input_ids": encoding["input_ids"].squeeze(0),
-            # 同理 squeeze(0)
-            "attention_mask": encoding["attention_mask"].squeeze(0),
-            # label 转成 torch tensor，供 loss 计算使用
-            "label": torch.tensor(label, dtype=torch.long),
-        }
+        def __len__(self):
+            return len(self.texts)
+
+        def __getitem__(self, idx):
+            text = str(self.texts[idx])
+            label = self.labels[idx]
+
+            # 使用 tokenizer 编码文本
+            encoding = self.tokenizer(
+                text,  # 需要编码的文本
+                add_special_tokens=True,  # 自动加 [CLS] [SEP]
+                max_length=self.max_length,  # 最大长度，超过就截断
+                padding="max_length",  # 不够就补到 max_length
+                truncation=True,  # 允许截断
+                return_attention_mask=True,  # 返回 attention_mask（告诉模型哪些是 padding）
+                return_tensors="pt",  # 直接返回 PyTorch 张量（torch.Tensor）
+            )
+            return {
+                # encoding['input_ids'] shape 通常是 [1, max_length]，所以 squeeze(0) 去掉 batch 维度
+                "input_ids": encoding["input_ids"].squeeze(0),
+                # 同理 squeeze(0)
+                "attention_mask": encoding["attention_mask"].squeeze(0),
+                # label 转成 torch tensor，供 loss 计算使用
+                "label": torch.tensor(label, dtype=torch.long),
+            }
+
+else:
+    class SentimentDataset:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("BERT 不可用，无法使用 SentimentDataset")
 
 
 class SentimentAnalyzer:
