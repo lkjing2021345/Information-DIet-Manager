@@ -91,6 +91,13 @@ class Difficulty(Enum):
     MEDIUM = "中等"
     HARD = "困难"
 
+DEFAULT_DIMENSION_WEIGHTS: Dict[str, float] = {
+    "diversity": 0.25,
+    "sentiment_health": 0.25,
+    "content_quality": 0.30,
+    "time_allocation": 0.20,
+}
+
 
 # ==================== 核心指标数据类 ====================
 
