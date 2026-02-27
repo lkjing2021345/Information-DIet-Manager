@@ -1049,7 +1049,11 @@ def normalize_score(value: float, min_val: float, max_val: float) -> float:
     TODO: 线性归一化
     TODO: 处理异常值
     """
-    pass
+    if max_val <= min_val:
+        return 0.0
+
+    normalized = (value - min_val) / (max_val - min_val)
+    return float(np.clip(normalized, 0.0, 1.0))
 
 
 def weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> float:
