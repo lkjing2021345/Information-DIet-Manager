@@ -1018,7 +1018,16 @@ class InformationQualityEvaluator:
 
         TODO: 返回默认阈值和权重
         """
-        pass
+        return {
+            "min_records": 5,  # 最低样本量
+            "thresholds": {
+                "echo_chamber_similarity": self.ECHO_CHAMBER_SIMILARITY_LIMIT,
+                "dominant_category_ratio": self.DOMINANT_CATEGORY_RATIO_LIMIT,
+                "negative_ratio_warning": self.NEGATIVE_RATIO_WARNING,
+                "entertainment_ratio_warning": self.ENTERTAINMENT_RATIO_WARNING,
+            },
+            'weights' : self.DEFAULT_WEIGHTS.copy()
+        }
 
 
 # ==================== 辅助函数 ====================
