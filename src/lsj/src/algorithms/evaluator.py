@@ -605,12 +605,7 @@ class InformationQualityEvaluator:
     # 时间分配：娱乐内容占比警戒线
     ENTERTAINMENT_RATIO_WARNING = 0.50
     # 权重
-    DEFAULT_WEIGHTS = {
-        "diversity": 0.25,  # 多样性权重
-        "sentiment_health": 0.25,  # 情感健康权重
-        "content_quality": 0.30,  # 内容质量权重
-        "time_allocation": 0.20  # 时间分配权重
-    }
+    DEFAULT_WEIGHTS = DEFAULT_DIMENSION_WEIGHTS.copy()
 
     def __init__(
         self,
