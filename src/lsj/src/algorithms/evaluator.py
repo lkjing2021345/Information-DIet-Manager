@@ -25,6 +25,7 @@ import numpy as np
 from sentiment import SentimentAnalyzer
 from classifier import ContentClassifier
 from similarity import SimilarityAnalyzer
+from .utils.markdown_builder import MarkdownBuilder, ReportMarkdownGenerator
 
 
 # ========= Logger 初始化 =========
@@ -535,10 +536,15 @@ class EvaluationReport:
 
         logger.info(f"报告导出到: {filepath}")
 
-    def to_markdown(self, filepath: str) -> None:
+    def to_markdown(self, filepath: str, detailed: bool = True) -> None:
         """导出为Markdown"""
-        # TODO: 实现Markdown导出
-        pass
+        generator = ReportMarkdownGenerator()
+
+        md_text = generator.generate(self, detailed=True)
+
+        generator.save(self, filepath=filepath, detailed=detailed)
+
+        logger.info(f"Markdown 报告已保存到: {filepath}")
 
     def get_summary(self) -> str:
         """获取文字摘要"""
