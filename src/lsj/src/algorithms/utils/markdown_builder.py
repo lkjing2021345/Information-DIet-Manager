@@ -222,6 +222,7 @@ class ReportMarkdownGenerator:
             f"**生成时间**: {report.metadata.generated_at.strftime('%Y-%m-%d %H:%M:%S')}"
         )
         self.md.add_horizontal_rule()
+
     def _add_appendix(self, report: 'EvaluationReport') -> None:
         """添加附录"""
         self.md.add_heading("📎 附录", level=2)

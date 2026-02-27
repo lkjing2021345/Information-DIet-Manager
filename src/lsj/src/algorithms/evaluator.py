@@ -548,8 +548,40 @@ class EvaluationReport:
 
     def get_summary(self) -> str:
         """获取文字摘要"""
-        # TODO: 生成易读摘要
-        pass
+        # ===== 1. 基础信息 =====
+        total = self.metadata.total_records or 0  # 总记录数
+        valid = self.metadata.valid_records or 0  # 有效记录数
+        valid_rate = (valid / total * 100) if total > 0 else 0.0  # 防止除零
+        # ===== 2. 四个维度分数 =====
+        dimension_scores = {
+            "多样性": self.metrics.diversity.category_diversity_score * 100,
+            "情感健康": self.metrics.sentiment_health.sentiment_health_score * 100,
+            "内容质量": self.metrics.content_quality.content_quality_score * 100,
+            "时间分配": self.metrics.time_allocation.time_allocation_score * 100,
+        }
+        # 取最好和最弱维度
+        best_dim = max(dimension_scores, key=dimension_scores.get)
+        worst_dim = min(dimension_scores, key=dimension_scores.get)
+        # ===== 3. 风险统计 =====
+        risk_total = len(self.risk_alerts) if self.risk_alerts else 0
+        risk_critical = len([r for r in self.risk_alerts if r.severity >= 4]) if self.risk_alerts else 0
+        # ===== 4. 建议统计 =====
+        urgent_count = len(self.recommendations.urgent_recommendations) if self.recommendations else 0
+        important_count = len(self.recommendations.important_recommendations) if self.recommendations else 0
+        normal_count = len(self.recommendations.normal_recommendations) if self.recommendations else 0
+        # ===== 5. 组装摘要文本 =====
+        lines = [
+            "信息摄取质量评估摘要",
+            f"- 时间范围: {self.metadata.start_date.strftime('%Y-%m-%d')} ~ {self.metadata.end_date.strftime('%Y-%m-%d')}（{self.metadata.time_span_days} 天）",
+            f"- 数据情况: 总记录 {total} 条，有效 {valid} 条（有效率 {valid_rate:.1f}%）",
+            f"- 综合结果: {self.health_status.level.value}（{self.health_status.score:.1f}/100）",
+            f"- 最佳维度: {best_dim}（{dimension_scores[best_dim]:.1f}/100）",
+            f"- 薄弱维度: {worst_dim}（{dimension_scores[worst_dim]:.1f}/100）",
+            f"- 风险情况: 共 {risk_total} 项，其中严重风险 {risk_critical} 项",
+            f"- 改进建议: 紧急 {urgent_count} 条 / 重要 {important_count} 条 / 一般 {normal_count} 条",
+            f"- 判定依据: {self.health_status.justification}",
+        ]
+        return "\n".join(lines)
 
 
 # ========= 主评估器类 =========
