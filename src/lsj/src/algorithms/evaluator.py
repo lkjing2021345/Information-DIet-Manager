@@ -596,12 +596,14 @@ class InformationQualityEvaluator:
 
     # ==================== 类常量 ====================
     # 定义阈值常量
-    # - 信息茧房阈值（相似度、类别集中度）
-    IT_COCOONS_LIMIT = 0.75
-    # - 情感健康阈值（负面情绪比例、极性波动）
-    SENTIMENT_LIMIT = 0.75
-    # - 时间分配阈值（娱乐/学习比例）
-    TIME_DISTRIBUTION_LIMIT = 0.5
+    # 信息茧房：平均相似度阈值
+    ECHO_CHAMBER_SIMILARITY_LIMIT = 0.75
+    # 信息茧房：主导类别占比阈值
+    DOMINANT_CATEGORY_RATIO_LIMIT = 0.60
+    # 情感健康：负面内容占比警戒线
+    NEGATIVE_RATIO_WARNING = 0.40
+    # 时间分配：娱乐内容占比警戒线
+    ENTERTAINMENT_RATIO_WARNING = 0.50
 
     def __init__(
         self,
