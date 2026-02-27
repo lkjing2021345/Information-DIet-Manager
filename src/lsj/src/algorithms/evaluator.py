@@ -1039,7 +1039,21 @@ def calculate_shannon_entropy(distribution: List[float]) -> float:
     TODO: 实现熵计算公式
     TODO: 处理边界情况
     """
-    pass
+    if not distribution:
+        return 0.0
+
+    arr = np.array(distribution, dtype=float)
+    arr = arr[arr > 0]
+    if arr.size == 0:
+        return 0.0
+
+    total = arr.sum()
+    if total <= 0:
+        return 0.0
+
+    probs = arr / total
+    entropy = -1.0 * np.sum(probs * np.log2(probs))
+    return float(entropy)
 
 
 def normalize_score(value: float, min_val: float, max_val: float) -> float:
