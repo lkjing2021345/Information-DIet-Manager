@@ -21,11 +21,12 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from lsj.src.algorithms.utils.change_csv import df
 # 导入已完成的模块
 from sentiment import SentimentAnalyzer
 from classifier import ContentClassifier
 from similarity import SimilarityAnalyzer
-from .utils.markdown_builder import MarkdownBuilder, ReportMarkdownGenerator
+from .utils.markdown_builder import ReportMarkdownGenerator
 
 
 # ========= Logger 初始化 =========
@@ -90,13 +91,6 @@ class Difficulty(Enum):
     EASY = "容易"
     MEDIUM = "中等"
     HARD = "困难"
-
-DEFAULT_DIMENSION_WEIGHTS: Dict[str, float] = {
-    "diversity": 0.25,
-    "sentiment_health": 0.25,
-    "content_quality": 0.30,
-    "time_allocation": 0.20,
-}
 
 
 # ==================== 核心指标数据类 ====================
@@ -207,7 +201,12 @@ class EvaluationMetrics:
     overall_score: float  # 0-100
 
     # 权重配置
-    dimension_weights: Dict[str, float] = field(default_factory=lambda: DEFAULT_DIMENSION_WEIGHTS.copy())
+    dimension_weights: Dict[str, float] = field(default_factory=lambda: {
+        'diversity': 0.25,
+        'sentiment_health': 0.25,
+        'content_quality': 0.30,
+        'time_allocation': 0.20
+    })
 
 
 # ==================== 风险警报数据类 ====================
@@ -607,7 +606,12 @@ class InformationQualityEvaluator:
     # 时间分配：娱乐内容占比警戒线
     ENTERTAINMENT_RATIO_WARNING = 0.50
     # 权重
-    DEFAULT_WEIGHTS = DEFAULT_DIMENSION_WEIGHTS.copy()
+    DEFAULT_WEIGHTS = {
+        "diversity": 0.25,  # 多样性权重
+        "sentiment_health": 0.25,  # 情感健康权重
+        "content_quality": 0.30,  # 内容质量权重
+        "time_allocation": 0.20  # 时间分配权重
+    }
 
     def __init__(
         self,
@@ -646,12 +650,30 @@ class InformationQualityEvaluator:
     def _validate_dataframe(self, df: pd.DataFrame) -> bool:
         """
         验证输入数据格式
-
-        TODO: 检查必需列是否存在
-        TODO: 检查数据类型是否正确
-        TODO: 检查是否有足够的数据量
         """
-        pass
+        if isinstance(df, pd.DataFrame):
+            logger.error("传入数据类型错误")
+            raise TypeError("数据类型不为 pd.DataFrame")
+
+        if df.empty:
+           logger.error("传入数据为空")
+           raise ValueError("传入数据为空")
+
+        necessary_col = ['title', 'url', 'category', 'sentiment', 'polarity', 'similarity']
+        missing = len(necessary_col) - len(set(df.columns))
+
+        if missing > 0:
+            logger.error("传入数据有缺失列")
+            raise ValueError("传入数据有缺失列")
+
+        min_records = self.config.get('min_records', 5)
+
+        if len(df) < min_records:
+            logger.warning("传入数据低于最小数据量阈值")
+            raise ValueError("数据量不足")
+
+        return True
+
 
     def _preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -954,39 +976,7 @@ class InformationQualityEvaluator:
         TODO: 支持 JSON/Markdown/HTML 格式
         TODO: 包含图表和数据
         """
-        output = Path(output_path)
-        output.parent.mkdir(parents=True, exist_ok=True)
-
-        format_lower = format.lower().strip()
-        if format_lower == "json":
-            report.to_json(str(output))
-            return
-
-        if format_lower in {"md", "markdown"}:
-            report.to_markdown(str(output), detailed=True)
-            return
-
-        if format_lower == "html":
-            data = report.to_dict()
-            summary = report.get_summary()
-            html_content = (
-                "<!DOCTYPE html>\n"
-                "<html lang=\"zh-CN\">\n"
-                "<head><meta charset=\"UTF-8\"><title>信息摄取质量评估报告</title></head>\n"
-                "<body>\n"
-                "<h1>信息摄取质量评估报告</h1>\n"
-                "<h2>摘要</h2>\n"
-                f"<pre>{summary}</pre>\n"
-                "<h2>完整数据（JSON）</h2>\n"
-                f"<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre>\n"
-                "</body>\n"
-                "</html>\n"
-            )
-            output.write_text(html_content, encoding="utf-8")
-            logger.info(f"HTML 报告已保存到: {output}")
-            return
-
-        raise ValueError("不支持的导出格式，请使用 json / markdown / html")
+        pass
 
     def generate_summary(self, report: EvaluationReport) -> str:
         """
@@ -995,7 +985,7 @@ class InformationQualityEvaluator:
         TODO: 提取关键发现
         TODO: 生成易读的摘要文本
         """
-        return report.get_summary()
+        pass
 
     # ==================== 配置管理 ====================
 
@@ -1013,7 +1003,7 @@ class InformationQualityEvaluator:
         """
         获取默认配置
 
-        TODO: 返回默认阈值和权重
+        返回默认阈值和权重
         """
         return {
             "min_records": 5,  # 最低样本量
@@ -1036,21 +1026,7 @@ def calculate_shannon_entropy(distribution: List[float]) -> float:
     TODO: 实现熵计算公式
     TODO: 处理边界情况
     """
-    if not distribution:
-        return 0.0
-
-    arr = np.array(distribution, dtype=float)
-    arr = arr[arr > 0]
-    if arr.size == 0:
-        return 0.0
-
-    total = arr.sum()
-    if total <= 0:
-        return 0.0
-
-    probs = arr / total
-    entropy = -1.0 * np.sum(probs * np.log2(probs))
-    return float(entropy)
+    pass
 
 
 def normalize_score(value: float, min_val: float, max_val: float) -> float:
@@ -1060,11 +1036,7 @@ def normalize_score(value: float, min_val: float, max_val: float) -> float:
     TODO: 线性归一化
     TODO: 处理异常值
     """
-    if max_val <= min_val:
-        return 0.0
-
-    normalized = (value - min_val) / (max_val - min_val)
-    return float(np.clip(normalized, 0.0, 1.0))
+    pass
 
 
 def weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> float:
@@ -1074,19 +1046,7 @@ def weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> flo
     TODO: 验证权重和为 1
     TODO: 计算加权平均值
     """
-    if not scores or not weights:
-        return 0.0
-
-    missing_keys = set(scores.keys()) - set(weights.keys())
-    if missing_keys:
-        raise ValueError(f"weights 缺少以下分数键: {sorted(missing_keys)}")
-
-    weight_sum = float(sum(weights[k] for k in scores.keys()))
-    if weight_sum <= 0:
-        raise ValueError("权重总和必须大于 0")
-
-    weighted_sum = sum(float(scores[k]) * float(weights[k]) for k in scores.keys())
-    return float(weighted_sum / weight_sum)
+    pass
 
 
 # ==================== 测试代码 ====================
