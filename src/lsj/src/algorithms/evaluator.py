@@ -679,10 +679,6 @@ class InformationQualityEvaluator:
     def _preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         数据预处理
-
-        TODO: 处理缺失值
-        TODO: 时间列转换和排序
-        TODO: 添加辅助列（日期、小时、星期等）
         """
         processed_df = df.copy()
 
@@ -697,6 +693,31 @@ class InformationQualityEvaluator:
         processed_df['similarity'] = pd.to_numeric(processed_df['similarity'], errors='coerce')
 
         processed_df.dropna(subset=["polarity", "similarity"])
+
+        processed_df["polarity"] = processed_df["polarity"].clip(-1.0, 1.0)
+        processed_df["similarity"] = processed_df["similarity"].clip(0.0, 1.0)
+
+        if 'timestamp' in processed_df.columns:
+            processed_df['timestamp'] = pd.to_datetime(processed_df['timestamp'], errors='coerce')
+
+            processed_df = processed_df.dropna(subset=['timestamp'])
+
+            processed_df = processed_df.sort_values(by=['timestamp'], ascending=False)
+
+            processed_df["date"] = processed_df["timestamp"].dt.date
+            processed_df["hour"] = processed_df["timestamp"].dt.hour
+            processed_df["weekday"] = processed_df["timestamp"].dt.day_name()
+
+        processed_df = processed_df.reset_index(drop=True)
+
+        min_records = int(self.config.get("min_records", 5))
+        if len(processed_df) < min_records:
+            raise ValueError(
+                f"预处理后有效样本不足：当前 {len(processed_df)} 条，至少需要 {min_records} 条"
+            )
+
+        logger.info(f"数据预处理完成：原始 {len(df)} 条 -> 有效 {len(processed_df)} 条")
+        return processed_df
 
     # ==================== 私有方法：多样性分析 ====================
 
