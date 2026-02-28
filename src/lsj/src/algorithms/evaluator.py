@@ -953,7 +953,59 @@ class InformationQualityEvaluator:
         TODO: 只计算核心指标
         TODO: 返回简化的评估结果
         """
-        pass
+        self._validate_dataframe(df)
+        processed_df = self._preprocess_data(df)
+
+        category_counts = processed_df["category"].value_counts()
+        category_probs = (category_counts / category_counts.sum()).tolist()
+        entropy = calculate_shannon_entropy(category_probs)
+        max_entropy = np.log2(len(category_probs)) if len(category_probs) > 1 else 1.0
+        diversity_score = float(entropy / max_entropy) if max_entropy > 0 else 0.0
+        diversity_score = float(np.clip(diversity_score, 0.0, 1.0))
+
+        negative_ratio = float((processed_df["sentiment"] == "negative").mean())
+        sentiment_health_score = float(np.clip(1.0 - negative_ratio, 0.0, 1.0))
+
+        entertainment_ratio = float((processed_df["category"] == "entertainment").mean())
+        content_quality_score = float(np.clip(1.0 - entertainment_ratio, 0.0, 1.0))
+
+        avg_similarity = float(processed_df["similarity"].mean())
+        time_allocation_score = float(np.clip(1.0 - avg_similarity, 0.0, 1.0))
+
+        dimension_scores = {
+            "diversity": diversity_score,
+            "sentiment_health": sentiment_health_score,
+            "content_quality": content_quality_score,
+            "time_allocation": time_allocation_score,
+        }
+        overall_0_1 = weighted_average(dimension_scores, self.config["weights"])
+        overall_score = round(overall_0_1 * 100, 2)
+
+        if overall_score >= 90:
+            level = HealthLevel.EXCELLENT.value
+        elif overall_score >= 75:
+            level = HealthLevel.GOOD.value
+        elif overall_score >= 60:
+            level = HealthLevel.FAIR.value
+        elif overall_score >= 40:
+            level = HealthLevel.WARNING.value
+        else:
+            level = HealthLevel.CRITICAL.value
+
+        return {
+            "overall_score": overall_score,
+            "health_level": level,
+            "dimension_scores": {
+                "diversity": round(diversity_score * 100, 2),
+                "sentiment_health": round(sentiment_health_score * 100, 2),
+                "content_quality": round(content_quality_score * 100, 2),
+                "time_allocation": round(time_allocation_score * 100, 2),
+            },
+            "sample_info": {
+                "total_records": int(len(df)),
+                "valid_records": int(len(processed_df)),
+            },
+        }
 
     # ==================== 批量和对比分析 ====================
 
