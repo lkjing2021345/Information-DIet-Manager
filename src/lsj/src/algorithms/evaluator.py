@@ -852,15 +852,75 @@ class InformationQualityEvaluator:
 
     # ==================== 私有方法：内容质量分析 ====================
 
-    def _calculate_content_quality(self, df: pd.DataFrame) -> float:
+    def _calculate_content_quality(self,
+                                   df: pd.DataFrame,
+                                   category_col: str = "category",
+                                   polarity_col: str = "polarity",
+                                   use_sentiment_adjust: bool = True,
+                                   default_weight: float = 0.4,
+                                   category_weights: Optional[dict[str, float]] = None) -> float:
         """
         计算内容质量分数
-
-        TODO: 基于类别权重（学习>新闻>工具>娱乐）
-        TODO: 考虑情感倾向（积极内容加分）
-        TODO: 结合访问时长和频率
         """
-        pass
+        if isinstance(df, pd.DataFrame):
+            logger.error("输入数据必须是 pandas.DataFrame")
+            raise TypeError("输入数据必须是 pandas.DataFrame")
+
+        if df.empty or df is None:
+            logger.error("输入 DataFrame 为空，无法计算内容质量分数")
+            raise ValueError("输入 DataFrame 为空，无法计算内容质量分数")
+
+        if category_weights is None:
+            category_weights = {
+                "learning": 1.0,
+                "news": 0.8,
+                "tools": 0.75,
+                "social": 0.5,
+                "shopping": 0.45,
+                "entertainment": 0.3,
+                "other": 0.4,
+            }
+
+        if category_col not in df.columns:
+            logger.error("缺少类别列 \'category\'，无法计算类别质量")
+            raise TypeError("缺少类别列 \'category\'，无法计算类别质量")
+
+        category = df[category_col].dropna()
+
+        if category.empty:
+            logger.warning("去除无效值后，表为空，无法计算类别质量")
+            raise ValueError("去除无效值后，表为空，无法计算类别质量")
+
+        category = category.astype(str).str.lower()
+        ratios = category.value_counts()
+
+        base_score = 0.0
+        for c, r in ratios.items():
+            c = str(c)
+            w = float(category_weights.get(c, default_weight))
+            base_score += float(r) * float(w)
+
+        adjust = 0.0
+        if use_sentiment_adjust and polarity_col in df.columns:
+            s = df[polarity_col].dropna()
+
+            if not s.empty:
+                s_num = pd.to_numeric(s, errors="coerce")
+                if s_num.notna().all():
+                    positive_ratio = float((s_num > 0).mean())
+                    negative_ratio = float((s_num < 0).mean())
+                else:
+                    s_str = s.astype(str).str.lower()
+                    positive_ratio = float((s_str == "positive").mean())
+                    negative_ratio = float((s_str == "negative").mean())
+
+                adjust = 0.1 * positive_ratio - 0.1 * negative_ratio
+
+        score = base_score + adjust
+        score = float(np.clip(score, 0.0, 1.0))
+
+        return score
+
 
     def _analyze_learning_ratio(self, df: pd.DataFrame) -> Dict[str, float]:
         """
