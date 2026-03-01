@@ -35,7 +35,7 @@
 
     chrome.runtime.sendMessage({
       type: "PAGE_TEXT",
-      text: text.slice(0, MAX_TEXT_LENGTH),
+      text: text,
     });
   } catch {
     // Silently ignore errors in restricted pages

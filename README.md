@@ -86,8 +86,8 @@ Information-DIet-Manager/
 6. 调用 `POST /analyze/run` 运行分析，调用 `GET /dashboard/summary` 查看信息茧房评估结果
 
 ## 安全与隐私
-- 插件采集内容仅用于信息多样性分析，传输过程采用加密。
-- 用户可随时卸载插件或关闭数据上传。
+- 插件采集内容仅用于信息多样性分析。本地开发默认使用 HTTP，生产环境建议配置 HTTPS 以加密传输。
+- 用户可随时卸载插件或通过弹窗界面关闭数据上传。
 
 ## 贡献与开发
 - 欢迎提交 issue 或 pull request。

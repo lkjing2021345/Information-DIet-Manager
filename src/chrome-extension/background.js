@@ -2,6 +2,7 @@
 // Tracks tab activation times to compute dwell time, then sends data to backend.
 
 const DEFAULT_API = "http://127.0.0.1:8000";
+const MIN_DWELL_MS = 2000;
 
 // In-memory map: tabId -> { url, title, activatedAt }
 const activeTabs = new Map();
@@ -39,8 +40,8 @@ function flushTab(tabId) {
   activeTabs.delete(tabId);
 
   const dwellMs = Date.now() - entry.activatedAt;
-  // Ignore very short visits (< 2 s) to reduce noise
-  if (dwellMs < 2000) return;
+  // Ignore very short visits to reduce noise
+  if (dwellMs < MIN_DWELL_MS) return;
 
   // Skip browser internal pages
   if (!entry.url || !/^https?:\/\//.test(entry.url)) return;
