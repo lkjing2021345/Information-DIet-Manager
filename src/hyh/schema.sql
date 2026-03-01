@@ -31,3 +31,26 @@ ON items (ts);
 CREATE INDEX IF NOT EXISTS idx_items_channel
 ON items (channel);
 
+-- Embeddings (optional for MVP; can store vector blob or file path)
+CREATE TABLE IF NOT EXISTS embeddings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL UNIQUE,
+    vector BLOB,
+    vector_path TEXT,
+    model TEXT,
+    dim INTEGER,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+-- Daily aggregated stats (store analysis results to avoid recompute)
+CREATE TABLE IF NOT EXISTS stats_daily (
+    day TEXT PRIMARY KEY, -- YYYY-MM-DD
+    total_count INTEGER NOT NULL,
+    channel_counts TEXT,  -- JSON object
+    repeat_ratio REAL,    -- duplicates/total by content_hash
+    negative_ratio REAL,  -- placeholder for sentiment
+    avg_sentiment REAL,   -- placeholder for sentiment
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
