@@ -862,7 +862,7 @@ class InformationQualityEvaluator:
         """
         计算内容质量分数
         """
-        if isinstance(df, pd.DataFrame):
+        if not isinstance(df, pd.DataFrame):
             logger.error("输入数据必须是 pandas.DataFrame")
             raise TypeError("输入数据必须是 pandas.DataFrame")
 
