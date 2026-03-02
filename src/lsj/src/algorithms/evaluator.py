@@ -1412,7 +1412,7 @@ class InformationQualityEvaluator:
 
 
         # 构造 DiversityMetrics
-        content_div_details = self._cache.get('content_div_details', {})
+        content_div_details = self._cache.get('content_diversity_details', {})
 
         category_distribution = {str(k): int(v) for k, v in category_counts.to_dict().items()}
         category_ratios = (category_counts / category_counts.sum()).tolist() if len(category_counts) > 0 else []
