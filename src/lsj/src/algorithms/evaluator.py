@@ -1692,20 +1692,23 @@ class InformationQualityEvaluator:
     ) -> None:
         """
         导出评估报告
-
-        TODO: 支持 JSON/Markdown/HTML 格式
         TODO: 包含图表和数据
         """
-        pass
+        if format == 'json':
+            return report.to_json(output_path)
+
+        if format == 'markdown':
+            return report.to_markdown(output_path)
+
+        else:
+            logger.warning("不是支持的输出格式，已默认输出json格式")
+            return report.to_json(output_path)
 
     def generate_summary(self, report: EvaluationReport) -> str:
         """
         生成文字摘要
-
-        TODO: 提取关键发现
-        TODO: 生成易读的摘要文本
         """
-        pass
+        return report.get_summary()
 
     # ==================== 配置管理 ====================
 
