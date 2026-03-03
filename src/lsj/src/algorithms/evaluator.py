@@ -20,13 +20,12 @@ from datetime import datetime
 
 import pandas as pd
 import numpy as np
-from pandas import to_numeric
 
 # 导入已完成的模块
 from sentiment import SentimentAnalyzer
 from classifier import ContentClassifier
 from similarity import SimilarityAnalyzer
-from .utils.markdown_builder import ReportMarkdownGenerator
+from markdown_builder import ReportMarkdownGenerator
 
 
 # ========= Logger 初始化 =========
@@ -720,12 +719,11 @@ class InformationQualityEvaluator:
         processed_df["polarity"] = processed_df["polarity"].clip(-1.0, 1.0)
         processed_df["similarity"] = processed_df["similarity"].clip(0.0, 1.0)
 
-        if 'timestamp' in processed_df.columns:
-            processed_df['timestamp'] = pd.to_datetime(processed_df['timestamp'], errors='coerce')
+        processed_df = self._attach_timestamp_column(processed_df)
 
-            processed_df = processed_df.dropna(subset=['timestamp'])
-
-            processed_df = processed_df.sort_values(by=['timestamp'], ascending=True)
+        if "timestamp" in processed_df.columns:
+            processed_df = processed_df.dropna(subset=["timestamp"])
+            processed_df = processed_df.sort_values(by=["timestamp"], ascending=True)
 
             processed_df["date"] = processed_df["timestamp"].dt.date
             processed_df["hour"] = processed_df["timestamp"].dt.hour
