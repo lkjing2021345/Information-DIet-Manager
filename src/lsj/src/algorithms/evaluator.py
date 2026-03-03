@@ -2306,6 +2306,17 @@ class InformationQualityEvaluator:
     def get_visualization_data(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         准备可视化数据
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return {
+                "time_series": [],
+                "category_distribution": {},
+                "sentiment_distribution": {},
+                "similarity_histogram": {},
+                "hourly_distribution": {},
+            }
 
         TODO: 提取关键指标的时间序列
         TODO: 准备分布图数据
