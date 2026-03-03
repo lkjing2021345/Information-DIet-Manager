@@ -1879,9 +1879,62 @@ def weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> flo
 
 # ==================== 测试代码 ====================
 if __name__ == "__main__":
-    # TODO: 加载测试数据
-    # TODO: 初始化评估器
-    # TODO: 执行评估
-    # TODO: 打印报告
-    # TODO: 导出结果
-    pass
+    try:
+        # ===== 路径配置 =====
+        raw_input_path = "./utils/output/history_data.csv"   # 原始浏览记录
+        result_csv_path = "./utils/output/result.csv"        # 构造后的完整结果
+        report_json = "cache/evaluation_report.json"
+        report_md = "cache/evaluation_report.md"
+        report_html = "cache/evaluation_report.html"
+
+        # ===== 读取原始数据 =====
+        raw_df = pd.read_csv(raw_input_path)
+        logger.info(f"已加载原始数据: {raw_input_path}, 共 {len(raw_df)} 条")
+
+        # ===== 初始化三个分析器 =====
+        sentiment_analyzer = SentimentAnalyzer(model_path='./models/sentiment_model_bert', use_bert=True)  # 可按需传 model_path/use_bert
+        content_classifier = ContentClassifier(model_path="./models/classifier_model.pkl")
+        similarity_analyzer = SimilarityAnalyzer()
+
+        # ===== 构造 category =====
+        df1 = content_classifier.batch_predict(raw_df)
+
+        # ===== 构造 sentiment / polarity =====
+        df2 = sentiment_analyzer.batch_predict(df1, text_column="title", include_emotions=False)
+
+        # ===== 构造 similarity =====
+        df3 = similarity_analyzer.batch_calculate_similarity(df2, text_column="title")
+        if "similarity" not in df3.columns:
+            if "similarity_to_previous" in df3.columns:
+                df3["similarity"] = df3["similarity_to_previous"]
+            else:
+                df3["similarity"] = 0.0
+
+        # ===== 保存构造后的 result.csv =====
+        Path(result_csv_path).parent.mkdir(parents=True, exist_ok=True)
+        df3.to_csv(result_csv_path, index=False, encoding="utf-8-sig")
+        logger.info(f"已生成完整结果文件: {result_csv_path}")
+
+        # ===== 评估 =====
+        evaluator = InformationQualityEvaluator(
+            sentiment_analyzer=sentiment_analyzer,
+            content_classifier=content_classifier,
+            similarity_analyzer=similarity_analyzer
+        )
+        report = evaluator.evaluate(df3, detailed=True)
+
+        # ===== 输出摘要 导出报告 =====
+        print("\n" + "=" * 60)
+        print(evaluator.generate_summary(report))
+        print("=" * 60 + "\n")
+
+        evaluator.export_report(report, report_json, format="json")
+        evaluator.export_report(report, report_md, format="markdown")
+        evaluator.export_report(report, report_html, format="html")
+
+        logger.info("完整流程执行完成：构造 result.csv + 评估 + 报告导出")
+
+    except FileNotFoundError as e:
+        logger.error(f"文件不存在: {e}")
+    except Exception as e:
+        logger.exception(f"执行失败: {e}")
