@@ -2195,7 +2195,58 @@ class InformationQualityEvaluator:
         TODO: 对每组执行评估
         TODO: 返回评估结果 DataFrame
         """
-        pass
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            raise ValueError("df 为空，无法批量评估")
+
+        working_df = df.copy()
+
+        if group_by == "date":
+            if "date" not in working_df.columns:
+                working_df = self._attach_timestamp_column(working_df)
+                if "timestamp" not in working_df.columns:
+                    raise ValueError("按 date 分组需要 date 或可解析时间列（timestamp/visit_time/ts）")
+                working_df = working_df.dropna(subset=["timestamp"]).copy()
+                working_df["date"] = working_df["timestamp"].dt.date.astype(str)
+            else:
+                working_df["date"] = working_df["date"].astype(str)
+            key_col = "date"
+        else:
+            if group_by not in working_df.columns:
+                raise ValueError(f"group_by 列不存在: {group_by}")
+            key_col = group_by
+
+        rows: List[Dict[str, Any]] = []
+        min_records = int(self.config.get("min_records", 5))
+
+        for key, group_df in working_df.groupby(key_col):
+            if len(group_df) < min_records:
+                logger.warning(f"分组 {key} 样本不足（{len(group_df)} < {min_records}），跳过")
+                continue
+
+            try:
+                result = self.quick_evaluate(group_df)
+                rows.append({
+                    "period": str(key),
+                    "overall_score": float(result["overall_score"]),
+                    "health_level": result["health_level"],
+                    "diversity": float(result["dimension_scores"]["diversity"]),
+                    "sentiment_health": float(result["dimension_scores"]["sentiment_health"]),
+                    "content_quality": float(result["dimension_scores"]["content_quality"]),
+                    "time_allocation": float(result["dimension_scores"]["time_allocation"]),
+                    "total_records": int(result["sample_info"]["total_records"]),
+                    "valid_records": int(result["sample_info"]["valid_records"]),
+                })
+            except Exception as e:
+                logger.exception(f"分组 {key} 评估失败: {e}")
+
+        trend_df = pd.DataFrame(rows)
+        if trend_df.empty:
+            return trend_df
+
+        trend_df = trend_df.sort_values(by="period").reset_index(drop=True)
+        return trend_df
 
     def compare_users(
         self,
