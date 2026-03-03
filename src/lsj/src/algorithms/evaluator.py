@@ -1467,7 +1467,57 @@ class InformationQualityEvaluator:
         TODO: 识别显著变化
         TODO: 生成对比报告
         """
-        pass
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            raise ValueError("df 为空，无法做时间段对比")
+
+        df1 = self._filter_by_time_range(df, period1)
+        df2 = self._filter_by_time_range(df, period2)
+
+        r1 = self.quick_evaluate(df1)
+        r2 = self.quick_evaluate(df2)
+
+        m1 = {
+            "overall_score": float(r1["overall_score"]),
+            "diversity": float(r1["dimension_scores"]["diversity"]),
+            "sentiment_health": float(r1["dimension_scores"]["sentiment_health"]),
+            "content_quality": float(r1["dimension_scores"]["content_quality"]),
+            "time_allocation": float(r1["dimension_scores"]["time_allocation"]),
+        }
+        m2 = {
+            "overall_score": float(r2["overall_score"]),
+            "diversity": float(r2["dimension_scores"]["diversity"]),
+            "sentiment_health": float(r2["dimension_scores"]["sentiment_health"]),
+            "content_quality": float(r2["dimension_scores"]["content_quality"]),
+            "time_allocation": float(r2["dimension_scores"]["time_allocation"]),
+        }
+
+        changes = {}
+        for k in m1.keys():
+            base = m1[k]
+            curr = m2[k]
+            abs_change = curr - base
+            change_rate = (abs_change / base * 100.0) if abs(base) > 1e-6 else None
+            changes[k] = {
+                "period1": base,
+                "period2": curr,
+                "abs_change": abs_change,
+                "change_rate_pct": change_rate,
+            }
+
+        significant = [
+            k for k, v in changes.items()
+            if abs(v["abs_change"]) >= (5.0 if k == "overall_score" else 3.0)
+        ]
+
+        return {
+            "period1": {"range": period1, "result": r1},
+            "period2": {"range": period2, "result": r2},
+            "changes": changes,
+            "significant_metrics": significant,
+        }
+
 
     # ==================== 私有方法：风险识别 ====================
 
