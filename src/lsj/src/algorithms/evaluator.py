@@ -1386,6 +1386,11 @@ class InformationQualityEvaluator:
     def _analyze_temporal_trends(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         分析时间趋势
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return {"series": [], "summary": {}, "predictions": []}
 
         TODO: 计算各指标的时间序列变化
         TODO: 识别改善或恶化趋势
