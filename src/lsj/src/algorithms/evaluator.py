@@ -1021,6 +1021,28 @@ class InformationQualityEvaluator:
     def _analyze_emotion_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         分析情绪模式
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return {
+                "sentiment_distribution": {},
+                "polarity_stats": {},
+                "sentiment_by_category": {},
+                "daily_sentiment": [],
+            }
+
+        work = df.copy()
+        sentiment_series = work["sentiment"].astype(str).str.lower().str.strip() if "sentiment" in work.columns else pd.Series([], dtype=str)
+        polarity = pd.to_numeric(work.get("polarity", pd.Series(dtype=float)), errors="coerce")
+
+        sentiment_distribution = sentiment_series.value_counts(dropna=True).to_dict()
+        polarity_stats = {
+            "mean": float(polarity.mean()) if polarity.notna().any() else 0.0,
+            "std": float(polarity.std()) if polarity.notna().sum() > 1 else 0.0,
+            "min": float(polarity.min()) if polarity.notna().any() else 0.0,
+            "max": float(polarity.max()) if polarity.notna().any() else 0.0,
+        }
 
         TODO: 统计各类情绪的分布
         TODO: 分析情绪随时间的变化
