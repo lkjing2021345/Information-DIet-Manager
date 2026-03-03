@@ -1335,12 +1335,51 @@ class InformationQualityEvaluator:
     def _detect_time_waste(self, df: pd.DataFrame) -> List[RiskAlert]:
         """
         检测时间浪费模式
-
-        TODO: 识别过度娱乐时段
-        TODO: 检测碎片化浏览
-        TODO: 分析低效浏览模式
         """
-        pass
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return []
+
+        time_info = self._analyze_time_allocation(df)
+        alerts: List[RiskAlert] = []
+
+        off_ratio = float(time_info.get("off_hour_waste_ratio", 0.0))
+        frag = float(time_info.get("fragmentation_score", 0.0))
+        late_night_ent = float(time_info.get("late_night_entertainment_duration", 0.0))
+
+        if off_ratio > 0.35 or frag > 0.70 or late_night_ent > 1.0:
+            severity = 3
+            if off_ratio > 0.50 or frag > 0.85 or late_night_ent > 2.0:
+                severity = 4
+            if off_ratio > 0.65 or late_night_ent > 3.0:
+                severity = 5
+
+            alerts.append(
+                RiskAlert(
+                    risk_type=RiskType.TIME_WASTE,
+                    severity=severity,
+                    brief_description="时间使用效率偏低",
+                    detailed_description=(
+                        f"低效时段占比 {off_ratio:.1%}，碎片化评分 {frag:.2f}，"
+                        f"深夜娱乐时长约 {late_night_ent:.2f} 小时。"
+                    ),
+                    evidence=Evidence(key_statistics={
+                        "off_hour_waste_ratio": off_ratio,
+                        "fragmentation_score": frag,
+                        "late_night_entertainment_duration": late_night_ent,
+                    }),
+                    impact_analysis="长期低效浏览会压缩高质量输入时间并影响作息。",
+                    suggestions=[
+                        "给娱乐内容设置每日截止时间。",
+                        "把高价值阅读固定在白天高注意力时段。",
+                    ],
+                    priority=Priority.IMPORTANT if severity >= 4 else Priority.NORMAL,
+                )
+            )
+
+        return alerts
+
 
     # ==================== 私有方法：趋势分析 ====================
 
