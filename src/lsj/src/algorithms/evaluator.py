@@ -1044,11 +1044,36 @@ class InformationQualityEvaluator:
             "max": float(polarity.max()) if polarity.notna().any() else 0.0,
         }
 
-        TODO: 统计各类情绪的分布
-        TODO: 分析情绪随时间的变化
-        TODO: 识别情绪触发因素（类别、时间段）
-        """
-        pass
+        sentiment_by_category: Dict[str, Dict[str, float]] = {}
+        if {"category", "sentiment"}.issubset(work.columns):
+            tmp = work.copy()
+            tmp["category"] = tmp["category"].astype(str).str.lower().str.strip()
+            tmp["sentiment"] = tmp["sentiment"].astype(str).str.lower().str.strip()
+            cross = pd.crosstab(tmp["category"], tmp["sentiment"], normalize="index")
+            sentiment_by_category = {
+                str(idx): {str(c): float(v) for c, v in row.items()} for idx, row in cross.iterrows()
+            }
+
+        daily_sentiment: List[Dict[str, Any]] = []
+        work = self._attach_timestamp_column(work)
+        if "timestamp" in work.columns:
+            valid = work.dropna(subset=["timestamp"]).copy()
+            if not valid.empty and "polarity" in valid.columns:
+                valid["date"] = valid["timestamp"].dt.date.astype(str)
+                g = valid.groupby("date").agg(
+                    mean_polarity=("polarity", "mean"),
+                    negative_ratio=("polarity", lambda x: float((pd.to_numeric(x, errors="coerce") < 0).mean())),
+                    count=("polarity", "count"),
+                ).reset_index()
+                daily_sentiment = g.to_dict("records")
+
+        return {
+            "sentiment_distribution": {str(k): int(v) for k, v in sentiment_distribution.items()},
+            "polarity_stats": polarity_stats,
+            "sentiment_by_category": sentiment_by_category,
+            "daily_sentiment": daily_sentiment,
+        }
+
 
     # ==================== 私有方法：内容质量分析 ====================
 
