@@ -1846,7 +1846,37 @@ class InformationQualityEvaluator:
         TODO: 建议调整浏览时段
         TODO: 推荐时间管理策略
         """
-        pass
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return []
+
+        try:
+            time_info = self._analyze_time_allocation(df)
+        except Exception:
+            return ["缺少可用时间数据，建议补充 timestamp/visit_time/ts 后再分析。"]
+
+        suggestions: List[str] = []
+
+        off_ratio = float(time_info.get("off_hour_waste_ratio", 0.0))
+        frag = float(time_info.get("fragmentation_score", 0.0))
+        late_night_ent = float(time_info.get("late_night_entertainment_duration", 0.0))
+        peak_eff = float(time_info.get("peak_hour_efficiency", 0.0))
+
+        if off_ratio > 0.35:
+            suggestions.append("深夜时段使用偏高，建议 23:00 后减少非必要浏览。")
+        if frag > 0.70:
+            suggestions.append("碎片化浏览明显，建议采用番茄钟或固定阅读块（20-30 分钟）。")
+        if late_night_ent > 1.0:
+            suggestions.append("深夜娱乐时长偏高，建议设置娱乐内容截止时间。")
+        if peak_eff < 0.4:
+            suggestions.append("白天高效时段利用不足，建议把学习/工具内容前置到 9:00-18:00。")
+
+        if not suggestions:
+            suggestions.append("当前时间分配较合理，建议继续保持固定高价值输入时段。")
+
+        return suggestions
+
 
     # ==================== 核心公共方法 ====================
 
