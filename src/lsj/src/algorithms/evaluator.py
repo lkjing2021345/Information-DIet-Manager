@@ -1142,7 +1142,7 @@ class InformationQualityEvaluator:
         else:
             peak_hour_efficiency = 0.5
 
-        # 时长近似：history_data.csv 无 duration，用“每条记录约 3 分钟”估算
+        # 时长近似：无 duration，用“每条记录约 3 分钟”估算
         minutes_per_record = 3.0
         low_efficiency_duration = float(off_hour_count * minutes_per_record / 60.0)
         late_night_entertainment_duration = float(late_night_entertainment_count * minutes_per_record / 60.0)
@@ -1411,12 +1411,35 @@ class InformationQualityEvaluator:
     ) -> List[str]:
         """
         生成改进建议
-
-        TODO: 基于风险类型生成建议
-        TODO: 根据严重程度排序
-        TODO: 提供可操作的具体措施
         """
-        pass
+        merged: List[str] = []
+        seen = set()
+
+        def add_suggestion(text: str) -> None:
+            t = str(text).strip()
+            if t and t not in seen:
+                seen.add(t)
+                merged.append(t)
+
+        sorted_risk = sorted(risks, key=lambda r: r.severity, reverse=True)
+        for risk in sorted_risk:
+            for s in risk.suggestions:
+                add_suggestion(s)
+
+        if not merged:
+            if metrics.diversity.category_diversity_score < 0.5:
+                add_suggestion("增加跨类别信息摄入（学习/新闻/工具），降低单一内容连续浏览。")
+            if metrics.sentiment_health.negative_ratio > 0.35:
+                add_suggestion("减少高负面信息源暴露，增加中性与积极内容比例。")
+            if metrics.content_quality.entertainment_ratio > 0.45:
+                add_suggestion("设置娱乐内容时长上限，将高价值内容前置到白天。")
+            if metrics.time_allocation.off_hour_waste_ratio > 0.35:
+                add_suggestion("减少深夜浏览，固定高效阅读时段并控制碎片化使用。")
+
+        if not merged:
+            add_suggestion("当前信息摄取结构总体稳定，建议每周复盘一次并保持多样化输入。")
+
+        return merged
 
     def _generate_category_suggestions(self, df: pd.DataFrame) -> List[str]:
         """
