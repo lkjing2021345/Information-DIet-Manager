@@ -647,6 +647,30 @@ class InformationQualityEvaluator:
 
     # ==================== 私有方法：数据预处理 ====================
 
+    def _attach_timestamp_column(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        统一时间字段到 timestamp 列
+        支持输入列: timestamp / visit_time / ts
+        """
+        working_df = df.copy()
+        parsed_ts = None
+
+        if "timestamp" in working_df.columns:
+            parsed_ts = pd.to_datetime(working_df["timestamp"], errors="coerce")
+        elif "visit_time" in working_df.columns:
+            parsed_ts = pd.to_datetime(working_df["visit_time"], errors="coerce")
+        elif "ts" in working_df.columns:
+            ts_num = pd.to_numeric(working_df["ts"], errors="coerce")
+            if ts_num.notna().any():
+                inferred_unit = "ms" if float(ts_num.dropna().median()) > 1e11 else "s"
+                parsed_ts = pd.to_datetime(ts_num, unit=inferred_unit, errors="coerce")
+            else:
+                parsed_ts = pd.to_datetime(working_df["ts"], errors="coerce")
+
+        if parsed_ts is not None:
+            working_df["timestamp"] = parsed_ts
+        return working_df
+
     def _validate_dataframe(self, df: pd.DataFrame) -> bool:
         """
         验证输入数据格式
