@@ -1819,10 +1819,24 @@ class InformationQualityEvaluator:
         if df.empty or "category" not in df.columns:
             return []
 
-        TODO: 识别缺失或不足的类别
-        TODO: 建议增加的内容类型
-        """
-        pass
+        category = df["category"].astype(str).str.lower().str.strip()
+        ratio = category.value_counts(normalize=True)
+
+        suggestions: List[str] = []
+        if float(ratio.get("learning", 0.0)) < 0.20:
+            suggestions.append("学习类内容占比较低，建议提升至 20% 以上。")
+        if float(ratio.get("news", 0.0)) < 0.10:
+            suggestions.append("新闻类输入偏少，建议增加权威资讯来源。")
+        if float(ratio.get("tools", 0.0)) < 0.10:
+            suggestions.append("工具类内容较少，可增加效率工具与方法论内容。")
+        if float(ratio.get("entertainment", 0.0)) > 0.45:
+            suggestions.append("娱乐类内容偏高，建议设置每日上限并分配到低优先级时段。")
+
+        if not suggestions:
+            suggestions.append("当前类别结构相对均衡，保持跨类别输入即可。")
+
+        return suggestions
+
 
     def _generate_time_management_suggestions(self, df: pd.DataFrame) -> List[str]:
         """
