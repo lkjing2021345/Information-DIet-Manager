@@ -2280,11 +2280,26 @@ class InformationQualityEvaluator:
                 failed_users.append({"user_id": str(user_id), "error": str(e)})
                 logger.exception(f"用户 {user_id} 评估失败: {e}")
 
-        TODO: 对每个用户执行评估
-        TODO: 计算相对排名
-        TODO: 生成对比报告
-        """
-        pass
+        rankings = sorted(rankings, key=lambda x: x["overall_score"], reverse=True)
+        for idx, row in enumerate(rankings, start=1):
+            row["rank"] = idx
+
+        scores = [r["overall_score"] for r in rankings]
+        summary = {
+            "total_users": int(len(user_data)),
+            "evaluated_users": int(len(rankings)),
+            "failed_users": int(len(failed_users)),
+            "average_score": float(np.mean(scores)) if scores else None,
+            "best_user": rankings[0]["user_id"] if rankings else None,
+            "worst_user": rankings[-1]["user_id"] if rankings else None,
+        }
+
+        return {
+            "rankings": rankings,
+            "summary": summary,
+            "failed_users": failed_users,
+        }
+
 
     # ==================== 可视化支持 ====================
 
