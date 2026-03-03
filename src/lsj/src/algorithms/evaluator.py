@@ -498,9 +498,9 @@ class EvaluationReport:
 
             if is_dataclass(obj):
                 result = {}
-                for filed in fields(obj):
-                    value = getattr(obj, filed.name)
-                    result[filed.name] = dataclass_to_dict(value)
+                for field_def in fields(obj):
+                    value = getattr(obj, field_def.name)
+                    result[field_def.name] = dataclass_to_dict(value)
                 return result
 
             # 处理枚举
@@ -745,6 +745,32 @@ class InformationQualityEvaluator:
         }
         return row
 
+    def _build_alert(
+        self,
+        risk_type: RiskType,
+        severity: int,
+        brief_description: str,
+        detailed_description: str,
+        impact_analysis: str,
+        key_statistics: Dict[str, Any],
+        suggestions: List[str],
+        potential_consequences: Optional[List[str]] = None,
+    ) -> RiskAlert:
+        """统一构建 RiskAlert，集中处理严重度与优先级。"""
+        severity = int(np.clip(severity, 1, 5))
+        priority = Priority.URGENT if severity >= 5 else Priority.IMPORTANT if severity >= 4 else Priority.NORMAL
+        return RiskAlert(
+            risk_type=risk_type,
+            severity=severity,
+            brief_description=brief_description,
+            detailed_description=detailed_description,
+            evidence=Evidence(key_statistics=key_statistics),
+            impact_analysis=impact_analysis,
+            potential_consequences=potential_consequences or [],
+            suggestions=suggestions,
+            priority=priority,
+        )
+
     def _attach_timestamp_column(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         统一时间字段到 timestamp 列
@@ -778,8 +804,8 @@ class InformationQualityEvaluator:
             raise TypeError("输入数据必须是 pandas.DataFrame")
 
         if df.empty:
-           logger.error("输入 DataFrame 为空，无法评估")
-           raise ValueError("输入 DataFrame 为空，无法评估")
+            logger.error("输入 DataFrame 为空，无法评估")
+            raise ValueError("输入 DataFrame 为空，无法评估")
 
         required_columns = {"title", "url", "category", "sentiment", "polarity", "similarity"}
         missing_columns = sorted(required_columns - set(df.columns))
@@ -1026,7 +1052,7 @@ class InformationQualityEvaluator:
             logger.error("输入数据必须是 pandas.DataFrame")
             raise TypeError("输入数据必须是 pandas.DataFrame")
 
-        if df.empty or df is None:
+        if df.empty:
             logger.error("输入 DataFrame 为空，无法评估")
             raise ValueError("输入 DataFrame 为空，无法评估")
 
@@ -1183,7 +1209,7 @@ class InformationQualityEvaluator:
             logger.error("输入数据必须是 pandas.DataFrame")
             raise TypeError("输入数据必须是 pandas.DataFrame")
 
-        if df.empty or df is None:
+        if df.empty:
             logger.error("输入 DataFrame 为空，无法计算内容质量分数")
             raise ValueError("输入 DataFrame 为空，无法计算内容质量分数")
 
@@ -1440,7 +1466,11 @@ class InformationQualityEvaluator:
         frag = float(time_info.get("fragmentation_score", 0.0))
         late_night_ent = float(time_info.get("late_night_entertainment_duration", 0.0))
 
-        if off_ratio > 0.35 or frag > 0.70 or late_night_ent > 1.0:
+        if (
+            off_ratio > self.TIME_WASTE_OFF_HOUR_WARNING
+            or frag > self.TIME_WASTE_FRAGMENT_WARNING
+            or late_night_ent > self.TIME_WASTE_LATE_NIGHT_WARNING_HOURS
+        ):
             severity = self._compute_time_waste_severity(off_ratio, frag, late_night_ent)
 
             alerts.append(
@@ -1605,7 +1635,7 @@ class InformationQualityEvaluator:
 
     # ==================== 私有方法：风险识别 ====================
 
-    def _identify_risks(self, df: pd.DataFrame, metrics: EvaluationMetrics) -> List[RiskAlert]:
+    def _identify_risks(self, metrics: EvaluationMetrics) -> List[RiskAlert]:
         """
         综合识别风险
 
@@ -1615,30 +1645,6 @@ class InformationQualityEvaluator:
             raise TypeError("metrics 必须是 EvaluationMetrics 实例")
 
         risks: List[RiskAlert] = []
-        thresholds = self.config.get("thresholds", {})
-
-        def build_alert(
-            risk_type: RiskType,
-            severity: int,
-            brief_description: str,
-            detailed_description: str,
-            impact_analysis: str,
-            key_statistics: Dict[str, Any],
-            suggestions: List[str],
-        ) -> RiskAlert:
-            severity = int(np.clip(severity, 1, 5))
-            priority = Priority.URGENT if severity >= 5 else Priority.IMPORTANT if severity >= 4 else Priority.NORMAL
-            return RiskAlert(
-                risk_type=risk_type,
-                severity=severity,
-                brief_description=brief_description,
-                detailed_description=detailed_description,
-                evidence=Evidence(key_statistics=key_statistics),
-                impact_analysis=impact_analysis,
-                potential_consequences=[],
-                suggestions=suggestions,
-                priority=priority,
-            )
 
         # 信息茧房：类别过于集中 + 内容相似度过高
         dom_ratio = float(metrics.diversity.dominant_category_ratio)
@@ -1653,7 +1659,7 @@ class InformationQualityEvaluator:
             )
             severity = 3 + int(np.clip(np.ceil(exceed_ratio * 2), 0, 2))
             risks.append(
-                build_alert(
+                self._build_alert(
                     risk_type=RiskType.ECHO_CHAMBER,
                     severity=severity,
                     brief_description="内容同质化明显，存在信息茧房倾向",
@@ -1681,7 +1687,7 @@ class InformationQualityEvaluator:
             exceed = (negative_ratio - negative_limit) / max(1e-6, 1 - negative_limit)
             severity = 3 + int(np.clip(np.ceil(exceed * 2), 0, 2))
             risks.append(
-                build_alert(
+                self._build_alert(
                     risk_type=RiskType.EMOTION_POLLUTION,
                     severity=severity,
                     brief_description="负面内容占比较高，情绪健康受损",
@@ -1707,7 +1713,7 @@ class InformationQualityEvaluator:
             exceed = (entertainment_ratio - entertainment_limit) / max(1e-6, 1 - entertainment_limit)
             severity = 3 + int(np.clip(np.ceil(exceed * 2), 0, 2))
             risks.append(
-                build_alert(
+                self._build_alert(
                     risk_type=RiskType.EXCESSIVE_ENTERTAINMENT,
                     severity=severity,
                     brief_description="娱乐内容消费偏高，影响信息质量",
@@ -1742,7 +1748,7 @@ class InformationQualityEvaluator:
             )
 
             risks.append(
-                build_alert(
+                self._build_alert(
                     risk_type=RiskType.TIME_WASTE,
                     severity=severity,
                     brief_description="时间利用效率偏低，存在明显浪费",
@@ -1769,7 +1775,7 @@ class InformationQualityEvaluator:
         if category_diversity_score < 0.35:
             severity = 4 if category_diversity_score < 0.20 else 3
             risks.append(
-                build_alert(
+                self._build_alert(
                     risk_type=RiskType.CONTENT_MONOTONY,
                     severity=severity,
                     brief_description="内容类别结构单一，输入广度不足",
@@ -1798,7 +1804,6 @@ class InformationQualityEvaluator:
         生成单个风险警报
         """
         severity = int(np.clip(severity, 1, 5))
-        priority = Priority.URGENT if severity >= 5 else Priority.IMPORTANT if severity >= 4 else Priority.NORMAL
 
         templates = {
             RiskType.ECHO_CHAMBER: {
@@ -1846,16 +1851,14 @@ class InformationQualityEvaluator:
             "suggestions": ["关注近期行为变化", "适度调整内容结构"],
         })
 
-        return RiskAlert(
+        return self._build_alert(
             risk_type=risk_type,
             severity=severity,
             brief_description=tpl["brief"],
             detailed_description=tpl["detail"],
-            evidence=Evidence(key_statistics=evidence or {}),
             impact_analysis=tpl["impact"],
-            potential_consequences=[],
+            key_statistics=evidence or {},
             suggestions=list(tpl["suggestions"]),
-            priority=priority,
         )
 
 
@@ -2234,7 +2237,7 @@ class InformationQualityEvaluator:
             )
         )
 
-        risk_alerts = self._identify_risks(processed_df, metrics)
+        risk_alerts = self._identify_risks(metrics)
         recommendations = self._build_recommendations(processed_df, metrics, risk_alerts)
         metadata = self._build_report_metadata(df, processed_df)
 
