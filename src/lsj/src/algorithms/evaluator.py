@@ -867,7 +867,51 @@ class InformationQualityEvaluator:
         TODO: 分析时间窗口内的变化趋势
         TODO: 返回 (是否存在, 严重程度, 详细证据)
         """
-        pass
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df 必须是 pandas.DataFrame")
+        if df.empty:
+            return False, 0.0, {"reason": "empty_dataframe"}
+
+        category_series = df["category"].astype(str).str.lower().str.strip() \
+            if "category" in df.columns \
+            else pd.Series([], dtype=str)
+
+        sim_series = pd.to_numeric(df["similarity"], errors="coerce").dropna().clip(0.0, 1.0) \
+            if "similarity" in df.columns \
+            else pd.Series([], dtype=float)
+
+        if category_series.empty:
+            dominant_ratio = 0.0
+            dominant_category = "other"
+        else:
+            counts = category_series.value_counts()
+            dominant_category = str(counts.index[0])
+            dominant_ratio = float(counts.iloc[0] / counts.sum())
+
+        avg_similarity = float(sim_series.mean()) if not sim_series.empty else 0.0
+        high_similarity_ratio = float((sim_series >= 0.85).mean()) if not sim_series.empty else 0.0
+
+        dom_limit = float(self.config.get("thresholds", {}).get("dominant_category_ratio", self.DOMINANT_CATEGORY_RATIO_LIMIT))
+        sim_limit = float(self.config.get("thresholds", {}).get("echo_chamber_similarity", self.ECHO_CHAMBER_SIMILARITY_LIMIT))
+
+        dom_exceed = max(0.0, (dominant_ratio - dom_limit) / max(1e-6, 1.0 - dom_limit))
+        sim_exceed = max(0.0, (avg_similarity - sim_limit) / max(1e-6, 1.0 - sim_limit))
+
+        severity = float(np.clip(0.55 * dom_exceed + 0.45 * sim_exceed, 0.0, 1.0))
+        exists = bool((dominant_ratio > dom_limit) or (avg_similarity > sim_limit))
+
+        evidence = {
+            "dominant_category": dominant_category,
+            "dominant_category_ratio": dominant_ratio,
+            "dominant_ratio_limit": dom_limit,
+            "avg_similarity": avg_similarity,
+            "similarity_limit": sim_limit,
+            "high_similarity_ratio": high_similarity_ratio,
+            "record_count": int(len(df)),
+        }
+
+        return exists, severity, evidence
+
 
     # ==================== 私有方法：情感健康分析 ====================
 
