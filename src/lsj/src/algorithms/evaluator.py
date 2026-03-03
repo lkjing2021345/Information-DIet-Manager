@@ -1467,6 +1467,7 @@ class InformationQualityEvaluator:
             raise TypeError("数据无效，无法评估")
 
         processed_df = self._preprocess_data(df)
+        processed_df = self._filter_by_time_range(processed_df, time_range=time_range)
 
         category_diversity_score = self._calculate_category_diversity(df=processed_df)
         content_diversity_score = self._calculate_content_diversity(df=processed_df)
