@@ -2254,6 +2254,31 @@ class InformationQualityEvaluator:
     ) -> Dict[str, Any]:
         """
         对比多个用户的信息摄取质量
+        """
+        if not isinstance(user_data, dict) or not user_data:
+            raise ValueError("user_data 必须是非空 dict，格式 {user_id: DataFrame}")
+
+        rankings: List[Dict[str, Any]] = []
+        failed_users: List[Dict[str, str]] = []
+
+        for user_id, user_df in user_data.items():
+            try:
+                result = self.quick_evaluate(user_df)
+                dims = result["dimension_scores"]
+                rankings.append({
+                    "user_id": str(user_id),
+                    "overall_score": float(result["overall_score"]),
+                    "health_level": result["health_level"],
+                    "diversity": float(dims["diversity"]),
+                    "sentiment_health": float(dims["sentiment_health"]),
+                    "content_quality": float(dims["content_quality"]),
+                    "time_allocation": float(dims["time_allocation"]),
+                    "total_records": int(result["sample_info"]["total_records"]),
+                    "valid_records": int(result["sample_info"]["valid_records"]),
+                })
+            except Exception as e:
+                failed_users.append({"user_id": str(user_id), "error": str(e)})
+                logger.exception(f"用户 {user_id} 评估失败: {e}")
 
         TODO: 对每个用户执行评估
         TODO: 计算相对排名
