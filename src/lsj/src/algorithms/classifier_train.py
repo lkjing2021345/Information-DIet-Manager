@@ -770,7 +770,7 @@ def main():
     try:
         if len(sys.argv) < 2:
             logger.error("参数不足")
-            logger.info("用法: python advanced_train.py <数据文件路径>")
+            logger.info("用法: python classifier_train.py <数据文件路径>")
             sys.exit(1)
 
         data_path = sys.argv[1]
