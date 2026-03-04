@@ -208,6 +208,45 @@ class EvaluationMetrics:
     })
 
 
+# 默认阈值与权重
+DEFAULT_THRESHOLDS: Dict[str, float] = {
+    "echo_chamber_similarity": 0.75,
+    "dominant_category_ratio": 0.60,
+    "negative_ratio_warning": 0.40,
+    "entertainment_ratio_warning": 0.50,
+    "time_waste_off_hour_warning": 0.35,
+    "time_waste_off_hour_important": 0.50,
+    "time_waste_off_hour_urgent": 0.65,
+    "time_waste_fragment_warning": 0.70,
+    "time_waste_fragment_important": 0.85,
+    "time_waste_late_night_warning_hours": 1.0,
+    "time_waste_late_night_important_hours": 2.0,
+    "time_waste_late_night_urgent_hours": 3.0,
+}
+
+DEFAULT_WEIGHTS: Dict[str, float] = {
+    "diversity": 0.25,
+    "sentiment_health": 0.25,
+    "content_quality": 0.30,
+    "time_allocation": 0.20,
+}
+
+
+@dataclass
+class EvaluatorConfig:
+    """评估器配置（统一管理阈值与权重）。"""
+    min_records: int = 5
+    thresholds: Dict[str, float] = field(default_factory=lambda: DEFAULT_THRESHOLDS.copy())
+    weights: Dict[str, float] = field(default_factory=lambda: DEFAULT_WEIGHTS.copy())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "min_records": int(self.min_records),
+            "thresholds": {str(k): float(v) for k, v in self.thresholds.items()},
+            "weights": {str(k): float(v) for k, v in self.weights.items()},
+        }
+
+
 # ==================== 风险警报数据类 ====================
 
 @dataclass
@@ -594,42 +633,12 @@ class InformationQualityEvaluator:
         4. 生成综合评估报告
     """
 
-    # ==================== 类常量 ====================
-    # 定义阈值常量
-    # 信息茧房：平均相似度阈值
-    ECHO_CHAMBER_SIMILARITY_LIMIT = 0.75
-    # 信息茧房：主导类别占比阈值
-    DOMINANT_CATEGORY_RATIO_LIMIT = 0.60
-    # 情感健康：负面内容占比警戒线
-    NEGATIVE_RATIO_WARNING = 0.40
-    # 内容质量：娱乐内容占比警戒线
-    ENTERTAINMENT_RATIO_WARNING = 0.50
-    # 时间浪费相关阈值（用于风险判定）
-    TIME_WASTE_OFF_HOUR_WARNING = 0.35
-    TIME_WASTE_OFF_HOUR_IMPORTANT = 0.50
-    TIME_WASTE_OFF_HOUR_URGENT = 0.65
-
-    TIME_WASTE_FRAGMENT_WARNING = 0.70
-    TIME_WASTE_FRAGMENT_IMPORTANT = 0.85
-
-    TIME_WASTE_LATE_NIGHT_WARNING_HOURS = 1.0
-    TIME_WASTE_LATE_NIGHT_IMPORTANT_HOURS = 2.0
-    TIME_WASTE_LATE_NIGHT_URGENT_HOURS = 3.0
-
-    # 权重
-    DEFAULT_WEIGHTS = {
-        "diversity": 0.25,  # 多样性权重
-        "sentiment_health": 0.25,  # 情感健康权重
-        "content_quality": 0.30,  # 内容质量权重
-        "time_allocation": 0.20  # 时间分配权重
-    }
-
     def __init__(
         self,
         sentiment_analyzer: Optional[SentimentAnalyzer] = None,
         content_classifier: Optional[ContentClassifier] = None,
         similarity_analyzer: Optional[SimilarityAnalyzer] = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Any] = None
     ):
         """
         初始化评估器
@@ -647,8 +656,12 @@ class InformationQualityEvaluator:
 
         # 加载配置（阈值、权重、评分规则）
         self.config = self.get_default_config()
-        if config is not None:
+        if isinstance(config, EvaluatorConfig):
+            self.config = config
+        elif isinstance(config, dict):
             self.update_config(config)
+        elif config is not None:
+            raise TypeError("config 必须是 dict、EvaluatorConfig 或 None")
 
         # 初始化缓存和状态变量
         self._cache : Dict[str, Any] = {}
@@ -707,21 +720,23 @@ class InformationQualityEvaluator:
         """根据时间浪费相关指标计算 1-5 严重度（最低从 3 起）。"""
         severity = 3
         if (
-            off_ratio > self.TIME_WASTE_OFF_HOUR_IMPORTANT
-            or fragmentation_score > self.TIME_WASTE_FRAGMENT_IMPORTANT
-            or late_night_hours > self.TIME_WASTE_LATE_NIGHT_IMPORTANT_HOURS
+            off_ratio > self._get_threshold("time_waste_off_hour_important")
+            or fragmentation_score > self._get_threshold("time_waste_fragment_important")
+            or late_night_hours > self._get_threshold("time_waste_late_night_important_hours")
         ):
             severity = 4
         if (
-            off_ratio > self.TIME_WASTE_OFF_HOUR_URGENT
-            or late_night_hours > self.TIME_WASTE_LATE_NIGHT_URGENT_HOURS
+            off_ratio > self._get_threshold("time_waste_off_hour_urgent")
+            or late_night_hours > self._get_threshold("time_waste_late_night_urgent_hours")
         ):
             severity = 5
         return severity
 
-    def _get_threshold(self, key: str, default: float) -> float:
+    def _get_threshold(self, key: str, default: Optional[float] = None) -> float:
         """从配置中读取阈值，缺失时回退到默认值。"""
-        return float(self.config.get("thresholds", {}).get(key, default))
+        if default is None:
+            default = DEFAULT_THRESHOLDS.get(key, 0.0)
+        return float(self.config.thresholds.get(key, default))
 
     def _build_score_row(
         self,
@@ -814,7 +829,7 @@ class InformationQualityEvaluator:
             logger.error(f"缺少必需列: {missing_columns}")
             raise ValueError(f"缺少必需列: {missing_columns}")
 
-        min_records = int(self.config.get('min_records', 5))
+        min_records = int(self.config.min_records)
 
         if len(df) < min_records:
             logger.warning(f"样本量不足：当前 {len(df)} 条，至少需要 {min_records} 条")
@@ -856,7 +871,7 @@ class InformationQualityEvaluator:
 
         processed_df = processed_df.reset_index(drop=True)
 
-        min_records = int(self.config.get("min_records", 5))
+        min_records = int(self.config.min_records)
         if len(processed_df) < min_records:
             raise ValueError(
                 f"预处理后有效样本不足：当前 {len(processed_df)} 条，至少需要 {min_records} 条"
@@ -1013,8 +1028,8 @@ class InformationQualityEvaluator:
         avg_similarity = float(sim_series.mean()) if not sim_series.empty else 0.0
         high_similarity_ratio = float((sim_series >= 0.85).mean()) if not sim_series.empty else 0.0
 
-        dom_limit = self._get_threshold("dominant_category_ratio", self.DOMINANT_CATEGORY_RATIO_LIMIT)
-        sim_limit = self._get_threshold("echo_chamber_similarity", self.ECHO_CHAMBER_SIMILARITY_LIMIT)
+        dom_limit = self._get_threshold("dominant_category_ratio")
+        sim_limit = self._get_threshold("echo_chamber_similarity")
 
         dom_exceed = max(0.0, (dominant_ratio - dom_limit) / max(1e-6, 1.0 - dom_limit))
         sim_exceed = max(0.0, (avg_similarity - sim_limit) / max(1e-6, 1.0 - sim_limit))
@@ -1470,9 +1485,9 @@ class InformationQualityEvaluator:
         late_night_ent = float(time_info.get("late_night_entertainment_duration", 0.0))
 
         if (
-            off_ratio > self.TIME_WASTE_OFF_HOUR_WARNING
-            or frag > self.TIME_WASTE_FRAGMENT_WARNING
-            or late_night_ent > self.TIME_WASTE_LATE_NIGHT_WARNING_HOURS
+            off_ratio > self._get_threshold("time_waste_off_hour_warning")
+            or frag > self._get_threshold("time_waste_fragment_warning")
+            or late_night_ent > self._get_threshold("time_waste_late_night_warning_hours")
         ):
             severity = self._compute_time_waste_severity(off_ratio, frag, late_night_ent)
 
@@ -1652,8 +1667,8 @@ class InformationQualityEvaluator:
         # 信息茧房：类别过于集中 + 内容相似度过高
         dom_ratio = float(metrics.diversity.dominant_category_ratio)
         avg_similarity = float(metrics.diversity.avg_similarity)
-        dom_limit = self._get_threshold("dominant_category_ratio", self.DOMINANT_CATEGORY_RATIO_LIMIT)
-        sim_limit = self._get_threshold("echo_chamber_similarity", self.ECHO_CHAMBER_SIMILARITY_LIMIT)
+        dom_limit = self._get_threshold("dominant_category_ratio")
+        sim_limit = self._get_threshold("echo_chamber_similarity")
 
         if dom_ratio > dom_limit or avg_similarity > sim_limit:
             exceed_ratio = max(
@@ -1685,7 +1700,7 @@ class InformationQualityEvaluator:
 
         # 情绪污染：负面占比高
         negative_ratio = float(metrics.sentiment_health.negative_ratio)
-        negative_limit = self._get_threshold("negative_ratio_warning", self.NEGATIVE_RATIO_WARNING)
+        negative_limit = self._get_threshold("negative_ratio_warning")
         if negative_ratio > negative_limit:
             exceed = (negative_ratio - negative_limit) / max(1e-6, 1 - negative_limit)
             severity = 3 + int(np.clip(np.ceil(exceed * 2), 0, 2))
@@ -1711,7 +1726,7 @@ class InformationQualityEvaluator:
 
         # 过度娱乐：娱乐内容占比高
         entertainment_ratio = float(metrics.content_quality.entertainment_ratio)
-        entertainment_limit = self._get_threshold("entertainment_ratio_warning", self.ENTERTAINMENT_RATIO_WARNING)
+        entertainment_limit = self._get_threshold("entertainment_ratio_warning")
         if entertainment_ratio > entertainment_limit:
             exceed = (entertainment_ratio - entertainment_limit) / max(1e-6, 1 - entertainment_limit)
             severity = 3 + int(np.clip(np.ceil(exceed * 2), 0, 2))
@@ -1740,9 +1755,9 @@ class InformationQualityEvaluator:
         fragmentation_score = float(metrics.time_allocation.fragmentation_score)
         late_night_ent_duration = float(metrics.time_allocation.late_night_entertainment_duration)
         if (
-            off_hour_waste_ratio > self.TIME_WASTE_OFF_HOUR_WARNING
-            or fragmentation_score > self.TIME_WASTE_FRAGMENT_WARNING
-            or late_night_ent_duration > self.TIME_WASTE_LATE_NIGHT_WARNING_HOURS
+            off_hour_waste_ratio > self._get_threshold("time_waste_off_hour_warning")
+            or fragmentation_score > self._get_threshold("time_waste_fragment_warning")
+            or late_night_ent_duration > self._get_threshold("time_waste_late_night_warning_hours")
         ):
             severity = self._compute_time_waste_severity(
                 off_hour_waste_ratio,
@@ -1953,11 +1968,11 @@ class InformationQualityEvaluator:
         late_night_ent = float(time_info.get("late_night_entertainment_duration", 0.0))
         peak_eff = float(time_info.get("peak_hour_efficiency", 0.0))
 
-        if off_ratio > self.TIME_WASTE_OFF_HOUR_WARNING:
+        if off_ratio > self._get_threshold("time_waste_off_hour_warning"):
             suggestions.append("深夜时段使用偏高，建议 23:00 后减少非必要浏览。")
-        if frag > self.TIME_WASTE_FRAGMENT_WARNING:
+        if frag > self._get_threshold("time_waste_fragment_warning"):
             suggestions.append("碎片化浏览明显，建议采用番茄钟或固定阅读块（20-30 分钟）。")
-        if late_night_ent > self.TIME_WASTE_LATE_NIGHT_WARNING_HOURS:
+        if late_night_ent > self._get_threshold("time_waste_late_night_warning_hours"):
             suggestions.append("深夜娱乐时长偏高，建议设置娱乐内容截止时间。")
         if peak_eff < 0.4:
             suggestions.append("白天高效时段利用不足，建议把学习/工具内容前置到 9:00-18:00。")
@@ -2081,7 +2096,7 @@ class InformationQualityEvaluator:
             "content_quality": float(content_metrics.content_quality_score),
             "time_allocation": float(time_metrics.time_allocation_score),
         }
-        overall_score = float(weighted_average(dimension_scores, self.config["weights"]) * 100)
+        overall_score = float(weighted_average(dimension_scores, self.config.weights) * 100)
 
         return EvaluationMetrics(
             diversity=diversity_metrics,
@@ -2089,7 +2104,7 @@ class InformationQualityEvaluator:
             content_quality=content_metrics,
             time_allocation=time_metrics,
             overall_score=overall_score,
-            dimension_weights=self.config["weights"].copy(),
+            dimension_weights=self.config.weights.copy(),
         )
 
     def _build_recommendations(
@@ -2155,7 +2170,7 @@ class InformationQualityEvaluator:
             time_span_days=int(time_span_days),
             generated_at=datetime.now(),
             evaluator_version="0.1.0",
-            config_info=self.config.copy(),
+            config_info=self.config.to_dict(),
         )
 
     def _compute_quick_dimension_scores(self, processed_df: pd.DataFrame) -> Dict[str, float]:
@@ -2265,7 +2280,7 @@ class InformationQualityEvaluator:
         processed_df = self._preprocess_data(df)
 
         dimension_scores = self._compute_quick_dimension_scores(processed_df)
-        overall_0_1 = weighted_average(dimension_scores, self.config["weights"])
+        overall_0_1 = weighted_average(dimension_scores, self.config.weights)
         overall_score = round(overall_0_1 * 100, 2)
 
         level = self._determine_health_level(overall_score).value
@@ -2318,7 +2333,7 @@ class InformationQualityEvaluator:
             key_col = group_by
 
         rows: List[Dict[str, Any]] = []
-        min_records = int(self.config.get("min_records", 5))
+        min_records = int(self.config.min_records)
 
         for key, group_df in working_df.groupby(key_col):
             if len(group_df) < min_records:
@@ -2505,20 +2520,18 @@ class InformationQualityEvaluator:
         if not isinstance(config, dict):
             raise TypeError("config 必须是 dict")
 
-         # 先以当前配置为基础；若不存在则用默认
-        current = self.config.copy() if isinstance(self.config, dict) else self.get_default_config()
-
-        if "thresholds" not in current or not isinstance(current["thresholds"], dict):
-            current["thresholds"] = self.get_default_config()["thresholds"].copy()
-        if "weights" not in current or not isinstance(current["weights"], dict):
-            current["weights"] = self.get_default_config()["weights"].copy()
+        current = EvaluatorConfig(
+            min_records=int(self.config.min_records),
+            thresholds=self.config.thresholds.copy(),
+            weights=self.config.weights.copy(),
+        )
 
         # 1) min_records
         if "min_records" in config:
             min_records = config["min_records"]
             if not isinstance(min_records, int) or min_records <= 0:
                 raise ValueError("min_records 必须是正整数")
-            current["min_records"] = min_records
+            current.min_records = min_records
 
         # 2) thresholds
         if "thresholds" in config:
@@ -2526,7 +2539,7 @@ class InformationQualityEvaluator:
             if not isinstance(thresholds, dict):
                 raise TypeError("thresholds 必须是 dict")
 
-            allowed_thresholds = set(self.get_default_config()["thresholds"].keys())
+            allowed_thresholds = set(DEFAULT_THRESHOLDS.keys())
             unknown_keys = set(thresholds.keys()) - allowed_thresholds
             if unknown_keys:
                 raise ValueError(f"未知阈值配置项: {sorted(unknown_keys)}")
@@ -2537,7 +2550,7 @@ class InformationQualityEvaluator:
                 v = float(v)
                 if v < 0 or v > 1:
                     raise ValueError(f"thresholds['{k}'] 必须在 [0,1] 区间")
-                current["thresholds"][k] = v
+                current.thresholds[k] = v
 
         # 3) weights
         if "weights" in config:
@@ -2545,7 +2558,7 @@ class InformationQualityEvaluator:
             if not isinstance(weights, dict):
                 raise TypeError("weights 必须是 dict")
 
-            required_keys = set(self.DEFAULT_WEIGHTS.keys())
+            required_keys = set(DEFAULT_WEIGHTS.keys())
             if set(weights.keys()) != required_keys:
                 raise ValueError(f"weights 必须且只能包含: {sorted(required_keys)}")
 
@@ -2562,28 +2575,18 @@ class InformationQualityEvaluator:
             if total <= 0:
                 raise ValueError("weights 总和必须大于 0")
 
-            # 自动归一化
-            current["weights"] = {k: v / total for k, v in cleaned_weights.items()}
+            current.weights = {k: v / total for k, v in cleaned_weights.items()}
 
         self.config = current
-        logger.info(f"评估配置已更新: {self.config}")
+        logger.info(f"评估配置已更新: {self.config.to_dict()}")
 
-    def get_default_config(self) -> Dict[str, Any]:
+    def get_default_config(self) -> EvaluatorConfig:
         """
         获取默认配置
 
         返回默认阈值和权重
         """
-        return {
-            "min_records": 5,  # 最低样本量
-            "thresholds": {
-                "echo_chamber_similarity": self.ECHO_CHAMBER_SIMILARITY_LIMIT,
-                "dominant_category_ratio": self.DOMINANT_CATEGORY_RATIO_LIMIT,
-                "negative_ratio_warning": self.NEGATIVE_RATIO_WARNING,
-                "entertainment_ratio_warning": self.ENTERTAINMENT_RATIO_WARNING,
-            },
-            'weights' : self.DEFAULT_WEIGHTS.copy()
-        }
+        return EvaluatorConfig()
 
 
 # ==================== 辅助函数 ====================
@@ -2654,7 +2657,8 @@ if __name__ == "__main__":
         logger.info(f"已加载原始数据: {raw_input_path}, 共 {len(raw_df)} 条")
 
         # ===== 初始化三个分析器 =====
-        sentiment_analyzer = SentimentAnalyzer(model_path='./models/sentiment_model_bert', use_bert=True)  # 可按需传 model_path/use_bert
+        sentiment_analyzer = SentimentAnalyzer(use_bert=False)  # 可按需传 model_path/use_bert
+        sentiment_analyzer.load_model('./models/sentiment_model_bert')
         content_classifier = ContentClassifier(model_path="./models/classifier_model.pkl")
         similarity_analyzer = SimilarityAnalyzer()
 
