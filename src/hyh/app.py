@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from db import get_conn, init_db
 from models import IngestAck, IngestItem
@@ -191,6 +192,13 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Information Diet Manager (MVP)",
     lifespan=lifespan  # 关键：把生命周期函数关联到 app
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
