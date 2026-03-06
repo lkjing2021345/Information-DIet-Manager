@@ -93,16 +93,16 @@ class TrainConfig:
 
     model_name: str = "hfl/chinese-roberta-wwm-ext"
     max_length: int = 128
-    batch_size: int = 16
-    epochs: int = 20
-    learning_rate: float = 2e-5
-    weight_decay: float = 0.01
-    warmup_ratio: float = 0.1
-    warmup_steps: int = 100
+    batch_size: int = 48
+    epochs: int = 15
+    learning_rate: float = 2.25e-5
+    weight_decay: float = 0.03
+    warmup_ratio: float = 0.05
+    warmup_steps: int = 200
     max_grad_norm: float = 1.0
     early_stopping_patience: int = 3
-    early_stopping_min_delta: float = 0.0
-    label_smoothing: float = 0.0
+    early_stopping_min_delta: float = 0.0005
+    label_smoothing: float = 0.05
 
     model_output_name: str = "sentiment_train"
 
