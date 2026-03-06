@@ -25,6 +25,7 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 try:
     import torch
+    import torch.nn.functional as F
     from torch.utils.data import DataLoader, Dataset
     from torch.optim import AdamW
     from transformers import (
@@ -35,6 +36,7 @@ try:
     BERT_AVAILABLE = True
 except Exception:  # pragma: no cover
     torch = None
+    F = None
     DataLoader = None
     Dataset = object
     AdamW = None
@@ -70,6 +72,7 @@ def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging
 
 logger = setup_logger(__name__, "../../logs/sentiment_train.log")
 MODEL_API_VERSION = "1.0"
+DEFAULT_MODEL_OUTPUT_DIR = str(Path(__file__).resolve().parent / "models")
 
 
 @dataclass
@@ -91,10 +94,15 @@ class TrainConfig:
     model_name: str = "hfl/chinese-roberta-wwm-ext"
     max_length: int = 128
     batch_size: int = 16
-    epochs: int = 6
+    epochs: int = 20
     learning_rate: float = 2e-5
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
+    warmup_steps: int = 100
+    max_grad_norm: float = 1.0
+    early_stopping_patience: int = 3
+    early_stopping_min_delta: float = 0.0
+    label_smoothing: float = 0.0
 
     model_output_name: str = "sentiment_train"
 
@@ -232,7 +240,7 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
         )
 
     def _evaluate_loader(self, data_loader: Any) -> Dict[str, Any]:
-        if torch is None:
+        if torch is None or F is None:
             raise RuntimeError("Torch runtime is unavailable.")
         if self.model is None:
             raise RuntimeError("Model is not initialized. Call train(...) first.")
@@ -249,8 +257,13 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
                 attention_mask = batch["attention_mask"].to(self.device)
                 y = batch["label"].to(self.device)
 
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=y)
-                total_loss += float(outputs.loss.item())
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                loss = F.cross_entropy(
+                    outputs.logits,
+                    y,
+                    label_smoothing=max(0.0, float(self.config.label_smoothing)),
+                )
+                total_loss += float(loss.item())
                 pred = torch.argmax(outputs.logits, dim=1)
 
                 preds.extend(pred.cpu().tolist())
@@ -270,9 +283,15 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
         }
 
     def train(self, train_df: pd.DataFrame, val_df: pd.DataFrame) -> Dict[str, Any]:
-        if torch is None:
+        if torch is None or F is None:
             raise RuntimeError("Torch runtime is unavailable.")
         cfg = self.config
+        if not (0.0 <= float(cfg.label_smoothing) < 1.0):
+            raise ValueError(f"label_smoothing must be in [0.0, 1.0), got {cfg.label_smoothing}")
+        if cfg.max_grad_norm < 0:
+            raise ValueError(f"max_grad_norm must be >= 0, got {cfg.max_grad_norm}")
+        if cfg.warmup_steps < 0:
+            raise ValueError(f"warmup_steps must be >= 0, got {cfg.warmup_steps}")
         self._build_label_mapping(train_df[cfg.label_column].tolist())
 
         if BertTokenizer is None or BertForSequenceClassification is None:
@@ -369,17 +388,20 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
 
         optimizer = optimizer_cls(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
         total_steps = len(train_loader) * cfg.epochs
+        warmup_steps = cfg.warmup_steps if cfg.warmup_steps > 0 else int(total_steps * cfg.warmup_ratio)
+        warmup_steps = min(warmup_steps, total_steps)
         scheduler = scheduler_factory(
             optimizer,
-            num_warmup_steps=int(total_steps * cfg.warmup_ratio),
+            num_warmup_steps=warmup_steps,
             num_training_steps=total_steps,
         )
 
         use_amp = self.device.type == "cuda"
         scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-        best_f1 = -1.0
+        best_val_loss = float("inf")
         best_state = None
+        no_improve_epochs = 0
         history: List[Dict[str, Any]] = []
 
         for epoch in range(cfg.epochs):
@@ -393,11 +415,15 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
 
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=y)
-                    loss = outputs.loss
+                    outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                    loss = F.cross_entropy(
+                        outputs.logits,
+                        y,
+                        label_smoothing=float(cfg.label_smoothing),
+                    )
 
                 scaler.scale(loss).backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg.max_grad_norm))
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
@@ -416,15 +442,28 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
             history.append(epoch_record)
             logger.info("Epoch %d/%d => %s", epoch + 1, cfg.epochs, epoch_record)
 
-            if val_metrics["f1_weighted"] > best_f1:
-                best_f1 = val_metrics["f1_weighted"]
+            current_val_loss = float(val_metrics["loss"])
+            if current_val_loss < (best_val_loss - cfg.early_stopping_min_delta):
+                best_val_loss = current_val_loss
                 best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                no_improve_epochs = 0
+            else:
+                no_improve_epochs += 1
+                if cfg.early_stopping_patience > 0 and no_improve_epochs >= cfg.early_stopping_patience:
+                    logger.info(
+                        "Early stopping triggered at epoch %d (best_val_loss=%.6f, patience=%d, min_delta=%.6f)",
+                        epoch + 1,
+                        best_val_loss,
+                        cfg.early_stopping_patience,
+                        cfg.early_stopping_min_delta,
+                    )
+                    break
 
         if best_state is not None:
             model.load_state_dict(best_state)
 
         return {
-            "best_val_f1_weighted": best_f1,
+            "best_val_loss": best_val_loss,
             "history": history,
         }
 
@@ -508,7 +547,7 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
         return self.save_artifacts(output_dir, training_summary, test_summary)
 
 
-def run_training_pipeline(df: pd.DataFrame, output_dir: str = "./models", config: Optional[TrainConfig] = None) -> Dict[str, Any]:
+def run_training_pipeline(df: pd.DataFrame, output_dir: str = DEFAULT_MODEL_OUTPUT_DIR, config: Optional[TrainConfig] = None) -> Dict[str, Any]:
     """One-call API: clean -> split -> train -> evaluate -> save sentiment_train."""
     trainer = SentimentTrainer(config=config)
     clean_df = trainer.load_and_clean_data(df)
@@ -533,7 +572,7 @@ def train(config_path: Path, resume_from: Optional[Path] = None) -> TrainResult:
         config_payload = json.load(f)
 
     data_path = Path(config_payload["data_path"])
-    output_dir = config_payload.get("output_dir", "./models")
+    output_dir = config_payload.get("output_dir", DEFAULT_MODEL_OUTPUT_DIR)
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset not found: {data_path}")
 
@@ -575,5 +614,5 @@ if __name__ == "__main__":
     if "label" in frame.columns and "sentiment" not in frame.columns:
         frame = frame.rename(columns={"label": "sentiment"})
 
-    result = run_training_pipeline(frame, output_dir="./models")
+    result = run_training_pipeline(frame, output_dir=DEFAULT_MODEL_OUTPUT_DIR)
     print(json.dumps(result, ensure_ascii=False, indent=2))
