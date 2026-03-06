@@ -54,3 +54,49 @@ CREATE TABLE IF NOT EXISTS stats_daily (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Analysis run history (store every analyze result payload)
+CREATE TABLE IF NOT EXISTS analysis_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day TEXT NOT NULL,
+    total_count INTEGER NOT NULL,
+    channel_counts TEXT,  -- JSON object
+    repeat_ratio REAL,
+    negative_ratio REAL,
+    avg_sentiment REAL,
+    payload TEXT NOT NULL, -- JSON payload returned by API
+    cached INTEGER NOT NULL DEFAULT 0,
+    item_max_created_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_runs_day
+ON analysis_runs (day);
+
+-- Analysis job state machine for API orchestration
+CREATE TABLE IF NOT EXISTS analysis_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT NOT NULL, -- queued/running/completed/failed
+    input_hash TEXT NOT NULL,
+    day TEXT NOT NULL,
+    from_ts INTEGER,
+    to_ts INTEGER,
+    limit_rows INTEGER,
+    item_max_created_at INTEGER NOT NULL DEFAULT 0,
+    input_count INTEGER NOT NULL DEFAULT 0,
+    cache_hit INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER,
+    error TEXT,
+    result_payload TEXT,
+    metrics_json TEXT,
+    started_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status
+ON analysis_jobs (status);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_input_hash
+ON analysis_jobs (input_hash, item_max_created_at, status);
