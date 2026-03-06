@@ -17,9 +17,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from db import get_conn, init_db
-from models import IngestAck, IngestItem
-from utils import normalize_text, normalize_url, sha256_hex
+from .db import get_conn, init_db
+from .models import IngestAck, IngestItem
+from .utils import normalize_text, normalize_url, sha256_hex
 
 from contextlib import asynccontextmanager
 
@@ -186,7 +186,9 @@ def _hashed_chargram_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[floa
     return vec
 
 
-def _upsert_embedding(conn: Any, item_id: int, title: Optional[str], text: Optional[str]) -> None:
+def _upsert_embedding(
+    conn: Any, item_id: int, title: Optional[str], text: Optional[str]
+) -> None:
     input_text = _embedding_input_text(title, text)
     vector = _hashed_chargram_embedding(input_text, dim=EMBEDDING_DIM)
     conn.execute(
@@ -249,7 +251,9 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
 
 
 def _stable_hash_payload(data: Dict[str, Any]) -> str:
-    payload = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(
+        data, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
     return sha256_hex(payload)
 
 
@@ -393,7 +397,9 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         df = pd.DataFrame(rows)
         df["title"] = df["title"].fillna("").astype(str)
         df["text"] = df["text"].fillna(df["title"]).astype(str)
-        df["analysis_text"] = df["text"].where(df["text"].str.strip() != "", df["title"])
+        df["analysis_text"] = df["text"].where(
+            df["text"].str.strip() != "", df["title"]
+        )
         df["url"] = df["url"].fillna("").astype(str)
         df["channel"] = df["channel"].fillna("unknown").astype(str)
 
@@ -406,8 +412,12 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             similarity_analyzer=similarity,
         )
 
-        df1 = classifier.batch_predict(df[["title", "url", "analysis_text", "channel", "ts"]].copy())
-        df2 = sentiment.batch_predict(df1, text_column="analysis_text", include_emotions=False, batch_size=500)
+        df1 = classifier.batch_predict(
+            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
+        )
+        df2 = sentiment.batch_predict(
+            df1, text_column="analysis_text", include_emotions=False, batch_size=500
+        )
         df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
         if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
             df3["similarity"] = df3["similarity_to_previous"]
@@ -417,14 +427,20 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
         category_norm = df3["category"].fillna("other").astype(str)
         polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
-        similarity_num = pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        similarity_num = (
+            pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        )
 
         negative_ratio = float((sentiment_norm == "negative").mean())
         avg_sentiment = float(polarity_num.mean())
         repeat_ratio = float((similarity_num >= 0.85).mean())
 
-        category_counts = {str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()}
-        sentiment_counts = {str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()}
+        category_counts = {
+            str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
+        }
+        sentiment_counts = {
+            str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
+        }
 
         return {
             "input_count": int(len(df3)),
@@ -439,12 +455,16 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
     except Exception as exc:
         normalized = [
-            normalize_text(str(r.get("title") or ""), str(r.get("text") or r.get("title") or ""))
+            normalize_text(
+                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
+            )
             for r in rows
         ]
         total = len(normalized)
         distinct = len(set(normalized))
-        repeat_ratio = float(0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total))))
+        repeat_ratio = float(
+            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
+        )
         return {
             "input_count": total,
             "category_counts": {"unknown": total},
@@ -494,7 +514,9 @@ def insert_items(items: Iterable[IngestItem]) -> Tuple[int, int]:
             cur = conn.execute(sql, row)
             if cur.rowcount == 1:
                 inserted += 1
-                _upsert_embedding(conn, int(cur.lastrowid), row.get("title"), row.get("text"))
+                _upsert_embedding(
+                    conn, int(cur.lastrowid), row.get("title"), row.get("text")
+                )
             else:
                 duplicates += 1
     return inserted, duplicates
@@ -548,6 +570,7 @@ def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
         items.append(json.loads(line))
     return items
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # 启动逻辑：和原来的 on_startup 完全一致
@@ -556,9 +579,10 @@ async def lifespan(_app: FastAPI):
     # 关闭逻辑（如果需要的话，比如关闭数据库连接）
     # 示例：await db.close() （如果有异步数据库连接的话）
 
+
 app = FastAPI(
     title="Information Diet Manager (MVP)",
-    lifespan=lifespan  # 关键：把生命周期函数关联到 app
+    lifespan=lifespan,  # 关键：把生命周期函数关联到 app
 )
 
 app.add_middleware(
@@ -592,7 +616,9 @@ def import_items(file: UploadFile = File(...)) -> IngestAck:
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type.")
     except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid file contents: {exc}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Invalid file contents: {exc}"
+        ) from exc
     items: List[IngestItem] = []
     for raw in raw_items:
         try:
@@ -691,7 +717,9 @@ def run_analysis(
         repeat_ratio = 0.0
         if total:
             repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
+        channel_counts = {
+            row["channel"] or "unknown": row["cnt"] for row in channel_rows
+        }
         now_ms = _now_ms()
         conn.execute(
             """
@@ -786,14 +814,18 @@ def run_full_analysis(
     limit_rows: int = Query(5000, ge=1, le=50000),
 ) -> Dict[str, Any]:
     if from_ts is not None and to_ts is not None and from_ts > to_ts:
-        raise HTTPException(status_code=400, detail="from_ts cannot be greater than to_ts")
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
     day = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         item_state = conn.execute(
             "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
         ).fetchone()
         max_created_at = int(item_state["max_created_at"] or 0)
-        rows = _load_items_for_analysis(conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows)
+        rows = _load_items_for_analysis(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
         input_count = len(rows)
         job_key = {
             "day": day,
@@ -854,7 +886,7 @@ def run_full_analysis(
                     "reused_from_job_id": int(cached["id"]),
                     "result": cached_payload,
                 }
-        #not cached的情况也自然下落到这里
+        # not cached的情况也自然下落到这里
         job_id = _insert_analysis_job(
             conn,
             status=JOB_QUEUED,
@@ -1003,7 +1035,9 @@ def get_analyze_result(job_id: int) -> Dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="job not found")
     if row.get("status") != JOB_COMPLETED:
-        raise HTTPException(status_code=409, detail=f"job not completed: {row.get('status')}")
+        raise HTTPException(
+            status_code=409, detail=f"job not completed: {row.get('status')}"
+        )
     return {
         "job_id": row["id"],
         "status": row["status"],
