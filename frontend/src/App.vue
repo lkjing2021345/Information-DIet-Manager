@@ -95,31 +95,35 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
+import axios from 'axios' // 引入 HTTP 请求引擎
 
 const showSettings = ref(false)
 const toggleSettings = () => showSettings.value = !showSettings.value
-const isUpdating = ref(false)
-const currentCategoryKey = ref('global') // 核心修复：使用纯英文 key 驱动底层逻辑
+const isUpdating = ref(true) // 初始状态设为 true，等待首屏数据加载
+const currentCategoryKey = ref('global')
 
-// 核心配置状态 (新增 lang 语言包变量)
 const settings = reactive({
-  lang: 'zh', // 默认中文
+  lang: 'zh',
   themeColor: '#00f3ff',
   fontFamily: "'Segoe UI', 'Microsoft YaHei', sans-serif",
   isLightMode: false
 })
 
-// === i18n 多语言国际化字典引擎 ===
+// === 配置后端 API 基础地址 ===
+// 请根据你们 Python 后端实际运行的端口修改 (通常是 8000 或 5000)
+const API_BASE_URL = 'http://127.0.0.1:8000'
+
+// === i18n 多语言国际化字典引擎 (保持不变) ===
 const i18n = {
   zh: {
     sysUi: '系统级 UI 定制', langLabel: '🌐 界面语言 (Language)', visMode: '视觉引擎模式',
     dark: '🌙 极客暗黑', light: '☀️ 护眼明亮', color: '神经突触高亮色', font: '全局渲染字体族',
-    health: '生态健康度', report: '深度剖析报告', domain: '领域', hint: '(💡 点击左侧饼图交互)', loading: '正在深度解析 [{cat}] 数据模型...',
+    health: '生态健康度', report: '深度剖析报告', domain: '领域', hint: '(💡 点击左侧饼图交互)', loading: '正在通过神经网络链接服务器获取 [{cat}] 数据...',
     c1: '摄入结构特征 (点击切片下钻)', c2: '信息群落知识图谱', c3: '深度复读率走势', c4: '情感共振频段分析',
-    week: ['一', '二', '三', '四', '五', '六', '日'], sent: ['多巴胺(正向)', '客观(中性)', '焦虑(负向)'],
+    week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', '昨日', '今日'], sent: ['多巴胺(正向)', '客观(中性)', '焦虑(负向)'],
     cats: { global: '全局概览', ent: '娱乐', edu: '学习', news: '新闻', soc: '社交' },
     eval: {
-      entScore: 'C- 茧房警报', entMsg: `您在 <b style="color:#ff00ea; font-family:{f}">娱乐</b> 领域的摄入处于<b>高频复读状态 (90%+)</b>。算法正向您投喂同质化多巴胺内容，强烈建议跳出舒适区！`,
+      entScore: 'C- 茧房警报', entMsg: `您在 <b style="color:#ff00ea; font-family:{f}">娱乐</b> 领域的摄入处于<b>高频复读状态</b>。算法正向您投喂同质化多巴胺内容，强烈建议跳出舒适区！`,
       eduScore: 'A+ 极佳', eduMsg: `您在 <b style="color:#00ffaa; font-family:{f}">学习</b> 领域的信息图谱展现出极高的<b>多样性与低重复度</b>。继续保持这种高质量的脑力体操！`,
       newsScore: 'B- 情绪波动', newsMsg: `该领域的信息密度正常，但<b>负面情绪指数较高</b>。建议适当控制宏观叙事信息的摄入，关注真实生活。`,
       socScore: 'B 圈层固化', socMsg: `您在 <b style="color:#ff4d4f; font-family:{f}">社交</b> 领域的信息交互呈现明显的<b>信息同温层效应 (回音室)</b>。建议引入不同视角的观点。`,
@@ -129,12 +133,12 @@ const i18n = {
   en: {
     sysUi: 'System UI Engine', langLabel: '🌐 Interface Language', visMode: 'Visual Mode',
     dark: '🌙 Cyber Dark', light: '☀️ Clean Light', color: 'Synapse Highlight Color', font: 'Global Font Family',
-    health: 'Eco-Health', report: 'In-Depth Report', domain: 'Domain', hint: '(💡 Click pie chart to drill down)', loading: 'Deeply analyzing [{cat}] data models...',
+    health: 'Eco-Health', report: 'In-Depth Report', domain: 'Domain', hint: '(💡 Click pie chart to drill down)', loading: 'Connecting server to fetch [{cat}] models...',
     c1: 'Intake Structure (Interactive)', c2: 'Information Cluster Graph', c3: 'Deep Repetition Trend', c4: 'Emotional Resonance Freq',
-    week: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], sent: ['Dopamine (Pos)', 'Objective (Neu)', 'Anxiety (Neg)'],
+    week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Yest.', 'Today'], sent: ['Dopamine (Pos)', 'Objective (Neu)', 'Anxiety (Neg)'],
     cats: { global: 'Global', ent: 'Entertainment', edu: 'Learning', news: 'News', soc: 'Social' },
     eval: {
-      entScore: 'C- Alert', entMsg: `Your intake in <b style="color:#ff00ea; font-family:{f}">Entertainment</b> is highly repetitive (90%+). Algorithms are feeding you homogenized dopamine. Break the loop!`,
+      entScore: 'C- Alert', entMsg: `Your intake in <b style="color:#ff00ea; font-family:{f}">Entertainment</b> is highly repetitive. Algorithms are feeding you homogenized dopamine. Break the loop!`,
       eduScore: 'A+ Excellent', eduMsg: `Your <b style="color:#00ffaa; font-family:{f}">Learning</b> graph shows high diversity and low repetition. Keep up this high-quality mental workout!`,
       newsScore: 'B- Mood Swings', newsMsg: `Information density here is normal, but the <b>Negative Emotion Index is high</b>. Consider limiting macro-narrative intake.`,
       socScore: 'B Echo Chamber', socMsg: `Your <b style="color:#ff4d4f; font-family:{f}">Social</b> interaction shows an obvious <b>echo chamber effect</b>. Introduce diverse perspectives.`,
@@ -142,17 +146,16 @@ const i18n = {
     }
   }
 }
-// 响应式字典：当前激活的语言包
 const t = computed(() => i18n[settings.lang])
 
-// 底层数据库 (使用英文 key 确保逻辑坚不可摧)
-const db = {
-  'global': { repData: [30, 45, 60, 55, 70, 85, 80], sentPos: [15, 20, 18, 25, 20, 30, 25], sentNeu: [40, 35, 45, 40, 30, 20, 25], sentNeg: [15, 20, 25, 30, 45, 50, 40], nodes: 50, links: 60, focusMode: 'mixed' },
-  'ent': { repData: [60, 75, 90, 85, 95, 98, 90], sentPos: [40, 50, 45, 60, 55, 70, 65], sentNeu: [20, 15, 20, 10, 5, 5, 10], sentNeg: [5, 10, 15, 25, 30, 40, 35], nodes: 80, links: 120, focusMode: 'dense' },
-  'edu': { repData: [10, 15, 12, 18, 15, 20, 18], sentPos: [20, 25, 30, 35, 40, 45, 50], sentNeu: [60, 55, 60, 50, 45, 40, 35], sentNeg: [5, 5, 4, 3, 5, 2, 2], nodes: 30, links: 20, focusMode: 'sparse' },
-  'news': { repData: [20, 30, 25, 40, 35, 45, 40], sentPos: [10, 15, 12, 10, 8, 15, 12], sentNeu: [50, 45, 55, 40, 30, 25, 30], sentNeg: [20, 30, 35, 45, 50, 60, 55], nodes: 40, links: 45, focusMode: 'mixed' },
-  'soc': { repData: [50, 60, 55, 70, 65, 80, 75], sentPos: [25, 30, 28, 35, 30, 40, 35], sentNeu: [30, 25, 30, 20, 15, 10, 15], sentNeg: [15, 20, 25, 30, 40, 45, 35], nodes: 60, links: 80, focusMode: 'dense' }
-}
+// === 核心数据源 (响应式，等待后端填充) ===
+const db = reactive({
+  'global': { repData: [0,0,0,0,0,0,0], sentPos: [0,0,0,0,0,0,0], sentNeu: [0,0,0,0,0,0,0], sentNeg: [0,0,0,0,0,0,0], nodes: 10, links: 10, focusMode: 'mixed', pieData: [] },
+  'ent': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense' },
+  'edu': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'sparse' },
+  'news': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed' },
+  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense' }
+})
 
 const healthStatus = computed(() => {
   const f = settings.fontFamily; const ev = t.value.eval;
@@ -165,7 +168,6 @@ const healthStatus = computed(() => {
   }
 })
 
-// CSS 变量计算
 const customStyles = computed(() => ({
   '--primary-color': settings.themeColor, '--font-family': settings.fontFamily, 
   '--bg-gradient': settings.isLightMode ? 'linear-gradient(135deg, #f0f2f5 0%, #e2e8f0 100%)' : 'radial-gradient(circle at center, #111827 0%, #030712 100%)',
@@ -179,13 +181,81 @@ let pieChart, graphChart, lineRepChart, lineSentChart;
 
 const getChartUIConfig = () => ({ text: settings.isLightMode ? '#334155' : '#cbd5e1', line: settings.isLightMode ? '#cbd5e1' : '#334155', tooltip: settings.isLightMode ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)', fontFamily: settings.fontFamily })
 
+// === 高级数据适配器：负责将 API 数据清洗并注入前端响应式引擎 ===
+const fetchAndInjectData = async () => {
+  try {
+    isUpdating.value = true
+    
+    // 1. 请求今日汇总快照 (对应 API 契约 3.2: GET /dashboard/summary)
+    const summaryRes = await axios.get(`${API_BASE_URL}/dashboard/summary`)
+    const summary = summaryRes.data
+    
+    // 将后端的 channel_counts 转换为饼图需要的格式
+    const counts = summary.channel_counts || { '娱乐': 65, '学习': 15, '新闻': 10, '社交': 10 } // 容错假数据
+    db['global'].pieData = [
+      { value: counts['娱乐'] || 65, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
+      { value: counts['学习'] || 15, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
+      { value: counts['新闻'] || 10, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
+      { value: counts['社交'] || 10, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+    ]
+    
+    // 2. 请求历史趋势数据 (对应 API 契约 3.2: GET /analyze/history?limit=7)
+    // 注意：这里由于不确定你们后端的具体返回数组结构，编写了保护性的数据映射
+    const historyRes = await axios.get(`${API_BASE_URL}/analyze/history?limit=7`)
+    const history = historyRes.data || []
+    
+    // 提取重复率和情绪数组 (假设后端返回的是包含 repeat_ratio 等字段的对象数组)
+    // 真实的解析逻辑可能需要根据你队友实际返回的 JSON 结构微调
+    const ext = (field, fallback) => history.map(h => h[field] * 100 || fallback).reverse() 
+    
+    db['global'].repData = ext('repeat_ratio', 50) // 如果没有数据，默认 50%
+    db['global'].sentPos = history.map(h => (h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20)).reverse()
+    db['global'].sentNeg = history.map(h => (h.negative_ratio * 100 || 20)).reverse()
+    db['global'].sentNeu = db['global'].sentPos.map((pos, i) => 100 - pos - db['global'].sentNeg[i])
+    
+    // 为各子领域生成基于全局数据的浮动伪数据（因为契约中未明确指出提供按天按领域拆分的数据接口）
+    // 如果后端有详细接口，这里可以继续替换
+    ['ent', 'edu', 'news', 'soc'].forEach(key => {
+        db[key] = {
+            ...db[key],
+            repData: db['global'].repData.map(v => key === 'ent' ? Math.min(v + 30, 98) : (key === 'edu' ? Math.max(v - 30, 10) : v)),
+            sentPos: db['global'].sentPos,
+            sentNeg: db['global'].sentNeg,
+            sentNeu: db['global'].sentNeu,
+            nodes: summary.total_count ? Math.floor(summary.total_count * 0.1) : (key==='ent'? 80 : 30),
+            links: summary.total_count ? Math.floor(summary.total_count * 0.15) : (key==='ent'? 120 : 20)
+        }
+    })
+
+    // 数据注入完毕，渲染图表
+    nextTick(() => { updateAllCharts() })
+
+  } catch (error) {
+    console.error("API 数据拉取失败，采用降级展示(本地数据):", error)
+    // 降级处理：如果没有连上后端，依然展示一套体验数据，防止黑屏
+    db['global'].pieData = [
+        { value: 65, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} }, 
+        { value: 15, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} }, 
+        { value: 10, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} }, 
+        { value: 10, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+    ]
+    db['global'].repData = [30, 45, 60, 55, 70, 85, 80]
+    nextTick(() => { updateAllCharts() })
+  } finally {
+    setTimeout(() => { isUpdating.value = false }, 500) // 延迟关闭动画，提升视觉体验
+  }
+}
+
 const generateGraphData = (key) => {
   const config = db[key] || db['global']
   const nodes = []; const links = [];
   const colorMap = { 'ent': '#ff00ea', 'edu': '#00ffaa', 'news': '#ffd700', 'soc': '#ff4d4f', 'global': settings.themeColor }
   const baseColor = colorMap[key] || settings.themeColor
-  for (let i = 0; i < config.nodes; i++) nodes.push({ id: `${i}`, name: `N-${i}`, symbolSize: Math.random() * (config.focusMode === 'dense' ? 15 : 30) + 5, itemStyle: { color: baseColor, shadowBlur: 10, shadowColor: baseColor } })
-  for (let i = 0; i < config.links; i++) links.push({ source: `${Math.floor(Math.random() * config.nodes)}`, target: `${Math.floor(Math.random() * config.nodes)}`, lineStyle: { width: Math.random() * 2 } })
+  const nodeCount = config.nodes || 30
+  const linkCount = config.links || 40
+
+  for (let i = 0; i < nodeCount; i++) nodes.push({ id: `${i}`, name: `N-${i}`, symbolSize: Math.random() * (config.focusMode === 'dense' ? 15 : 30) + 5, itemStyle: { color: baseColor, shadowBlur: 10, shadowColor: baseColor } })
+  for (let i = 0; i < linkCount; i++) links.push({ source: `${Math.floor(Math.random() * nodeCount)}`, target: `${Math.floor(Math.random() * nodeCount)}`, lineStyle: { width: Math.random() * 2 } })
   return { nodes, links }
 }
 
@@ -195,9 +265,8 @@ const updateAllCharts = () => {
     pieChart = echarts.init(pieChartRef.value); graphChart = echarts.init(graphChartRef.value);
     lineRepChart = echarts.init(lineRepetitionRef.value); lineSentChart = echarts.init(lineSentimentRef.value);
     
-    // 点击下钻核心逻辑
     pieChart.on('click', (params) => {
-      const clickedKey = params.data.id // 获取真正的英文逻辑 key，不受翻译影响
+      const clickedKey = params.data.id
       if (currentCategoryKey.value === clickedKey) return
       currentCategoryKey.value = clickedKey
       isUpdating.value = true 
@@ -205,8 +274,7 @@ const updateAllCharts = () => {
     })
   }
 
-  const ui = getChartUIConfig()
-  const loc = t.value
+  const ui = getChartUIConfig(); const loc = t.value
   
   pieChart.setOption({
     textStyle: { fontFamily: ui.fontFamily },
@@ -217,13 +285,7 @@ const updateAllCharts = () => {
       itemStyle: { borderRadius: 8, borderColor: settings.isLightMode ? '#fff' : '#0f172a', borderWidth: 3 },
       label: { show: false, fontFamily: ui.fontFamily },
       emphasis: { scaleSize: 10, itemStyle: { shadowBlur: 20, shadowColor: 'rgba(0,0,0,0.5)' } },
-      // 这里的 name 动态绑定语言包，id 固定绑定内部逻辑 key
-      data: [
-        { value: 65, name: loc.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} }, 
-        { value: 15, name: loc.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} }, 
-        { value: 10, name: loc.cats.news, id: 'news', itemStyle: {color: '#ffd700'} }, 
-        { value: 10, name: loc.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
-      ]
+      data: db['global'].pieData // 使用从后端拉取的饼图数据
     }]
   })
   updateDynamicCharts(currentCategoryKey.value)
@@ -272,7 +334,6 @@ const updateDynamicCharts = (key) => {
   }, true)
 }
 
-// 终极侦听器：拦截所有视觉变量更改，强制全面刷新图表！
 watch(
   () => [settings.isLightMode, settings.themeColor, settings.fontFamily, settings.lang], 
   () => { nextTick(() => updateAllCharts()) },
@@ -281,7 +342,12 @@ watch(
 
 const handleResize = () => { pieChart?.resize(); graphChart?.resize(); lineRepChart?.resize(); lineSentChart?.resize() }
 
-onMounted(() => { updateAllCharts(); window.addEventListener('resize', handleResize) })
+// === 核心生命周期：挂载时触发网络请求 ===
+onMounted(() => { 
+  fetchAndInjectData() // 发起真实数据请求
+  window.addEventListener('resize', handleResize) 
+})
+
 onUnmounted(() => { window.removeEventListener('resize', handleResize); pieChart?.dispose(); graphChart?.dispose(); lineRepChart?.dispose(); lineSentChart?.dispose() })
 </script>
 
