@@ -1547,9 +1547,35 @@ if __name__ == "__main__":
     op = int(input().strip())
 
     if op == 1:
-        print("训练流程已迁移到 sentiment_train.py")
-        print("请使用: python -m src.lsj.src.algorithms.sentiment_train")
-        print("或在代码中调用 sentiment_train.train(...) / sentiment_train.finetune(...)")
+        analyzer = SentimentAnalyzer(use_bert=False)
+        analyzer.load_model('./models/sentiment_train')
+
+        text1 = '''
+        今天我非常高兴！因为在家庭拼音本上得到了红星和“优”，这是因为我的拼音书写得很工整。老师在大家面前表扬了我，还要我也分享了我的小经验。我心\
+        里像吃了蜂蜜一样甜，开心极了。今后我一定要更加认真地写作业，争取每天都得到红星！ 
+        '''
+        text2 = '''
+        今天，我拿到乐理考试的成绩单，上面是一个鲜红的“不合格”。心瞬间揪在了一起，眼泪在眼眶里打转。虽然老师和妈妈安慰我说明年还可以考，但我心里\
+        还是很难受，觉得辜负了这段时间的努力。看着书桌上的乐谱，我暗暗发誓：一定要加倍努力，下一次我一定要考过！
+        '''
+        text3 = '''
+        清晨，太阳悄悄爬上地平线，金色的阳光洒满校园。操场上，露珠在绿草尖上闪烁。同学们背着书包，陆陆续续走进校门。操场那边，几位晨练的老师正在\
+        慢跑。教学楼里传出朗朗的读书声，开启了新的一天。校园的早晨真安静，也充满了生机。
+        '''
+
+        df = pd.DataFrame({
+            'title': [
+                text1,
+                text2,
+                text3,
+            ],
+            'visit_time': pd.date_range('2024-01-01', periods=3, freq='D')
+        })
+
+        result_df = analyzer.batch_predict(df, text_column='title', include_emotions=True, batch_size=2)
+        print("\n[批量预测结果前几行]")
+        print(result_df.head())
+
     elif op == 2:
         d = ct.read_yaml_dict("zh_common_NTUSD.yaml")
         dict_only = d.get("Dictionary", {})
