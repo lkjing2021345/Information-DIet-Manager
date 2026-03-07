@@ -1,0 +1,47 @@
+:root {
+  font-family: 'Segoe UI', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* 强制深色模式，舍弃系统的白天模式切换 */
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #030712;
+  /* 科技风兜底极暗色 */
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 彻底清除默认边距，让我们的 Dashboard 真正铺满全屏 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  /* 删除了原来的 display: flex 居中效果 */
+}
+
+/* 释放 #app 容器，让它占满整个屏幕 */
+#app {
+  width: 100%;
+  min-height: 100vh;
+  /* 删除了原来的 max-width: 1280px, padding 和 text-align: center */
+}
+
+/* 将默认的超链接颜色也改为赛博朋克色系 */
+a {
+  font-weight: 500;
+  color: #00f3ff;
+  /* 科技青 */
+  text-decoration: inherit;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #ff00ea;
+  /* 赛博粉 */
+}
