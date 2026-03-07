@@ -9,19 +9,14 @@ import json
 import aiohttp
 from typing import List, Dict, Tuple, Set
 from pathlib import Path
-import logging
 import sys
 from collections import Counter
-import hashlib
 
 sys.path.insert(0, str(Path(__file__).parent))
 from generate_training_data import TrainingDataGenerator
+from logger import setup_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__, "../../../logs/smart_auto_generate.log")
 
 
 class SmartAutoGenerator:

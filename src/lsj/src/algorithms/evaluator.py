@@ -11,7 +11,6 @@
     - 个性化建议：基于评估结果提供改进建议
 """
 import json
-import logging
 from pathlib import Path
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import List, Dict, Optional, Any, Tuple
@@ -21,39 +20,13 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from utils.logger import setup_logger
+
 # 导入已完成的模块
 from sentiment import SentimentAnalyzer
 from classifier import ContentClassifier
 from similarity import SimilarityAnalyzer
 from markdown_builder import ReportMarkdownGenerator
-
-
-# ========= Logger 初始化 =========
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    logger_obj = logging.getLogger(name)
-    logger_obj.setLevel(level)
-
-    if logger_obj.handlers:
-        return logger_obj
-
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(console_handler)
-
-    logger_obj.propagate = False
-    return logger_obj
 
 logger = setup_logger(__name__, "../../logs/evaluator.log")
 
