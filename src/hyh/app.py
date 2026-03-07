@@ -1020,7 +1020,7 @@ def dashboard_summary() -> Dict[str, Any]:
         ).fetchone()
     if row:
         return _payload_from_stats_row(row)
-    return run_analysis()
+    return run_analysis(force=False, backfill_limit=2000)
 
 
 if __name__ == "__main__":
