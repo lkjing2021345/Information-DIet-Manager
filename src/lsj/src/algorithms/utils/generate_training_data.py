@@ -8,15 +8,11 @@ import asyncio
 import aiohttp
 from typing import List, Dict, Optional, Any
 from pathlib import Path
-import logging
 from datetime import datetime
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from logger import setup_logger
+
+logger = setup_logger(__name__, "../../../logs/generate_training_data.log")
 
 
 class TrainingDataGenerator:

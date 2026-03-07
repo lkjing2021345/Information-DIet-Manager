@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import pickle
 import random
@@ -31,6 +30,8 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
+from utils.logger import setup_logger
+
 # Keep mirror endpoint for regions with limited HF connectivity
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
@@ -55,31 +56,6 @@ except Exception:  # pragma: no cover
     BertTokenizer = None
     get_linear_schedule_with_warmup = None
     BERT_AVAILABLE = False
-
-
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    logger_obj = logging.getLogger(name)
-    logger_obj.setLevel(level)
-
-    if logger_obj.handlers:
-        return logger_obj
-
-    path = Path(log_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(stream_handler)
-    logger_obj.propagate = False
-    return logger_obj
-
 
 logger = setup_logger(__name__, "../../logs/sentiment_train.log")
 MODEL_API_VERSION = "1.0"

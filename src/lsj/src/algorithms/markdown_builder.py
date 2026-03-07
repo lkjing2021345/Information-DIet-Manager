@@ -9,6 +9,10 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote
 
+from utils.logger import setup_logger
+
+logger = setup_logger(__name__, "../../logs/markdown_builder.log")
+
 # 避免循环导入
 if TYPE_CHECKING:
     from lsj.src.algorithms.evaluator import (
@@ -133,6 +137,7 @@ class MarkdownBuilder:
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(self.build())
+        logger.info(f"MarkdownBuilder 已保存文件: {filepath}")
 
 
 class ReportMarkdownGenerator:
@@ -198,6 +203,7 @@ class ReportMarkdownGenerator:
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
+        logger.info(f"Markdown 报告已保存: {filepath}")
 
     # ==================== 私有方法：各部分生成 ====================
 

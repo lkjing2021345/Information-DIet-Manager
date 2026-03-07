@@ -11,7 +11,6 @@
     - 去重检测：识别重复或高度相似的浏览记录
 """
 
-import logging
 import pickle
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any, Set
@@ -23,43 +22,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from sklearn.cluster import KMeans, DBSCAN, MiniBatchKMeans
 
-
-# ========= 标准化 logger 初始化 =========
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    """
-    创建标准化 logger
-
-    参数:
-        name: logger 名称
-        log_file: 日志文件路径
-        level: 日志级别
-    """
-    logger_obj = logging.getLogger(name)
-    logger_obj.setLevel(level)
-
-    # 如果已经绑定过 handler，直接返回，避免重复写日志
-    if logger_obj.handlers:
-        return logger_obj
-
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(console_handler)
-
-    # 不向 root logger 传播，避免重复输出
-    logger_obj.propagate = False
-    return logger_obj
+from utils.logger import setup_logger
 
 
 logger = setup_logger(__name__, "../../logs/similarity.log")

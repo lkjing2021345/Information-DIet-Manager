@@ -23,48 +23,23 @@ from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
 import os  # 导入系统环境变量模块
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 设置 HuggingFace 国内镜像
 # ======== 标准库导入 ========
-import logging  # 日志模块
 import pickle  # 模型持久化
 from pathlib import Path  # 跨平台路径处理
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import csv  # CSV 文件格式识别
+import importlib.util  # 动态检查模块是否安装
 # ======== 第三方库导入 ========
 import jieba  # 中文分词
 import pandas as pd  # 数据处理
 import yaml  # YAML 读取
-# ==================== Logger 标准化 ====================
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    """创建标准化 logger，避免重复 handler"""
-    logger_obj = logging.getLogger(name)  # 获取 logger
-    logger_obj.setLevel(level)  # 设置日志级别
-    # 如果 handler 已存在，直接返回避免重复
-    if logger_obj.handlers:
-        return logger_obj
-    # 创建日志文件夹（如不存在）
-    log_path = Path(log_file)  # 转成 Path 对象
-    log_path.parent.mkdir(parents=True, exist_ok=True)  # 创建目录
-    # 日志格式
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    # 文件输出
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    # 控制台输出
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    # 添加 handler
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(console_handler)
-    # 防止日志重复传播
-    logger_obj.propagate = False
-    return logger_obj
+
+from utils.logger import setup_logger
+
 # 初始化 logger
 logger = setup_logger(__name__, "../../logs/sentiment.log")
 MODEL_API_VERSION = "1.0"
 # ==================== 判断依赖是否存在 ====================
-import importlib.util  # 动态检查模块是否安装
 def _pkg_exists(name: str) -> bool:
     """判断某个包是否可被导入"""
     return importlib.util.find_spec(name) is not None  # 返回 True/False
