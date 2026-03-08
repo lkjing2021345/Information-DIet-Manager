@@ -5,13 +5,22 @@ sentiment_data_collector.py
 
 基于多模型并发蒸馏的六分类中文情感数据生成器（平静、开心、伤心、生气、惊讶、厌恶）
 
-主要特性：
-1) asyncio 并发 + 多模型池（OpenAI / Anthropic / 本地 OpenAI 兼容）
-2) 细粒度配额控制（情感/场景/句式/长度）
-3) 规则过滤 + 困惑度检测（可选）+ Sentence-BERT 语义去重
-4) BloomFilter + HashSet 全局唯一
-5) 模型健康检查、限流、重试、熔断与故障转移
-6) 流式写入 CSV，支持大规模样本生成
+本次重构重点增强：
+1) 历史数据加载与去重：启动时自动读取已有数据，按业务唯一键 entry_id 去重
+2) 断点续跑：进度持久化到 sidecar progress 文件，异常退出后可继续补齐差额
+3) 精确目标控制：通过 target_count 精确补齐到目标总量
+4) 并发增强：异步任务队列 + worker + 单写入器，保证线程安全与幂等性
+5) 稳定性增强：重试、超时、异常分级、中间结果安全落盘、结构化日志
+
+唯一条目判定规则：
+- entry_id = sha1(f"{label}\t{normalize_text(text)}")
+- 若历史文件内已存在 id 字段则优先使用；否则自动回填该规则生成的 entry_id
+- 该规则为“业务唯一键”，不是全文模糊相似判断
+
+兼容输出格式：
+- CSV（默认，兼容当前项目 text,label 结构；会新增 entry_id 列）
+- JSONL
+- JSON（数组）
 
 依赖建议：
 pip install httpx numpy
@@ -22,9 +31,11 @@ pip install transformers
 示例：
 python sentiment_data_collector.py \
   --output ./sentiment_train.csv \
-  --total_samples 10000 \
+  --target_count 10000 \
+  --progress_path ./sentiment_train.progress.json \
   --model-config '[{"name":"gpt-4","provider":"openai","concurrency":3,"weight":0.4},{"name":"claude-3-opus","provider":"anthropic","concurrency":3,"weight":0.4},{"name":"qwen-72b","provider":"local","base_url":"http://localhost:8000/v1","concurrency":4,"weight":0.2}]' \
-  --temperature 0.8
+  --temperature 0.8 \
+  --max_workers 20
 """
 
 import argparse
@@ -34,23 +45,26 @@ import hashlib
 import json
 import logging
 import math
+import os
 import random
 import re
+import tempfile
 import time
-import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 import numpy as np
 
 
 # -----------------------------
-# Utilities
+# Utilities / Logging
 # -----------------------------
 def setup_logger(level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("SentimentDataCollector")
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    logger.propagate = False
     if not logger.handlers:
         ch = logging.StreamHandler()
         fmt = logging.Formatter(
@@ -61,13 +75,19 @@ def setup_logger(level: str = "INFO") -> logging.Logger:
     return logger
 
 
+def log_event(logger: logging.Logger, level: str, event: str, **kwargs):
+    payload = {"event": event, **kwargs}
+    msg = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    getattr(logger, level.lower(), logger.info)(msg)
+
+
 class BloomFilter:
     """简单 BloomFilter 实现（无外部依赖）"""
 
     def __init__(self, capacity: int = 200_000, error_rate: float = 0.01):
         m = -capacity * math.log(error_rate) / (math.log(2) ** 2)
         self.size = max(8, int(m))
-        k = (self.size / capacity) * math.log(2)
+        k = (self.size / max(1, capacity)) * math.log(2)
         self.hash_count = max(2, int(k))
         self.bit_array = bytearray((self.size + 7) // 8)
 
@@ -91,7 +111,6 @@ class BloomFilter:
 
 def safe_json_extract(text: str) -> Optional[Dict[str, Any]]:
     text = text.strip()
-    # 优先直接解析
     try:
         obj = json.loads(text)
         if isinstance(obj, dict):
@@ -99,7 +118,6 @@ def safe_json_extract(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
-    # 从文本中提取 JSON 块
     m = re.search(r"\{[\s\S]*}", text)
     if m:
         try:
@@ -118,9 +136,43 @@ def normalize_text(s: str) -> str:
     return s
 
 
+def compute_entry_id(text: str, label: str) -> str:
+    canonical = f"{label.strip()}\t{normalize_text(text)}"
+    return hashlib.sha1(canonical.encode("utf-8", errors="ignore")).hexdigest()
+
+
 # -----------------------------
-# Model Layer
+# Config Models
 # -----------------------------
+@dataclass
+class RetryConfig:
+    max_retries: int = 3
+    backoff_base: float = 0.5
+    backoff_max: float = 8.0
+    request_timeout: float = 30.0
+    task_timeout: float = 45.0
+
+
+@dataclass
+class RuntimeConfig:
+    output: str
+    target_count: int
+    categories: List[str]
+    distribution: List[float]
+    temperature: float = 0.8
+    max_tokens: int = 120
+    batch_size: int = 20
+    max_workers: int = 20
+    similarity_threshold: float = 0.85
+    random_seed: int = 42
+    log_level: str = "INFO"
+    enable_ppl: bool = False
+    progress_path: Optional[str] = None
+    flush_every: int = 20
+    max_attempt_factor: int = 30
+    retry: RetryConfig = field(default_factory=RetryConfig)
+
+
 @dataclass
 class ModelConfig:
     name: str
@@ -131,7 +183,7 @@ class ModelConfig:
     weight: float = 1.0
     timeout: float = 30.0
     max_retries: int = 3
-    qps_limit: float = 5.0  # 每秒请求数
+    qps_limit: float = 5.0
 
 
 @dataclass
@@ -143,14 +195,10 @@ class ModelStats:
     latencies: List[float] = field(default_factory=list)
 
     def success_rate(self) -> float:
-        if self.total_calls == 0:
-            return 0.0
-        return self.success_calls / self.total_calls
+        return 0.0 if self.total_calls == 0 else self.success_calls / self.total_calls
 
     def avg_latency(self) -> float:
-        if self.success_calls == 0:
-            return 0.0
-        return self.total_latency / self.success_calls
+        return 0.0 if self.success_calls == 0 else self.total_latency / self.success_calls
 
     def p95_latency(self) -> float:
         if not self.latencies:
@@ -160,6 +208,279 @@ class ModelStats:
         return sorted_l[idx]
 
 
+@dataclass
+class ProgressState:
+    output_path: str
+    target_count: int
+    existing_count: int = 0
+    deduped_existing_count: int = 0
+    accepted_new_count: int = 0
+    generated_count: int = 0
+    duplicate_count: int = 0
+    filtered_count: int = 0
+    failed_count: int = 0
+    attempt_count: int = 0
+    label_counts: Dict[str, int] = field(default_factory=dict)
+    style_counts: Dict[str, int] = field(default_factory=dict)
+    length_counts: Dict[str, int] = field(default_factory=dict)
+    scene_counts: Dict[str, int] = field(default_factory=dict)
+    last_update_ts: float = 0.0
+    status: str = "initialized"
+
+    @property
+    def total_effective_count(self) -> int:
+        return self.existing_count + self.accepted_new_count
+
+
+@dataclass
+class Record:
+    entry_id: str
+    text: str
+    label: str
+    model: str = ""
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "entry_id": self.entry_id,
+            "text": self.text,
+            "label": self.label,
+            "model": self.model,
+            "created_at": self.created_at,
+        }
+
+
+# -----------------------------
+# Atomic File IO / Progress
+# -----------------------------
+class AtomicFileIO:
+    @staticmethod
+    def atomic_write_text(path: str, content: str, encoding: str = "utf-8"):
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding=encoding, dir=str(path_obj.parent)) as tf:
+            tf.write(content)
+            temp_path = tf.name
+        os.replace(temp_path, path)
+
+    @staticmethod
+    def atomic_write_bytes(path: str, content: bytes):
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("wb", delete=False, dir=str(path_obj.parent)) as tf:
+            tf.write(content)
+            temp_path = tf.name
+        os.replace(temp_path, path)
+
+
+class ProgressTracker:
+    """职责：持久化执行进度，支持断点续跑与恢复。"""
+
+    def __init__(self, progress_path: str, logger: logging.Logger):
+        self.progress_path = progress_path
+        self.logger = logger
+        self.lock = asyncio.Lock()
+
+    def load(self) -> Optional[ProgressState]:
+        if not self.progress_path or not os.path.exists(self.progress_path):
+            return None
+        try:
+            with open(self.progress_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            state = ProgressState(**data)
+            log_event(self.logger, "info", "progress_loaded", progress_path=self.progress_path)
+            return state
+        except Exception as e:
+            log_event(
+                self.logger,
+                "warning",
+                "progress_load_failed",
+                progress_path=self.progress_path,
+                reason=str(e),
+            )
+            return None
+
+    async def save(self, state: ProgressState):
+        if not self.progress_path:
+            return
+        async with self.lock:
+            state.last_update_ts = time.time()
+            AtomicFileIO.atomic_write_text(
+                self.progress_path,
+                json.dumps(asdict(state), ensure_ascii=False, indent=2),
+            )
+            log_event(
+                self.logger,
+                "info",
+                "progress_saved",
+                progress_path=self.progress_path,
+                total_effective_count=state.total_effective_count,
+                accepted_new_count=state.accepted_new_count,
+            )
+
+
+# -----------------------------
+# Historical Data Loader / Writer
+# -----------------------------
+class DataStore:
+    """职责：加载历史数据、按业务唯一键去重、幂等写入、兼容 CSV/JSONL/JSON。"""
+
+    def __init__(self, output_path: str, logger: logging.Logger):
+        self.output_path = output_path
+        self.logger = logger
+        self.output_format = self._detect_format(output_path)
+
+    @staticmethod
+    def _detect_format(path: str) -> str:
+        suffix = Path(path).suffix.lower()
+        if suffix == ".jsonl":
+            return "jsonl"
+        if suffix == ".json":
+            return "json"
+        return "csv"
+
+    def load_existing_records(self) -> Tuple[List[Record], Dict[str, int]]:
+        if not os.path.exists(self.output_path):
+            return [], {"loaded": 0, "dedup_removed": 0, "invalid": 0}
+
+        try:
+            if self.output_format == "csv":
+                rows = self._read_csv(self.output_path)
+            elif self.output_format == "jsonl":
+                rows = self._read_jsonl(self.output_path)
+            else:
+                rows = self._read_json(self.output_path)
+        except Exception as e:
+            raise IOError(f"读取历史数据失败: {e}") from e
+
+        unique: Dict[str, Record] = {}
+        invalid = 0
+        for row in rows:
+            try:
+                text = normalize_text(str(row.get("text", "")))
+                label = str(row.get("label", "")).strip()
+                if not text or not label:
+                    invalid += 1
+                    continue
+                entry_id = str(row.get("entry_id") or row.get("id") or compute_entry_id(text, label)).strip()
+                if not entry_id:
+                    invalid += 1
+                    continue
+                if entry_id not in unique:
+                    unique[entry_id] = Record(
+                        entry_id=entry_id,
+                        text=text,
+                        label=label,
+                        model=str(row.get("model", "")),
+                        created_at=float(row.get("created_at", time.time())),
+                    )
+            except Exception:
+                invalid += 1
+
+        records = list(unique.values())
+        stats = {
+            "loaded": len(rows),
+            "dedup_removed": max(0, len(rows) - len(records)),
+            "invalid": invalid,
+        }
+        return records, stats
+
+    def rewrite_all(self, records: List[Record]):
+        try:
+            if self.output_format == "csv":
+                self._write_csv(records)
+            elif self.output_format == "jsonl":
+                self._write_jsonl(records)
+            else:
+                self._write_json(records)
+        except Exception as e:
+            raise IOError(f"重写数据文件失败: {e}") from e
+
+    def append_records(self, records: List[Record]):
+        """
+        幂等追加：调用方必须保证传入 records 已按 entry_id 去重且不与历史冲突。
+        CSV/JSONL 支持追加；JSON 采用全量重写避免结构损坏。
+        """
+        if not records:
+            return
+        try:
+            if self.output_format == "csv":
+                file_exists = os.path.exists(self.output_path)
+                Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(self.output_path, "a", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(
+                        f, fieldnames=["entry_id", "text", "label", "model", "created_at"]
+                    )
+                    if not file_exists or os.path.getsize(self.output_path) == 0:
+                        writer.writeheader()
+                    for r in records:
+                        writer.writerow(r.to_dict())
+            elif self.output_format == "jsonl":
+                Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(self.output_path, "a", encoding="utf-8") as f:
+                    for r in records:
+                        f.write(json.dumps(r.to_dict(), ensure_ascii=False) + "\n")
+            else:
+                existing, _ = self.load_existing_records()
+                merged = {r.entry_id: r for r in existing}
+                for r in records:
+                    merged[r.entry_id] = r
+                self.rewrite_all(list(merged.values()))
+        except Exception as e:
+            raise IOError(f"写入结果失败: {e}") from e
+
+    def _read_csv(self, path: str) -> List[Dict[str, Any]]:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            return list(reader)
+
+    def _read_jsonl(self, path: str) -> List[Dict[str, Any]]:
+        rows = []
+        with open(path, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(json.loads(line))
+        return rows
+
+    def _read_json(self, path: str) -> List[Dict[str, Any]]:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            raise ValueError("JSON 文件内容必须为数组")
+        return data
+
+    def _write_csv(self, records: List[Record]):
+        rows = [r.to_dict() for r in records]
+        out = []
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", newline="", dir=str(Path(self.output_path).parent or Path("."))) as tf:
+            writer = csv.DictWriter(
+                tf, fieldnames=["entry_id", "text", "label", "model", "created_at"]
+            )
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+            temp_path = tf.name
+        os.replace(temp_path, self.output_path)
+        out.clear()
+
+    def _write_jsonl(self, records: List[Record]):
+        content = "\n".join(json.dumps(r.to_dict(), ensure_ascii=False) for r in records)
+        if content:
+            content += "\n"
+        AtomicFileIO.atomic_write_text(self.output_path, content)
+
+    def _write_json(self, records: List[Record]):
+        AtomicFileIO.atomic_write_text(
+            self.output_path,
+            json.dumps([r.to_dict() for r in records], ensure_ascii=False, indent=2),
+        )
+
+
+# -----------------------------
+# Model Layer
+# -----------------------------
 class CircuitBreaker:
     def __init__(self, fail_threshold: int = 5, reset_timeout: float = 30.0):
         self.fail_threshold = fail_threshold
@@ -186,13 +507,15 @@ class BaseModelClient:
         self.http = httpx.AsyncClient(timeout=cfg.timeout)
         self.last_request_ts = 0.0
         self.min_interval = 1.0 / max(0.1, cfg.qps_limit)
+        self._rate_limit_lock = asyncio.Lock()
 
     async def _rate_limit_wait(self):
-        now = time.time()
-        delta = now - self.last_request_ts
-        if delta < self.min_interval:
-            await asyncio.sleep(self.min_interval - delta)
-        self.last_request_ts = time.time()
+        async with self._rate_limit_lock:
+            now = time.time()
+            delta = now - self.last_request_ts
+            if delta < self.min_interval:
+                await asyncio.sleep(self.min_interval - delta)
+            self.last_request_ts = time.time()
 
     async def generate(self, prompt: str, temperature: float, max_tokens: int) -> str:
         raise NotImplementedError
@@ -243,7 +566,6 @@ class AnthropicClient(BaseModelClient):
         r = await self.http.post(url, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
-        # Anthropic 返回结构兼容处理
         if "content" in data and data["content"]:
             parts = data["content"]
             if isinstance(parts, list):
@@ -256,6 +578,8 @@ class LocalOpenAICompatibleClient(OpenAIClient):
 
 
 class ModelPool:
+    """职责：多模型健康检查、限流、熔断、失败重试与故障转移。"""
+
     def __init__(self, model_configs: List[ModelConfig], logger: logging.Logger):
         self.logger = logger
         self.cfgs: Dict[str, ModelConfig] = {c.name: c for c in model_configs}
@@ -282,20 +606,14 @@ class ModelPool:
             self.stats[cfg.name] = ModelStats()
 
     def _available_models(self) -> List[ModelConfig]:
-        av = []
-        for name, cfg in self.cfgs.items():
-            if not self.breakers[name].is_open():
-                av.append(cfg)
-        return av
+        return [cfg for name, cfg in self.cfgs.items() if not self.breakers[name].is_open()]
 
     def _pick_model(self) -> Optional[ModelConfig]:
         av = self._available_models()
         if not av:
             return None
         weights = [max(0.0, c.weight) for c in av]
-        if sum(weights) == 0:
-            return random.choice(av)
-        return random.choices(av, weights=weights, k=1)[0]
+        return random.choice(av) if sum(weights) == 0 else random.choices(av, weights=weights, k=1)[0]
 
     async def generate(self, prompt: str, temperature: float, max_tokens: int) -> Tuple[str, str]:
         last_err = None
@@ -331,6 +649,15 @@ class ModelPool:
                     st.failed_calls += 1
                     self.breakers[name].on_failure()
                     backoff = 0.5 * (2 ** retry) + random.uniform(0, 0.3)
+                    log_event(
+                        self.logger,
+                        "warning",
+                        "model_request_retry",
+                        model=name,
+                        retry=retry + 1,
+                        reason=str(e),
+                        backoff=round(backoff, 3),
+                    )
                     await asyncio.sleep(backoff)
                 except Exception as e:
                     last_err = e
@@ -346,96 +673,105 @@ class ModelPool:
 
 
 # -----------------------------
-# Collector
+# Core Collector
 # -----------------------------
 class SentimentDataCollector:
-    def __init__(
-        self,
-        model_configs: List[ModelConfig],
-        categories: List[str],
-        distribution: List[float],
-        total_samples: int,
-        output: str,
-        temperature: float = 0.8,
-        max_tokens: int = 120,
-        batch_size: int = 20,
-        similarity_threshold: float = 0.85,
-        random_seed: int = 42,
-        log_level: str = "INFO",
-        enable_ppl: bool = False,
-    ):
-        self.logger = setup_logger(log_level)
-        self.random_seed = random_seed
-        random.seed(random_seed)
-        np.random.seed(random_seed)
+    """
+    核心职责拆分：
+    - 历史数据加载与去重
+    - 配额目标计算
+    - 任务生产与并发执行
+    - 结果去重 / 质量过滤 / 安全写入
+    - 进度恢复与中间结果落盘
+    """
+
+    def __init__(self, runtime_cfg: RuntimeConfig, model_configs: List[ModelConfig]):
+        self.cfg = runtime_cfg
+        self.logger = setup_logger(runtime_cfg.log_level)
+        random.seed(runtime_cfg.random_seed)
+        np.random.seed(runtime_cfg.random_seed)
 
         self.pool = ModelPool(model_configs, self.logger)
-        self.categories = categories
-        self.distribution = distribution
-        self.total_samples = total_samples
-        self.output = output
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.batch_size = batch_size
-        self.similarity_threshold = similarity_threshold
-        self.enable_ppl = enable_ppl
+        self.store = DataStore(runtime_cfg.output, self.logger)
+        progress_path = runtime_cfg.progress_path or f"{runtime_cfg.output}.progress.json"
+        self.progress = ProgressTracker(progress_path, self.logger)
+
+        self.categories = runtime_cfg.categories
+        self.distribution = runtime_cfg.distribution
+        self.target_count = runtime_cfg.target_count
+        self.temperature = runtime_cfg.temperature
+        self.max_tokens = runtime_cfg.max_tokens
+        self.batch_size = runtime_cfg.batch_size
+        self.max_workers = runtime_cfg.max_workers
+        self.similarity_threshold = runtime_cfg.similarity_threshold
+        self.enable_ppl = runtime_cfg.enable_ppl
+        self.flush_every = max(1, runtime_cfg.flush_every)
 
         self.scenes = ["工作场景", "日常生活", "社交互动", "健康状况", "学习考试"]
         self.sentence_types = {"陈述句": 0.4, "疑问句": 0.2, "感叹句": 0.3, "祈使句": 0.1}
         self.length_types = {"短文本": (5, 15, 0.3), "中文本": (16, 30, 0.4), "长文本": (31, 50, 0.3)}
-
         self.sensitive_words = {"暴恐", "涉黄", "政治极端", "仇恨言论"}
+
         self.exact_set = set()
-        self.bloom = BloomFilter(capacity=max(10000, total_samples * 3), error_rate=0.005)
+        self.bloom = BloomFilter(capacity=max(10000, runtime_cfg.target_count * 3), error_rate=0.005)
+        self.id_set = set()
 
-        # SBERT 去重相关
         self.embed_model = None
-        self.embeddings = None  # np.ndarray [N, D]
-        self.embedding_texts = []
+        self.embeddings = None
+        self.embedding_texts: List[str] = []
         self._embed_lock = asyncio.Lock()
-        self._try_load_sbert()
+        self._state_lock = asyncio.Lock()
+        self._writer_lock = asyncio.Lock()
+        self._pending_flush: List[Record] = []
+        self._last_progress_log = 0
+        self._stop_requested = False
 
-        # PPL 检测（可选）
         self.ppl_model = None
         self.ppl_tokenizer = None
+        self._try_load_sbert()
         if self.enable_ppl:
             self._try_load_ppl_model()
 
-        self.generated_count = 0
-        self.accepted_count = 0
-        self.duplicate_count = 0
-        self.filtered_count = 0
-        self.label_counts = {c: 0 for c in categories}
-        self.start_ts = time.time()
-
-        self.category_targets = self._build_targets(self.categories, self.distribution, total_samples)
+        self.category_targets = self._build_targets(self.categories, self.distribution, self.target_count)
         self.style_targets = self._build_targets(
             list(self.sentence_types.keys()),
             list(self.sentence_types.values()),
-            total_samples,
+            self.target_count,
         )
         self.length_targets = self._build_targets(
             list(self.length_types.keys()),
             [self.length_types[k][2] for k in self.length_types],
-            total_samples,
+            self.target_count,
         )
         self.scene_targets = self._build_targets(
-            self.scenes, [1 / len(self.scenes)] * len(self.scenes), total_samples
+            self.scenes, [1 / len(self.scenes)] * len(self.scenes), self.target_count
         )
+
+        self.state = ProgressState(
+            output_path=self.cfg.output,
+            target_count=self.target_count,
+            label_counts={c: 0 for c in self.categories},
+            style_counts={k: 0 for k in self.style_targets},
+            length_counts={k: 0 for k in self.length_targets},
+            scene_counts={k: 0 for k in self.scene_targets},
+            status="initializing",
+        )
+        self.start_ts = time.time()
+        self.initial_existing_count = 0
 
     def _try_load_sbert(self):
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore
 
             self.embed_model = SentenceTransformer("shibing624/text2vec-base-chinese")
-            self.logger.info("Sentence-BERT loaded: shibing624/text2vec-base-chinese")
+            log_event(self.logger, "info", "sbert_loaded", model="shibing624/text2vec-base-chinese")
         except Exception as e:
             self.embed_model = None
-            self.logger.warning(f"Sentence-BERT not available, semantic dedup disabled. reason={e}")
+            log_event(self.logger, "warning", "sbert_unavailable", reason=str(e))
 
     def _try_load_ppl_model(self):
         try:
-            from transformers import AutoTokenizer, AutoModelForCausalLM  # type: ignore
+            from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
             import torch  # type: ignore
 
             name = "uer/gpt2-chinese-cluecorpussmall"
@@ -443,17 +779,17 @@ class SentimentDataCollector:
             self.ppl_model = AutoModelForCausalLM.from_pretrained(name)
             self.ppl_model.eval()
             self._torch = torch
-            self.logger.info(f"PPL model loaded: {name}")
+            log_event(self.logger, "info", "ppl_model_loaded", model=name)
         except Exception as e:
             self.ppl_model = None
             self.ppl_tokenizer = None
-            self.logger.warning(f"PPL model unavailable, fallback heuristic used. reason={e}")
+            log_event(self.logger, "warning", "ppl_model_unavailable", reason=str(e))
 
     @staticmethod
     def _build_targets(keys: List[str], ratios: List[float], total: int) -> Dict[str, int]:
-        ratios = np.array(ratios, dtype=float)
-        ratios = ratios / ratios.sum()
-        raw = ratios * total
+        ratios_arr = np.array(ratios, dtype=float)
+        ratios_arr = ratios_arr / ratios_arr.sum()
+        raw = ratios_arr * total
         floor = np.floor(raw).astype(int)
         remain = total - floor.sum()
         frac_idx = np.argsort(-(raw - floor))
@@ -494,78 +830,13 @@ class SentimentDataCollector:
         }
         return json.dumps(prompt, ensure_ascii=False)
 
-    async def _generate_one(self, spec: Dict[str, str]) -> Optional[Dict[str, str]]:
-        prompt = self._build_prompt(
-            spec["label"], spec["scene"], spec["sentence_type"], spec["length_type"]
-        )
-        try:
-            raw, model_name = await self.pool.generate(prompt, self.temperature, self.max_tokens)
-            obj = safe_json_extract(raw)
-            if not obj or "text" not in obj:
-                return None
-            text = normalize_text(str(obj["text"]))
-            label = str(obj.get("label", spec["label"])).strip()
-            if label != spec["label"]:
-                return None
-            return {"text": text, "label": label, "model": model_name}
-        except Exception as e:
-            self.logger.debug(f"generate_one failed: {e}")
-            return None
-
-    async def generate_batch(self, batch_specs: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        tasks = [self._generate_one(spec) for spec in batch_specs]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        out = []
-        for r in results:
-            if isinstance(r, dict):
-                out.append(r)
-        return out
-
-    def _quick_duplicate(self, text: str) -> bool:
-        if text in self.bloom and text in self.exact_set:
-            return True
-        return False
-
-    async def semantic_deduplicate(self, text: str) -> bool:
-        """
-        True: 保留（非重复）
-        False: 丢弃（重复）
-        """
-        if self._quick_duplicate(text):
-            return False
-
-        if self.embed_model is None:
-            self.exact_set.add(text)
-            self.bloom.add(text)
-            return True
-
-        async with self._embed_lock:
-            emb = self.embed_model.encode([text], normalize_embeddings=True)[0]
-            emb = np.asarray(emb, dtype=np.float32)
-
-            if self.embeddings is not None and len(self.embeddings) > 0:
-                sims = self.embeddings @ emb
-                if float(np.max(sims)) >= self.similarity_threshold:
-                    return False
-
-            if self.embeddings is None:
-                self.embeddings = emb.reshape(1, -1)
-            else:
-                self.embeddings = np.vstack([self.embeddings, emb.reshape(1, -1)])
-            self.embedding_texts.append(text)
-            self.exact_set.add(text)
-            self.bloom.add(text)
-            return True
-
     def _heuristic_ppl(self, text: str) -> float:
-        # fallback：基于字符转移的粗略困惑度代理（值越小越好）
         if len(text) < 5:
             return 1000.0
         uniq = len(set(text))
         rep_ratio = 1 - uniq / len(text)
         punct = len(re.findall(r"[，。！？；,.!?]", text))
-        score = 20 + rep_ratio * 200 - min(10, punct) * 0.5
-        return score
+        return 20 + rep_ratio * 200 - min(10, punct) * 0.5
 
     def _model_ppl(self, text: str) -> float:
         if self.ppl_model is None or self.ppl_tokenizer is None:
@@ -595,20 +866,9 @@ class SentimentDataCollector:
             return False
 
         ppl = self._model_ppl(text)
-        if ppl > 150:  # 可根据实际语料调参
+        if ppl > 150:
             return False
 
-        # 轻量标签一致性检查（关键词非强约束）
-        emotion_hints = {
-            "开心": ["开心", "高兴", "太棒", "激动", "喜悦"],
-            "伤心": ["难过", "伤心", "失落", "低落", "痛苦"],
-            "生气": ["生气", "愤怒", "气死", "火大", "恼火"],
-            "惊讶": ["天哪", "竟然", "没想到", "怎么可能", "太意外"],
-            "厌恶": ["恶心", "讨厌", "反感", "想吐", "厌烦"],
-            "平静": ["平静", "放松", "安心", "踏实", "淡定"],
-        }
-        hints = emotion_hints.get(label, [])
-        # 若完全没有线索，不强制拒绝；若出现明显冲突词则拒绝
         conflict_map = {
             "开心": ["恶心", "愤怒", "难过"],
             "伤心": ["太棒", "开心", "激动"],
@@ -620,91 +880,373 @@ class SentimentDataCollector:
         for c in conflict_map.get(label, []):
             if c in text:
                 return False
-
         return True
 
-    def save_to_csv(self, writer: csv.writer, text: str, label: str):
-        writer.writerow([text, label])
+    def _quick_duplicate(self, entry_id: str, text: str) -> bool:
+        return entry_id in self.id_set or (text in self.bloom and text in self.exact_set)
+
+    async def semantic_deduplicate(self, entry_id: str, text: str) -> bool:
+        """True 表示保留；False 表示重复。"""
+        if self._quick_duplicate(entry_id, text):
+            return False
+
+        if self.embed_model is None:
+            self.id_set.add(entry_id)
+            self.exact_set.add(text)
+            self.bloom.add(text)
+            return True
+
+        async with self._embed_lock:
+            if entry_id in self.id_set:
+                return False
+
+            emb = self.embed_model.encode([text], normalize_embeddings=True)[0]
+            emb = np.asarray(emb, dtype=np.float32)
+            if self.embeddings is not None and len(self.embeddings) > 0:
+                sims = self.embeddings @ emb
+                if float(np.max(sims)) >= self.similarity_threshold:
+                    return False
+
+            self.embeddings = emb.reshape(1, -1) if self.embeddings is None else np.vstack(
+                [self.embeddings, emb.reshape(1, -1)]
+            )
+            self.embedding_texts.append(text)
+            self.id_set.add(entry_id)
+            self.exact_set.add(text)
+            self.bloom.add(text)
+            return True
+
+    async def _load_existing_state(self):
+        log_event(self.logger, "info", "history_load_start", output=self.cfg.output)
+        records, stats = self.store.load_existing_records()
+        if stats["dedup_removed"] > 0 or stats["invalid"] > 0:
+            log_event(
+                self.logger,
+                "warning",
+                "history_rewrite_required",
+                dedup_removed=stats["dedup_removed"],
+                invalid=stats["invalid"],
+            )
+            self.store.rewrite_all(records)
+
+        self.initial_existing_count = len(records)
+        self.state.existing_count = len(records)
+        self.state.deduped_existing_count = len(records)
+
+        for r in records:
+            self.id_set.add(r.entry_id)
+            self.exact_set.add(r.text)
+            self.bloom.add(r.text)
+            if r.label in self.state.label_counts:
+                self.state.label_counts[r.label] += 1
+
+        if self.embed_model is not None and records:
+            try:
+                embs = self.embed_model.encode(
+                    [r.text for r in records], normalize_embeddings=True, batch_size=64
+                )
+                self.embeddings = np.asarray(embs, dtype=np.float32)
+                self.embedding_texts = [r.text for r in records]
+            except Exception as e:
+                log_event(self.logger, "warning", "history_embedding_failed", reason=str(e))
+
+        restored = self.progress.load()
+        if restored and restored.output_path == self.cfg.output and restored.target_count == self.target_count:
+            self.state.accepted_new_count = restored.accepted_new_count
+            self.state.generated_count = restored.generated_count
+            self.state.duplicate_count = restored.duplicate_count
+            self.state.filtered_count = restored.filtered_count
+            self.state.failed_count = restored.failed_count
+            self.state.attempt_count = restored.attempt_count
+            self.state.style_counts.update(restored.style_counts)
+            self.state.length_counts.update(restored.length_counts)
+            self.state.scene_counts.update(restored.scene_counts)
+            for k, v in restored.label_counts.items():
+                if k in self.state.label_counts:
+                    self.state.label_counts[k] = max(self.state.label_counts[k], v)
+            self.state.status = "resumed"
+        else:
+            self.state.status = "ready"
+
+        log_event(
+            self.logger,
+            "info",
+            "history_load_done",
+            loaded=stats["loaded"],
+            deduped_existing_count=self.state.deduped_existing_count,
+            dedup_removed=stats["dedup_removed"],
+            invalid=stats["invalid"],
+        )
+
+    def _remaining_target(self) -> int:
+        return max(0, self.target_count - self.state.total_effective_count)
+
+    def _is_done(self) -> bool:
+        return self.state.total_effective_count >= self.target_count
+
+    async def _generate_one(self, spec: Dict[str, str]) -> Optional[Record]:
+        prompt = self._build_prompt(
+            spec["label"], spec["scene"], spec["sentence_type"], spec["length_type"]
+        )
+        try:
+            raw, model_name = await asyncio.wait_for(
+                self.pool.generate(prompt, self.temperature, self.max_tokens),
+                timeout=self.cfg.retry.task_timeout,
+            )
+        except asyncio.TimeoutError:
+            log_event(self.logger, "warning", "task_timeout", spec=spec)
+            return None
+        except Exception as e:
+            log_event(self.logger, "warning", "generate_failed", spec=spec, reason=str(e))
+            return None
+
+        obj = safe_json_extract(raw)
+        if not obj or "text" not in obj:
+            log_event(self.logger, "warning", "parse_failed", raw_preview=raw[:200])
+            return None
+
+        text = normalize_text(str(obj["text"]))
+        label = str(obj.get("label", spec["label"])).strip()
+        if label != spec["label"]:
+            log_event(
+                self.logger,
+                "warning",
+                "label_mismatch",
+                expected=spec["label"],
+                actual=label,
+                text_preview=text[:50],
+            )
+            return None
+
+        return Record(
+            entry_id=compute_entry_id(text, label),
+            text=text,
+            label=label,
+            model=model_name,
+        )
+
+    async def _process_spec(self, spec: Dict[str, str]) -> bool:
+        """单任务处理。返回 True 表示最终新增成功，False 表示失败/重复/过滤。"""
+        record = await self._generate_one(spec)
+        async with self._state_lock:
+            self.state.attempt_count += 1
+
+        if record is None:
+            async with self._state_lock:
+                self.state.failed_count += 1
+            return False
+
+        if not self.quality_filter(record.text, record.label):
+            async with self._state_lock:
+                self.state.filtered_count += 1
+            return False
+
+        uniq = await self.semantic_deduplicate(record.entry_id, record.text)
+        if not uniq:
+            async with self._state_lock:
+                self.state.duplicate_count += 1
+            return False
+
+        await self._append_record(record, spec)
+        return True
+
+    async def _append_record(self, record: Record, spec: Dict[str, str]):
+        async with self._writer_lock:
+            if self._is_done():
+                return
+            if record.entry_id in {r.entry_id for r in self._pending_flush}:
+                self.state.duplicate_count += 1
+                return
+
+            self._pending_flush.append(record)
+            self.state.accepted_new_count += 1
+            self.state.generated_count += 1
+            self.state.label_counts[record.label] = self.state.label_counts.get(record.label, 0) + 1
+            self.state.style_counts[spec["sentence_type"]] = self.state.style_counts.get(spec["sentence_type"], 0) + 1
+            self.state.length_counts[spec["length_type"]] = self.state.length_counts.get(spec["length_type"], 0) + 1
+            self.state.scene_counts[spec["scene"]] = self.state.scene_counts.get(spec["scene"], 0) + 1
+
+            if len(self._pending_flush) >= self.flush_every or self._is_done():
+                self._flush_pending_sync()
+                await self.progress.save(self.state)
+
+            if self.state.total_effective_count - self._last_progress_log >= max(50, self.flush_every):
+                self._last_progress_log = self.state.total_effective_count
+                self._log_progress()
+
+    def _flush_pending_sync(self):
+        if not self._pending_flush:
+            return
+        try:
+            records = list(self._pending_flush)
+            self.store.append_records(records)
+            self._pending_flush.clear()
+            log_event(self.logger, "info", "records_flushed", count=len(records), output=self.cfg.output)
+        except Exception as e:
+            self.state.failed_count += len(self._pending_flush)
+            log_event(self.logger, "error", "flush_failed", reason=str(e), count=len(self._pending_flush))
+            self._pending_flush.clear()
+
+    def _build_one_spec(self) -> Dict[str, str]:
+        label = self._choose_from_remaining(self.category_targets, self.state.label_counts)
+        scene = self._choose_from_remaining(self.scene_targets, self.state.scene_counts)
+        stype = self._choose_from_remaining(self.style_targets, self.state.style_counts)
+        ltype = self._choose_from_remaining(self.length_targets, self.state.length_counts)
+        return {"label": label, "scene": scene, "sentence_type": stype, "length_type": ltype}
+
+    async def _run_dispatch_loop(self):
+        max_attempts = self.target_count * max(1, self.cfg.max_attempt_factor)
+        in_flight: set = set()
+
+        while not self._is_done() and self.state.attempt_count < max_attempts and not self._stop_requested:
+            remaining_target = self._remaining_target()
+            available_slots = max(0, self.max_workers - len(in_flight))
+            if available_slots == 0:
+                done, in_flight = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        await task
+                    except Exception as e:
+                        async with self._state_lock:
+                            self.state.failed_count += 1
+                        log_event(self.logger, "error", "worker_crashed", reason=str(e))
+                continue
+
+            to_submit = min(self.batch_size, available_slots, remaining_target)
+            if to_submit <= 0:
+                break
+
+            for _ in range(to_submit):
+                spec = self._build_one_spec()
+                task = asyncio.create_task(self._process_spec(spec))
+                in_flight.add(task)
+                task.add_done_callback(lambda t, bag=in_flight: bag.discard(t))
+
+            log_event(
+                self.logger,
+                "info",
+                "tasks_submitted",
+                batch=to_submit,
+                in_flight=len(in_flight),
+                remaining_target=self._remaining_target(),
+            )
+
+            if in_flight:
+                done, _ = await asyncio.wait(in_flight, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        await task
+                    except Exception as e:
+                        async with self._state_lock:
+                            self.state.failed_count += 1
+                        log_event(self.logger, "error", "worker_crashed", reason=str(e))
+
+        if in_flight:
+            results = await asyncio.gather(*list(in_flight), return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    async with self._state_lock:
+                        self.state.failed_count += 1
+                    log_event(self.logger, "error", "worker_crashed", reason=str(r))
 
     async def collect(self):
-        used_style = {k: 0 for k in self.style_targets}
-        used_len = {k: 0 for k in self.length_targets}
-        used_scene = {k: 0 for k in self.scene_targets}
+        await self._load_existing_state()
+        await self.progress.save(self.state)
 
-        max_attempts = self.total_samples * 30
-        attempts = 0
+        if self._is_done():
+            log_event(
+                self.logger,
+                "info",
+                "target_already_satisfied",
+                target_count=self.target_count,
+                existing_count=self.state.existing_count,
+            )
+            self._log_summary(final=True)
+            await self.pool.close()
+            return
 
-        with open(self.output, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["text", "label"])
+        log_event(
+            self.logger,
+            "info",
+            "collector_start",
+            target_count=self.target_count,
+            existing_count=self.state.existing_count,
+            remaining_target=self._remaining_target(),
+            max_workers=self.max_workers,
+            output=self.cfg.output,
+        )
 
-            while self.accepted_count < self.total_samples and attempts < max_attempts:
-                remain = self.total_samples - self.accepted_count
-                current_batch = min(self.batch_size, remain)
-                batch_specs = []
+        try:
+            self.state.status = "running"
+            await self._run_dispatch_loop()
+        except KeyboardInterrupt:
+            self._stop_requested = True
+            self.state.status = "interrupted"
+            log_event(self.logger, "warning", "collector_interrupted")
+            raise
+        except Exception as e:
+            self.state.status = "failed"
+            log_event(self.logger, "error", "collector_failed", reason=str(e))
+            raise
+        finally:
+            async with self._writer_lock:
+                self._flush_pending_sync()
+                await self.progress.save(self.state)
+            await self.pool.close()
 
-                for _ in range(current_batch):
-                    label = self._choose_from_remaining(self.category_targets, self.label_counts)
-                    scene = self._choose_from_remaining(self.scene_targets, used_scene)
-                    stype = self._choose_from_remaining(self.style_targets, used_style)
-                    ltype = self._choose_from_remaining(self.length_targets, used_len)
+        self.state.status = "completed" if self._is_done() else "partial"
+        await self.progress.save(self.state)
+        self._log_summary(final=True)
 
-                    batch_specs.append(
-                        {"label": label, "scene": scene, "sentence_type": stype, "length_type": ltype}
-                    )
-
-                    # 预占位（若最终失败，不回滚，能促使配额整体趋近目标）
-                    used_scene[scene] += 1
-                    used_style[stype] += 1
-                    used_len[ltype] += 1
-
-                samples = await self.generate_batch(batch_specs)
-                self.generated_count += len(samples)
-                attempts += current_batch
-
-                for s in samples:
-                    text, label = s["text"], s["label"]
-
-                    if not self.quality_filter(text, label):
-                        self.filtered_count += 1
-                        continue
-
-                    uniq = await self.semantic_deduplicate(text)
-                    if not uniq:
-                        self.duplicate_count += 1
-                        continue
-
-                    self.save_to_csv(writer, text, label)
-                    self.label_counts[label] += 1
-                    self.accepted_count += 1
-
-                    if self.accepted_count >= self.total_samples:
-                        break
-
-                if self.accepted_count % max(100, self.batch_size * 2) < self.batch_size:
-                    self._log_progress()
-
-        self._log_progress(final=True)
-        await self.pool.close()
-
-    def _log_progress(self, final: bool = False):
+    def _log_progress(self):
         elapsed = max(1e-6, time.time() - self.start_ts)
-        speed = self.accepted_count / elapsed
-        dedup_rate = self.duplicate_count / max(1, self.generated_count)
-        filter_rate = self.filtered_count / max(1, self.generated_count)
-
-        title = "FINAL REPORT" if final else "PROGRESS"
-        self.logger.info(
-            f"[{title}] accepted={self.accepted_count}/{self.total_samples}, "
-            f"generated={self.generated_count}, speed={speed:.2f}条/秒, "
-            f"dedup_rate={dedup_rate:.2%}, filter_rate={filter_rate:.2%}, "
-            f"label_dist={self.label_counts}"
+        speed = self.state.accepted_new_count / elapsed
+        dedup_rate = self.state.duplicate_count / max(1, self.state.attempt_count)
+        filter_rate = self.state.filtered_count / max(1, self.state.attempt_count)
+        log_event(
+            self.logger,
+            "info",
+            "progress",
+            target_count=self.target_count,
+            existing_count=self.state.existing_count,
+            accepted_new_count=self.state.accepted_new_count,
+            total_effective_count=self.state.total_effective_count,
+            remaining_target=self._remaining_target(),
+            attempts=self.state.attempt_count,
+            speed=round(speed, 2),
+            dedup_rate=round(dedup_rate, 4),
+            filter_rate=round(filter_rate, 4),
+            label_dist=self.state.label_counts,
         )
         for name, st in self.pool.stats.items():
-            self.logger.info(
-                f"  model={name}, calls={st.total_calls}, succ_rate={st.success_rate():.2%}, "
-                f"avg_lat={st.avg_latency():.2f}s, p95={st.p95_latency():.2f}s"
+            log_event(
+                self.logger,
+                "info",
+                "model_stats",
+                model=name,
+                calls=st.total_calls,
+                succ_rate=round(st.success_rate(), 4),
+                avg_latency=round(st.avg_latency(), 3),
+                p95_latency=round(st.p95_latency(), 3),
             )
+
+    def _log_summary(self, final: bool = False):
+        elapsed = max(1e-6, time.time() - self.start_ts)
+        log_event(
+            self.logger,
+            "info",
+            "final_summary" if final else "summary",
+            target_count=self.target_count,
+            original_count=self.initial_existing_count,
+            added_count=self.state.accepted_new_count,
+            deduped_total_count=self.state.total_effective_count,
+            failed_count=self.state.failed_count,
+            duplicate_count=self.state.duplicate_count,
+            filtered_count=self.state.filtered_count,
+            attempt_count=self.state.attempt_count,
+            elapsed_seconds=round(elapsed, 3),
+            status=self.state.status,
+        )
 
 
 # -----------------------------
@@ -713,18 +1255,15 @@ class SentimentDataCollector:
 def parse_model_configs(args) -> List[ModelConfig]:
     if args.model_config:
         raw = args.model_config.strip()
-
-        # ✅ 新增：检测是否为文件路径
-        if (raw.endswith('.json') or os.path.sep in raw) and os.path.isfile(raw):
+        if (raw.endswith(".json") or os.path.sep in raw) and os.path.isfile(raw):
             try:
-                with open(raw, 'r', encoding='utf-8') as f:
+                with open(raw, "r", encoding="utf-8") as f:
                     raw = f.read()
-                print(f"✅ 已从文件加载配置: {args.model_config}")
+                print(f"已从文件加载配置: {args.model_config}")
             except Exception as e:
                 raise ValueError(f"无法读取配置文件 {args.model_config}: {e}")
 
-        # 清理可能的 BOM 头
-        if raw.startswith('\ufeff'):
+        if raw.startswith("\ufeff"):
             raw = raw[1:]
 
         try:
@@ -740,9 +1279,7 @@ def parse_model_configs(args) -> List[ModelConfig]:
         for i, m in enumerate(config_list):
             if not isinstance(m, dict):
                 raise ValueError(f"第 {i + 1} 项必须是字典")
-
-            # 必填字段检查
-            required = ['name', 'provider']
+            required = ["name", "provider"]
             missing = [f for f in required if f not in m]
             if missing:
                 raise ValueError(f"第 {i + 1} 项缺少必填字段: {missing}")
@@ -761,22 +1298,7 @@ def parse_model_configs(args) -> List[ModelConfig]:
                 )
             )
         return cfgs
-    # 兼容单模型模式
-    return [
-        ModelConfig(
-            name=args.model,
-            provider=args.provider,
-            api_key=args.api_key,
-            base_url=args.base_url,
-            concurrency=args.concurrency,
-            weight=1.0,
-            timeout=args.timeout,
-            max_retries=args.max_retries,
-            qps_limit=args.qps_limit,
-        )
-    ]
 
-    # 兼容单模型
     return [
         ModelConfig(
             name=args.model,
@@ -794,8 +1316,9 @@ def parse_model_configs(args) -> List[ModelConfig]:
 
 def build_arg_parser():
     p = argparse.ArgumentParser(description="Multi-LLM sentiment data collector for 6-class task")
-    p.add_argument("--output", type=str, required=True)
-    p.add_argument("--total_samples", type=int, default=10000)
+    p.add_argument("--output", type=str, required=True, help="输出文件路径，支持 .csv/.jsonl/.json")
+    p.add_argument("--target_count", type=int, default=10000, help="目标总条数（最终总量）")
+    p.add_argument("--total_samples", type=int, default=None, help="兼容旧参数，等价于 target_count")
 
     p.add_argument("--categories", type=str, default="平静,开心,伤心,生气,惊讶,厌恶")
     p.add_argument("--distribution", type=str, default="0.167,0.167,0.167,0.167,0.166,0.166")
@@ -803,8 +1326,11 @@ def build_arg_parser():
     p.add_argument("--temperature", type=float, default=0.8)
     p.add_argument("--max_tokens", type=int, default=120)
     p.add_argument("--batch_size", type=int, default=20)
+    p.add_argument("--max_workers", type=int, default=20, help="并发 worker 数")
+    p.add_argument("--flush_every", type=int, default=20, help="累计多少条后安全落盘")
+    p.add_argument("--progress_path", type=str, default=None, help="断点续跑进度文件路径")
+    p.add_argument("--max_attempt_factor", type=int, default=30, help="最大尝试次数系数")
 
-    # 单模型参数（兼容）
     p.add_argument("--model", type=str, default="gpt-4")
     p.add_argument("--provider", type=str, default="openai")
     p.add_argument("--api_key", type=str, default=None)
@@ -813,9 +1339,12 @@ def build_arg_parser():
     p.add_argument("--timeout", type=float, default=30)
     p.add_argument("--max_retries", type=int, default=3)
     p.add_argument("--qps_limit", type=float, default=5.0)
-
-    # 多模型 JSON
     p.add_argument("--model-config", type=str, default=None, help="JSON list for multi-model configs")
+
+    p.add_argument("--request_timeout", type=float, default=30.0, help="单次请求超时")
+    p.add_argument("--task_timeout", type=float, default=45.0, help="单任务总超时")
+    p.add_argument("--backoff_base", type=float, default=0.5)
+    p.add_argument("--backoff_max", type=float, default=8.0)
 
     p.add_argument("--similarity_threshold", type=float, default=0.85)
     p.add_argument("--seed", type=int, default=42)
@@ -828,32 +1357,48 @@ async def async_main():
     parser = build_arg_parser()
     args = parser.parse_args()
 
+    target_count = args.target_count if args.total_samples is None else args.total_samples
+    if target_count <= 0:
+        raise ValueError("target_count 必须大于 0")
+
     categories = [x.strip() for x in args.categories.split(",") if x.strip()]
     distribution = [float(x.strip()) for x in args.distribution.split(",") if x.strip()]
     if len(categories) != len(distribution):
         raise ValueError("categories 与 distribution 长度必须一致")
+    if sum(distribution) <= 0:
+        raise ValueError("distribution 总和必须大于 0")
     if abs(sum(distribution) - 1.0) > 1e-3:
-        # 自动归一化
         s = sum(distribution)
         distribution = [x / s for x in distribution]
 
     model_configs = parse_model_configs(args)
-
-    collector = SentimentDataCollector(
-        model_configs=model_configs,
+    retry_cfg = RetryConfig(
+        max_retries=args.max_retries,
+        backoff_base=args.backoff_base,
+        backoff_max=args.backoff_max,
+        request_timeout=args.request_timeout,
+        task_timeout=args.task_timeout,
+    )
+    runtime_cfg = RuntimeConfig(
+        output=args.output,
+        target_count=target_count,
         categories=categories,
         distribution=distribution,
-        total_samples=args.total_samples,
-        output=args.output,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
         batch_size=args.batch_size,
+        max_workers=args.max_workers,
         similarity_threshold=args.similarity_threshold,
         random_seed=args.seed,
         log_level=args.log_level,
         enable_ppl=args.enable_ppl,
+        progress_path=args.progress_path,
+        flush_every=args.flush_every,
+        max_attempt_factor=args.max_attempt_factor,
+        retry=retry_cfg,
     )
 
+    collector = SentimentDataCollector(runtime_cfg=runtime_cfg, model_configs=model_configs)
     await collector.collect()
 
 
