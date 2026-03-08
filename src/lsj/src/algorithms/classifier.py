@@ -13,6 +13,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from utils.logger import setup_logger
 
+logger = setup_logger(__name__, '../../logs/classifier.log')
 
 class ContentClassifier:
     """

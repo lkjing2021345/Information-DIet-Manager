@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from classifier import ContentClassifier
 from utils.logger import setup_logger
 
+logger = setup_logger(__name__, '../../logs/classifier_train.log')
 
 @dataclass
 class TransformerTrainingConfig:
