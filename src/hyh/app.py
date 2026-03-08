@@ -16,12 +16,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from .db import get_conn, init_db
 from .models import IngestAck, IngestItem
 from .utils import normalize_text, normalize_url, sha256_hex
 
 from contextlib import asynccontextmanager
+
+from urllib.parse import urlparse
 
 MAX_TEXT_LEN = 1000
 EMBEDDING_DIM = 128
@@ -571,6 +574,236 @@ def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
     return items
 
 
+# 以下函数用于辅助“后端->逻辑”的接口实现
+def _safe_json_loads(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _load_items_for_export(
+    conn: Any,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+) -> List[Dict[str, Any]]:
+    where_parts = ["1=1"]
+    params: List[Any] = []
+    if from_ts is not None:
+        where_parts.append("ts >= ?")
+        params.append(from_ts)
+    if to_ts is not None:
+        where_parts.append("ts <= ?")
+        params.append(to_ts)
+
+    where_sql = " AND ".join(where_parts)
+    sql = f"""
+        SELECT id, url, title, text, ts, source, lang, channel, author, tags, meta, created_at
+        FROM items
+        WHERE {where_sql}
+        ORDER BY ts ASC, id ASC
+        LIMIT ?
+    """
+    params.append(limit_rows)
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    shaped: List[Dict[str, Any]] = []
+    for r in rows:
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        tags = _safe_json_loads(r.get("tags"))
+        meta = _safe_json_loads(r.get("meta"))
+
+        if view == "analysis":
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "title": title,
+                    "url": r.get("url"),
+                    "analysis_text": text,
+                    "text": text,
+                    "channel": _clean_optional_str(r.get("channel")) or "unknown",
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                }
+            )
+        else:  # raw
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "url": r.get("url"),
+                    "title": title,
+                    "text": text,
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "channel": r.get("channel"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                    "created_at": r.get("created_at"),
+                }
+            )
+    return shaped
+
+
+def _to_jsonl(items: List[Dict[str, Any]]) -> str:
+    return "\n".join(json.dumps(x, ensure_ascii=False) for x in items)
+
+
+def _to_csv(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    buf = io.StringIO()
+    fieldnames = list(items[0].keys())
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in items:
+        safe_row = {}
+        for k, v in row.items():
+            if isinstance(v, (dict, list)):
+                safe_row[k] = json.dumps(v, ensure_ascii=False)
+            else:
+                safe_row[k] = v
+        writer.writerow(safe_row)
+    return buf.getvalue()
+
+
+def _host_is_private(host: str) -> bool:
+    h = (host or "").lower().strip()
+    if not h:
+        return False
+    if h in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    if h.endswith(".local"):
+        return True
+    if h.startswith("10."):
+        return True
+    if h.startswith("192.168."):
+        return True
+    if h.startswith("172."):
+        # 172.16.0.0 - 172.31.255.255
+        parts = h.split(".")
+        if len(parts) >= 2 and parts[1].isdigit():
+            sec = int(parts[1])
+            if 16 <= sec <= 31:
+                return True
+    return False
+
+
+def _is_internal_url(url: str) -> bool:
+    try:
+        u = urlparse(url)
+        return _host_is_private(u.hostname or "")
+    except Exception:
+        return False
+
+
+def _is_auth_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "login",
+        "signin",
+        "sign-in",
+        "signup",
+        "sign-up",
+        "oauth",
+        "authorize",
+        "sso",
+        "callback",
+        "logout",
+        "register",
+        "captcha",
+        "verify",
+        "auth",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _is_search_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "/search",
+        "search?",
+        "q=",
+        "query=",
+        "code search results",
+        "google search",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _compress_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _prepare_training_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    label_field: str,
+    exclude_internal: bool,
+    exclude_auth_pages: bool,
+    exclude_search_pages: bool,
+    dedup_by_input: bool,
+    max_input_len: int,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for r in rows:
+        url = str(r.get("url") or "")
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        if exclude_internal and _is_internal_url(url):
+            continue
+        if exclude_auth_pages and _is_auth_like(url, title):
+            continue
+        if exclude_search_pages and _is_search_like(url, title):
+            continue
+
+        input_text = _compress_ws(text)
+        if not input_text:
+            continue
+        if len(input_text) > max_input_len:
+            input_text = input_text[:max_input_len]
+
+        label = _clean_optional_str(r.get(label_field)) or "unknown"
+
+        if dedup_by_input:
+            key = normalize_text("", input_text)
+            if key in seen:
+                continue
+            seen.add(key)
+
+        out.append(
+            {
+                "input": input_text,
+                "label": label,
+                "ts": r.get("ts"),
+                "url": url,
+                "title": title,
+                "source": r.get("source"),
+            }
+        )
+    return out
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # 启动逻辑：和原来的 on_startup 完全一致
@@ -587,12 +820,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=["*"],  # 允许前端请求
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.post("/collect", response_model=IngestAck)
 def collect(item: IngestItem) -> IngestAck:
@@ -1056,6 +1289,133 @@ def dashboard_summary() -> Dict[str, Any]:
     if row:
         return _payload_from_stats_row(row)
     return run_analysis()
+
+
+# 以下路由用于“后端->逻辑”的接口
+@app.get("/export/lsj")
+def export_lsj(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    view: str = Query("analysis", pattern="^(analysis|raw)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+) -> Any:
+    """
+    导出给 lsj 使用：
+    - view=analysis: 含 analysis_text/channel/ts（推荐给分析）
+    - view=raw: 接近原始采集字段
+    - fmt=json|jsonl|csv
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _shape_export_rows(rows, view=view)
+
+    if fmt == "json":
+        return {
+            "count": len(items),
+            "view": view,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": f'attachment; filename="lsj_export_{view}.jsonl"'
+            },
+        )
+
+    # csv
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="lsj_export_{view}.csv"'
+        },
+    )
+
+
+@app.get("/export/lsj/training")
+def export_lsj_training(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    label_field: str = Query("channel", pattern="^(channel|source)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+    # 新增参数
+    bare: bool = Query(True, description="json格式时仅返回数组，适配 data_cleaning.py"),
+    exclude_internal: bool = Query(
+        True, description="过滤 localhost/127.0.0.1/内网地址"
+    ),
+    exclude_auth_pages: bool = Query(True, description="过滤登录/oauth/授权回调等页面"),
+    exclude_search_pages: bool = Query(False, description="过滤搜索结果页"),
+    dedup_by_input: bool = Query(True, description="按 input 去重"),
+    max_input_len: int = Query(1000, ge=50, le=5000),
+) -> Any:
+    """
+    导出为 data_cleaning.py 友好结构:
+    [{input, label, ts, url, title, source}]
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _prepare_training_rows(
+        rows,
+        label_field=label_field,
+        exclude_internal=exclude_internal,
+        exclude_auth_pages=exclude_auth_pages,
+        exclude_search_pages=exclude_search_pages,
+        dedup_by_input=dedup_by_input,
+        max_input_len=max_input_len,
+    )
+
+    if fmt == "json":
+        if bare:
+            return items
+        return {
+            "count": len(items),
+            "label_field": label_field,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": 'attachment; filename="lsj_training.jsonl"'
+            },
+        )
+
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="lsj_training.csv"'},
+    )
 
 
 if __name__ == "__main__":
