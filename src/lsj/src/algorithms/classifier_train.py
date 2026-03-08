@@ -9,6 +9,7 @@
     便于在训练前尽早发现标注、分布和样本质量问题。
 """
 import json
+import os
 import random
 import sys
 from collections import Counter
@@ -34,7 +35,92 @@ sys.path.insert(0, str(Path(__file__).parent))
 from classifier import ContentClassifier
 from utils.logger import setup_logger
 
+# Windows 固定 Hugging Face 缓存目录，确保后续训练优先复用本地缓存。
+HF_HUB_CACHE_DIR = Path(r"C:\Users\Administrator\.cache\huggingface\hub")
+HF_HOME_DIR = HF_HUB_CACHE_DIR.parent
+HF_PERSISTENT_MODELS_DIR = HF_HUB_CACHE_DIR / "persistent_models"
+
+
+def configure_huggingface_cache() -> Path:
+    """统一指定 Hugging Face 默认缓存目录，避免落到临时目录。"""
+    HF_HOME_DIR.mkdir(parents=True, exist_ok=True)
+    HF_HUB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    HF_PERSISTENT_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    os.environ["HF_HOME"] = str(HF_HOME_DIR)
+    os.environ["HUGGINGFACE_HUB_CACHE"] = str(HF_HUB_CACHE_DIR)
+    os.environ["TRANSFORMERS_CACHE"] = str(HF_HUB_CACHE_DIR)
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    return HF_HUB_CACHE_DIR
+
+
+configure_huggingface_cache()
+
+try:
+    from huggingface_hub import snapshot_download
+except Exception:  # pragma: no cover
+    snapshot_download = None
+
 logger = setup_logger(__name__, "../../logs/classifier_train.log")
+
+
+def _sanitize_model_cache_name(model_name: str) -> str:
+    """将 repo id/path 转为稳定目录名，适配 Windows 文件系统。"""
+    return model_name.replace("\\", "__").replace("/", "__").replace(":", "_")
+
+
+
+def ensure_model_cached(model_name_or_path: str) -> str:
+    """
+    首次运行自动下载模型到固定缓存目录；后续运行优先从本地持久化缓存加载。
+    保存内容包括模型权重、配置文件、tokenizer 文件以及 Hugging Face 所需依赖文件。
+    """
+    input_path = Path(model_name_or_path)
+    if input_path.exists():
+        return str(input_path)
+
+    configure_huggingface_cache()
+    persistent_dir = HF_PERSISTENT_MODELS_DIR / _sanitize_model_cache_name(model_name_or_path)
+    config_file = persistent_dir / "config.json"
+    tokenizer_candidates = [
+        persistent_dir / "tokenizer.json",
+        persistent_dir / "tokenizer_config.json",
+        persistent_dir / "vocab.txt",
+        persistent_dir / "sentencepiece.bpe.model",
+    ]
+    has_tokenizer_files = any(path.exists() for path in tokenizer_candidates)
+    has_weight_files = any(
+        (persistent_dir / file_name).exists()
+        for file_name in ["pytorch_model.bin", "model.safetensors", "tf_model.h5", "flax_model.msgpack"]
+    )
+
+    if config_file.exists() and has_tokenizer_files and has_weight_files:
+        logger.info("Using persisted Hugging Face model cache: %s", persistent_dir)
+        return str(persistent_dir)
+
+    persistent_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Persistent Hugging Face cache miss, downloading model: %s", model_name_or_path)
+
+    if snapshot_download is not None:
+        snapshot_download(
+            repo_id=model_name_or_path,
+            cache_dir=str(HF_HUB_CACHE_DIR),
+            local_dir=str(persistent_dir),
+            local_dir_use_symlinks=False,
+            resume_download=True,
+        )
+        logger.info("Model snapshot downloaded to persistent cache: %s", persistent_dir)
+        return str(persistent_dir)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=str(HF_HUB_CACHE_DIR))
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name_or_path,
+        cache_dir=str(HF_HUB_CACHE_DIR),
+    )
+    tokenizer.save_pretrained(persistent_dir)
+    model.save_pretrained(persistent_dir)
+    logger.info("Model/tokenizer saved to persistent cache: %s", persistent_dir)
+    return str(persistent_dir)
 
 
 @dataclass
@@ -128,12 +214,19 @@ class TransformerTrainer:
         self.id2label = {idx: label for label, idx in label2id.items()}
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(config.pretrained_model_name)
+        model_source = ensure_model_cached(config.pretrained_model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_source,
+            cache_dir=str(HF_HUB_CACHE_DIR),
+            local_files_only=True,
+        )
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            config.pretrained_model_name,
+            model_source,
             num_labels=len(label2id),
             id2label={int(key): value for key, value in self.id2label.items()},
             label2id=label2id,
+            cache_dir=str(HF_HUB_CACHE_DIR),
+            local_files_only=True,
         )
         self.model.to(self.device)
 

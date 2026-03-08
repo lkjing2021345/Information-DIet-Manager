@@ -46,8 +46,26 @@ from sklearn.model_selection import train_test_split
 
 from utils.logger import setup_logger
 
-# 为 HuggingFace 下载配置镜像，便于网络受限环境下拉取模型
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+# Windows 固定 Hugging Face 缓存目录，确保模型权重、配置和 tokenizer 文件持久化保存。
+HF_HUB_CACHE_DIR = Path(r"C:\Users\Administrator\.cache\huggingface\hub")
+HF_HOME_DIR = HF_HUB_CACHE_DIR.parent
+HF_PERSISTENT_MODELS_DIR = HF_HUB_CACHE_DIR / "persistent_models"
+
+
+def configure_huggingface_cache() -> Path:
+    """统一设置 Hugging Face/Transformers 缓存目录到固定 Windows 路径。"""
+    HF_HOME_DIR.mkdir(parents=True, exist_ok=True)
+    HF_HUB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    HF_PERSISTENT_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    os.environ["HF_HOME"] = str(HF_HOME_DIR)
+    os.environ["HUGGINGFACE_HUB_CACHE"] = str(HF_HUB_CACHE_DIR)
+    os.environ["TRANSFORMERS_CACHE"] = str(HF_HUB_CACHE_DIR)
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    return HF_HUB_CACHE_DIR
+
+
+configure_huggingface_cache()
 
 try:
     import torch
@@ -60,6 +78,11 @@ try:
         get_linear_schedule_with_warmup,
     )
 
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception:  # pragma: no cover
+        snapshot_download = None
+
     BERT_AVAILABLE = True
 except Exception:  # pragma: no cover
     torch = None
@@ -70,12 +93,83 @@ except Exception:  # pragma: no cover
     BertForSequenceClassification = None
     BertTokenizer = None
     get_linear_schedule_with_warmup = None
+    snapshot_download = None
     BERT_AVAILABLE = False
 
 logger = setup_logger(__name__, "../../logs/sentiment_train.log")
 MODEL_API_VERSION = "1.0"
 DEFAULT_MODEL_OUTPUT_DIR = str(Path(__file__).resolve().parent / "models")
 DEFAULT_TRAIN_VIS_DIRNAME = "train_vis"
+
+
+def _sanitize_model_cache_name(model_name: str) -> str:
+    """将 repo id/path 转为稳定目录名，避免 Windows 路径非法字符问题。"""
+    return model_name.replace("\\", "__").replace("/", "__").replace(":", "_")
+
+
+
+def ensure_model_cached(model_name_or_path: str, token: Optional[str] = None) -> str:
+    """
+    确保模型与 tokenizer 文件被持久化到固定 Hugging Face 缓存目录。
+
+    - 若传入本地目录，则直接返回本地目录；
+    - 若固定缓存目录下已存在完整快照，则优先复用；
+    - 首次不存在时自动下载到固定目录，并保存后续复用所需文件。
+    """
+    input_path = Path(model_name_or_path)
+    if input_path.exists():
+        return str(input_path)
+
+    configure_huggingface_cache()
+    persistent_dir = HF_PERSISTENT_MODELS_DIR / _sanitize_model_cache_name(model_name_or_path)
+    config_file = persistent_dir / "config.json"
+    tokenizer_candidates = [
+        persistent_dir / "tokenizer.json",
+        persistent_dir / "tokenizer_config.json",
+        persistent_dir / "vocab.txt",
+        persistent_dir / "sentencepiece.bpe.model",
+    ]
+    has_tokenizer_files = any(path.exists() for path in tokenizer_candidates)
+    has_weight_files = any(
+        (persistent_dir / file_name).exists()
+        for file_name in ["pytorch_model.bin", "model.safetensors", "tf_model.h5", "flax_model.msgpack"]
+    )
+
+    if config_file.exists() and has_tokenizer_files and has_weight_files:
+        logger.info("Using persisted Hugging Face model cache: %s", persistent_dir)
+        return str(persistent_dir)
+
+    persistent_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Persistent Hugging Face cache miss, preparing download: %s", model_name_or_path)
+
+    if snapshot_download is not None:
+        snapshot_download(
+            repo_id=model_name_or_path,
+            cache_dir=str(HF_HUB_CACHE_DIR),
+            local_dir=str(persistent_dir),
+            local_dir_use_symlinks=False,
+            token=token,
+            resume_download=True,
+        )
+        logger.info("Model snapshot downloaded to persistent cache: %s", persistent_dir)
+        return str(persistent_dir)
+
+    # 兜底：若 huggingface_hub 不可用，则通过 transformers 下载后再显式保存。
+    if BertTokenizer is None or BertForSequenceClassification is None:
+        raise RuntimeError("huggingface_hub unavailable and transformers runtime incomplete.")
+
+    tokenizer_kwargs: Dict[str, Any] = {"cache_dir": str(HF_HUB_CACHE_DIR)}
+    model_kwargs: Dict[str, Any] = {"cache_dir": str(HF_HUB_CACHE_DIR)}
+    if token:
+        tokenizer_kwargs["token"] = token
+        model_kwargs["token"] = token
+
+    tokenizer = BertTokenizer.from_pretrained(model_name_or_path, **tokenizer_kwargs)
+    model = BertForSequenceClassification.from_pretrained(model_name_or_path, **model_kwargs)
+    tokenizer.save_pretrained(persistent_dir)
+    model.save_pretrained(persistent_dir)
+    logger.info("Model/tokenizer saved to persistent cache: %s", persistent_dir)
+    return str(persistent_dir)
 
 
 @dataclass
@@ -96,7 +190,7 @@ class TrainConfig:
     val_size: float = 0.15
     random_seed: int = 42
 
-    model_name: str = "hfl/chinese-roberta-wwm-ext"
+    model_name: str = "hfl/chinese-macbert-base"
     max_length: int = 128
     batch_size: int = 48
     epochs: int = 15
@@ -392,14 +486,17 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
             or os.getenv("HUGGINGFACE_HUB_TOKEN")
             or os.getenv("HUGGINGFACE_TOKEN")
         )
-        model_source = cfg.model_name
+        model_source = ensure_model_cached(cfg.model_name, token=hf_token)
 
-        tokenizer_common_kwargs: Dict[str, Any] = {}
+        tokenizer_common_kwargs: Dict[str, Any] = {
+            "cache_dir": str(HF_HUB_CACHE_DIR),
+        }
         model_common_kwargs: Dict[str, Any] = {
             "num_labels": len(self.label2id),
             "id2label": self.id2label,
             "label2id": self.label2id,
             "use_safetensors": False,
+            "cache_dir": str(HF_HUB_CACHE_DIR),
         }
         if hf_token:
             tokenizer_common_kwargs["token"] = hf_token
@@ -414,50 +511,19 @@ class SentimentTrainer(BaseTrainer, BasePredictor):
             self.tokenizer = tokenizer_cls.from_pretrained(source, **tokenizer_kwargs)
             self.model = model_cls.from_pretrained(source, **model_kwargs).to(self.device)
 
-        online_error: Optional[Exception] = None
         try:
-            _load_from_source(model_source, local_only=False)
-            logger.info("Loaded model/tokenizer from remote or cache: %s", model_source)
-        except Exception as e:
-            online_error = e
-            logger.warning("Online model loading failed, switching to offline fallback. err=%r", e)
-
-            local_candidates: List[str] = []
-            if Path(model_source).exists():
-                local_candidates.append(str(Path(model_source)))
-
-            local_model_dir = os.getenv("HF_LOCAL_MODEL_DIR")
-            if local_model_dir and Path(local_model_dir).exists():
-                local_candidates.append(local_model_dir)
-
-            loaded_offline = False
-            last_offline_error: Optional[Exception] = None
-
-            # fallback 1: explicit local paths
-            for candidate in local_candidates:
-                try:
-                    _load_from_source(candidate, local_only=True)
-                    logger.info("Loaded model/tokenizer from local path: %s", candidate)
-                    loaded_offline = True
-                    break
-                except Exception as offline_e:
-                    last_offline_error = offline_e
-                    logger.warning("Offline loading from %s failed: %r", candidate, offline_e)
-
-            # fallback 2: local HF cache only
-            if not loaded_offline:
-                try:
-                    _load_from_source(model_source, local_only=True)
-                    logger.info("Loaded model/tokenizer from local HF cache: %s", model_source)
-                    loaded_offline = True
-                except Exception as offline_cache_e:
-                    last_offline_error = offline_cache_e
-
-            if not loaded_offline:
+            # 优先从固定持久化缓存目录加载，避免后续重复联网下载。
+            _load_from_source(model_source, local_only=True)
+            logger.info("Loaded model/tokenizer from persisted local cache: %s", model_source)
+        except Exception as local_error:
+            logger.warning("Local cache loading failed, fallback to hub cache download. err=%r", local_error)
+            try:
+                _load_from_source(cfg.model_name, local_only=False)
+                logger.info("Loaded model/tokenizer from remote or hub cache: %s", cfg.model_name)
+            except Exception as online_error:
                 raise RuntimeError(
-                    "Failed to load model in both online and offline modes. "
-                    f"online_error={online_error!r}, offline_error={last_offline_error!r}. "
-                    "You can set HF_TOKEN and optionally HF_LOCAL_MODEL_DIR to a local model directory."
+                    "Failed to load model from both persisted cache and remote source. "
+                    f"local_error={local_error!r}, online_error={online_error!r}"
                 )
 
         train_loader = self._to_loader(train_df, shuffle=True)
