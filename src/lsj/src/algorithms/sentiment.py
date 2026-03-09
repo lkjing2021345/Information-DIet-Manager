@@ -1,143 +1,405 @@
 # -*- coding: utf-8 -*-  # 声明文件编码，避免中文乱码
 from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
 """
-情感分析模块
-功能概述：
-    使用 cntext 库对浏览记录进行多维度情感和心理分析
-    - 情感分析：积极、消极、中性情感倾向
-    - 情绪分析：喜悦、愤怒、悲伤、恐惧等具体情绪
-    - 心理特征：态度、认知、价值观等抽象构念
-    - 语义分析：主题、关键词、语义相似度
-依赖库：
-    - cntext: 中文文本分析工具包（核心）
-    - jieba: 中文分词
-    - pandas: 数据处理
-    
-安装 cntext：
-    pip install cntext
-    
-参考文档：
-    - cntext GitHub: https://github.com/hidadeng/cntext
+情感分析模块。
+
+职责：
+    基于 cntext 词典能力与可选的机器学习模型，对文本执行情感、情绪、可读性与趋势分析。
+
+说明：
+    - 词典分析适合快速、可解释的基础判断；
+    - 自定义模型适合在特定业务标注数据上提升一致性；
+    - 两者可以组合使用，以在可解释性与泛化能力之间取得平衡。
 """
 # ======== 环境变量设置 ========
-import os  # 导入系统环境变量模块
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 设置 HuggingFace 国内镜像
+import os  # 系统环境变量
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 为 HuggingFace 下载配置国内镜像
 # ======== 标准库导入 ========
-import logging  # 日志模块
 import pickle  # 模型持久化
-from pathlib import Path  # 跨平台路径处理
-from typing import List, Dict, Optional, Tuple, Any  # 类型标注
-import csv  # CSV 文件格式识别
+from pathlib import Path  # 路径处理
+from typing import List, Dict, Optional, Tuple, Any
+from dataclasses import dataclass, field
+import csv  # 用于识别和读取 CSV 词典
+import importlib.util  # 动态检查依赖是否安装
 # ======== 第三方库导入 ========
 import jieba  # 中文分词
 import pandas as pd  # 数据处理
 import yaml  # YAML 读取
-# ==================== Logger 标准化 ====================
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    """创建标准化 logger，避免重复 handler"""
-    logger_obj = logging.getLogger(name)  # 获取 logger
-    logger_obj.setLevel(level)  # 设置日志级别
-    # 如果 handler 已存在，直接返回避免重复
-    if logger_obj.handlers:
-        return logger_obj
-    # 创建日志文件夹（如不存在）
-    log_path = Path(log_file)  # 转成 Path 对象
-    log_path.parent.mkdir(parents=True, exist_ok=True)  # 创建目录
-    # 日志格式
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    # 文件输出
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    # 控制台输出
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    # 添加 handler
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(console_handler)
-    # 防止日志重复传播
-    logger_obj.propagate = False
-    return logger_obj
-# 初始化 logger
+
+from utils.logger import setup_logger
+
+# 初始化日志器
 logger = setup_logger(__name__, "../../logs/sentiment.log")
+MODEL_API_VERSION = "1.0"
 # ==================== 判断依赖是否存在 ====================
-import importlib.util  # 动态检查模块是否安装
 def _pkg_exists(name: str) -> bool:
     """判断某个包是否可被导入"""
-    return importlib.util.find_spec(name) is not None  # 返回 True/False
+    return importlib.util.find_spec(name) is not None  # 返回包是否可用
 # ==================== cntext 导入 ====================
-ct = None  # 默认值，避免 NameError
+ct = None  # 默认占位，避免后续直接引用时报 NameError
 CNTEXT_AVAILABLE = False  # 标记 cntext 是否可用
 if not _pkg_exists("cntext"):  # 如果未安装 cntext
     logger.warning("cntext 未安装（find_spec 找不到），请运行: python -m pip install cntext")
 else:
     try:
-        import cntext as ct  # 尝试导入
+        import cntext as ct  # 延迟导入，避免依赖缺失时模块直接崩溃
         CNTEXT_AVAILABLE = True  # 标记可用
         logger.info("cntext 加载成功: %s, version=%s", ct.__file__, getattr(ct, "__version__", "未知"))
     except Exception as e:
-        CNTEXT_AVAILABLE = False  # 导入失败
-        ct = None  # 清空引用
+        CNTEXT_AVAILABLE = False  # 导入失败，后续功能需走降级或抛错
+        ct = None  # 清空引用，避免误用半初始化对象
         logger.exception("cntext 已安装但导入失败。异常: %r", e)
 # ==================== BERT 相关导入 ====================
-torch = None  # 默认 torch
-Dataset = object  # 默认 Dataset
-DataLoader = None  # 默认 DataLoader
-BERT_AVAILABLE = False  # 标记 BERT 是否可用
+torch = None  # 先给出默认占位，避免依赖缺失时报 NameError
+BertTokenizer = None
+BertForSequenceClassification = None
+BERT_AVAILABLE = False  # 标记 BERT 相关依赖是否可用
 try:
     import torch  # PyTorch
-    from torch.utils.data import Dataset, DataLoader  # 数据集与加载器
-    from transformers import BertTokenizer, BertForSequenceClassification  # BERT 模型
-    from torch.optim import AdamW  # 优化器
-    try:
-        from transformers import get_linear_schedule_with_warmup  # 新版位置
-    except Exception:
-        from transformers.optimization import get_linear_schedule_with_warmup  # 旧版位置
+    from transformers import BertTokenizer, BertForSequenceClassification  # BERT 推理/训练组件
     BERT_AVAILABLE = True  # 标记可用
     logger.info("BERT 相关依赖加载成功：torch=%s, transformers 已可用", torch.__version__)
 except Exception as e:
     BERT_AVAILABLE = False  # 标记不可用
     logger.exception("BERT 相关依赖导入失败。异常: %r", e)
-# ==================== 只有 BERT 可用时才定义 Dataset ====================
-if BERT_AVAILABLE:
-    class SentimentDataset(Dataset):
-        """BERT 情感分析数据集"""
-        def __init__(self, texts: List[str], labels: List[int],
-                     tokenizer, max_length: int = 128):
-            self.texts = texts  # 保存文本
-            self.labels = labels  # 保存标签
-            self.tokenizer = tokenizer  # 保存 tokenizer
-            self.max_length = max_length  # 最大长度
-        def __len__(self):
-            return len(self.texts)  # 返回样本数量
-        def __getitem__(self, idx):
-            text = str(self.texts[idx])  # 取出文本
-            label = self.labels[idx]  # 取出标签
-            # 编码文本
-            encoding = self.tokenizer(
-                text,
-                add_special_tokens=True,
-                max_length=self.max_length,
-                padding="max_length",
-                truncation=True,
-                return_attention_mask=True,
-                return_tensors="pt",
-            )
-            return {
-                "input_ids": encoding["input_ids"].squeeze(0),
-                "attention_mask": encoding["attention_mask"].squeeze(0),
-                "label": torch.tensor(label, dtype=torch.long),
+
+
+@dataclass
+class SentimentScore:
+    """词典情感打分结构。"""
+    pos: int = 0
+    neg: int = 0
+    pos_word: List[str] = field(default_factory=list)
+    neg_word: List[str] = field(default_factory=list)
+    categories: Dict[str, Any] = field(default_factory=dict)
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'pos': self.pos,
+            'neg': self.neg,
+            'pos_word': self.pos_word,
+            'neg_word': self.neg_word,
+            'categories': self.categories,
+            'raw': self.raw,
+        }
+
+
+@dataclass
+class SentimentPrediction:
+    """统一预测输出结构（对外仍可转 dict 兼容）。"""
+    sentiment: str
+    polarity: float
+    pos_count: int
+    neg_count: int
+    confidence: float
+    pos_words: List[str] = field(default_factory=list)
+    neg_words: List[str] = field(default_factory=list)
+    emotions: Optional[Dict[str, int]] = None
+    model_sentiment: Optional[str] = None
+
+    def to_dict(self, include_words: bool = True, include_emotions: bool = True) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            'sentiment': self.sentiment,
+            'polarity': self.polarity,
+            'pos_count': self.pos_count,
+            'neg_count': self.neg_count,
+            'confidence': self.confidence,
+        }
+        if self.model_sentiment:
+            result['model_sentiment'] = self.model_sentiment
+        if include_words:
+            result['pos_words'] = self.pos_words
+            result['neg_words'] = self.neg_words
+        if include_emotions and self.emotions is not None:
+            result['emotions'] = self.emotions
+        return result
+
+
+class CntextSentimentBackend:
+    """封装基于 cntext 词典的情感与情绪分析逻辑。"""
+
+    def __init__(self, analyzer: "SentimentAnalyzer"):
+        self.analyzer = analyzer
+
+    def analyze_score(self, text: str) -> SentimentScore:
+        if self.analyzer._is_empty_text(text):
+            return SentimentScore()
+
+        try:
+            if ct is None:
+                logger.error("cntext 未安装，无法进行情感分析")
+                return SentimentScore()
+
+            if self.analyzer.custom_dict:
+                raw = ct.sentiment(str(text), diction=self.analyzer.custom_dict)
+            elif self.analyzer._cntext_dict_cache is not None:
+                raw = ct.sentiment(str(text), diction=self.analyzer._cntext_dict_cache)
+            else:
+                default_yaml = ct.read_yaml_dict('zh_common_DUTIR.yaml')
+                default_dict = default_yaml.get('Dictionary', default_yaml)
+                raw = ct.sentiment(str(text), diction=default_dict)
+
+            pos = raw.get('pos_num', raw.get('pos', 0))
+            neg = raw.get('neg_num', raw.get('neg', 0))
+            pos_words = raw.get('pos_word', raw.get('pos_words', []))
+            neg_words = raw.get('neg_word', raw.get('neg_words', []))
+
+            if pos == 0 and neg == 0:
+                # 某些词典不会直接返回 pos/neg，需要从细粒度情绪字段回推正负倾向。
+                for key in ['乐_num', '喜_num', '好_num']:
+                    if key in raw:
+                        pos += raw[key]
+                for key in ['怒_num', '愤_num', '哀_num', '悲_num', '惧_num', '恐_num', '恶_num', '厌_num', '惊_num', '惊讶_num']:
+                    if key in raw:
+                        neg += raw[key]
+
+            if not isinstance(pos_words, list):
+                pos_words = []
+            if not isinstance(neg_words, list):
+                neg_words = []
+
+            exclude = {'stopword_num', 'word_num', 'sentence_num'}
+            # 仅保留 *_num 形式的情绪统计字段，供上层做更细粒度分析。
+            categories = {
+                k: v for k, v in raw.items()
+                if isinstance(k, str) and k.endswith('_num') and k not in exclude
             }
-else:
-    class SentimentDataset:
-        """BERT 不可用时的占位类"""
-        def __init__(self, *args, **kwargs):
-            raise ImportError("BERT 不可用，无法使用 SentimentDataset")
+
+            return SentimentScore(
+                pos=int(pos) if pd.notna(pos) else 0,
+                neg=int(neg) if pd.notna(neg) else 0,
+                pos_word=list(pos_words),
+                neg_word=list(neg_words),
+                categories=categories,
+                raw=raw,
+            )
+
+        except Exception as e:
+            logger.exception(f"情感分析失败: {e}")
+            return SentimentScore()
+
+    def analyze_emotions(self, text: str) -> Dict[str, int]:
+        if self.analyzer._is_empty_text(text):
+            logger.error("传入文本为空")
+            return {}
+
+        expected_emotion_keys = {
+            '乐', '怒', '哀', '惧', '恶', '惊', '好',
+            '喜', '愤', '悲', '恐', '厌', '惊讶',
+        }
+
+        def _looks_like_emotion_dict(d: Any) -> bool:
+            if not isinstance(d, dict) or not d:
+                return False
+            return any((k in expected_emotion_keys) for k in d.keys())
+
+        diction_for_emotion: Optional[Dict[str, Any]] = None
+        if _looks_like_emotion_dict(self.analyzer.custom_dict):
+            diction_for_emotion = self.analyzer.custom_dict
+        elif _looks_like_emotion_dict(self.analyzer._cntext_dict_cache):
+            diction_for_emotion = self.analyzer._cntext_dict_cache
+        else:
+            return {}
+
+        emotion_key_mapping = {
+            '乐': self.analyzer.EMOTION_JOY,
+            '喜': self.analyzer.EMOTION_JOY,
+            '怒': self.analyzer.EMOTION_ANGER,
+            '愤': self.analyzer.EMOTION_ANGER,
+            '哀': self.analyzer.EMOTION_SADNESS,
+            '悲': self.analyzer.EMOTION_SADNESS,
+            '惧': self.analyzer.EMOTION_FEAR,
+            '恐': self.analyzer.EMOTION_FEAR,
+            '恶': self.analyzer.EMOTION_DISGUST,
+            '厌': self.analyzer.EMOTION_DISGUST,
+            '惊': self.analyzer.EMOTION_SURPRISE,
+            '惊讶': self.analyzer.EMOTION_SURPRISE,
+            '好': self.analyzer.EMOTION_GOOD,
+        }
+
+        try:
+            if ct is None:
+                logger.error("cntext 未安装，无法进行情绪分析")
+                return {}
+
+            raw = ct.sentiment(str(text), diction=diction_for_emotion)
+            exclude = {'stopword_num', 'word_num', 'sentence_num'}
+            emotions: Dict[str, int] = {}
+
+            for key, value in raw.items():
+                if not (isinstance(key, str) and key.endswith('_num')) or key in exclude:
+                    continue
+                category = key[:-4]
+                if category not in expected_emotion_keys:
+                    continue
+                mapped = emotion_key_mapping.get(category)
+                if mapped is None:
+                    continue
+                try:
+                    emotions[mapped] = emotions.get(mapped, 0) + int(value)
+                except Exception:
+                    continue
+            return emotions
+        except Exception as e:
+            logger.exception(f"情绪分析失败: {e}")
+            return {}
+
+
+class ModelBackend:
+    """封装 BERT 与朴素贝叶斯模型的加载、预测与兼容入口。"""
+
+    def __init__(self, analyzer: "SentimentAnalyzer"):
+        self.analyzer = analyzer
+
+    def predict(self, text: str) -> str | None:
+        if self.analyzer._is_empty_text(text):
+            logger.warning("文本为空")
+            return None
+
+        try:
+            if self.analyzer.use_bert and self.analyzer.bert_model is not None:
+                logger.info("predict_by_model: 当前使用 BERT 进行预测")
+                return self.predict_by_bert(text)
+            if self.analyzer.model is not None:
+                logger.info("predict_by_model: 当前使用 Naive Bayes 进行预测")
+                return self.predict_by_naive_bayes(text)
+            logger.error("predict_by_model: 没有可用模型（BERT/NB 都未加载）")
+            return None
+        except Exception as e:
+            logger.exception(f"模型预测失败: {e}")
+            return None
+
+    def predict_by_bert(self, text: str) -> str:
+        self.analyzer.bert_model.eval()
+        encoding = self.analyzer.bert_tokenizer(
+            text,
+            add_special_tokens=True,
+            max_length=128,
+            padding="max_length",
+            truncation=True,
+            return_attention_mask=True,
+            return_tensors="pt",
+        )
+        input_ids = encoding["input_ids"].to(self.analyzer.device)
+        attention_mask = encoding["attention_mask"].to(self.analyzer.device)
+
+        with torch.no_grad():
+            outputs = self.analyzer.bert_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask
+            )
+            logits = outputs.logits
+            prediction = torch.argmax(logits, dim=1).cpu().numpy()[0]
+
+        if self.analyzer.label_encoder is not None:
+            prediction_label = self.analyzer.label_encoder.inverse_transform([prediction])[0]
+        else:
+            prediction_label = str(prediction)
+
+        logger.debug(f"BERT 预测结果: {prediction_label}")
+        return prediction_label
+
+    def predict_by_naive_bayes(self, text: str) -> str | None:
+        if self.analyzer.model is None:
+            logger.error("模型未加载")
+            return None
+        if self.analyzer.vectorizer is None:
+            logger.error("向量化器未加载")
+            return None
+
+        words = self.analyzer._segment_text(text)
+        text_processed = ' '.join(words)
+        X = self.analyzer.vectorizer.transform([text_processed])
+        prediction = self.analyzer.model.predict(X)[0]
+        logger.debug(f"朴素贝叶斯预测结果: {prediction}")
+        return str(prediction)
+
+    def train_bert_model(self,
+                         train_df: pd.DataFrame,
+                         text_column: str,
+                         label_column: str,
+                         test_size: float,
+                         epochs: int,
+                         batch_size: int,
+                         learning_rate: float,
+                         max_length: int) -> Dict[str, Any]:
+        """训练逻辑已迁移到 sentiment_train.py。"""
+        raise NotImplementedError(
+            "Training has been moved to sentiment_train.py. "
+            "Please use sentiment_train.train(...) or run_training_pipeline(...)."
+        )
+
+    def train_naive_bayes_model(self,
+                                train_df: pd.DataFrame,
+                                text_column: str,
+                                label_column: str,
+                                test_size: float) -> Dict[str, Any]:
+        """训练逻辑已迁移到 sentiment_train.py。"""
+        raise NotImplementedError(
+            "Training has been moved to sentiment_train.py. "
+            "Please use sentiment_train.train(...) or run_training_pipeline(...)."
+        )
+
+    def load_bert_model(self, model_dir: str) -> bool:
+        if not BERT_AVAILABLE:
+            logger.error("BERT 不可用")
+            return False
+
+        try:
+            model_path = Path(model_dir)
+            self.analyzer.bert_model = BertForSequenceClassification.from_pretrained(model_path)
+            self.analyzer.bert_tokenizer = BertTokenizer.from_pretrained(model_path)
+            self.analyzer.bert_model.to(self.analyzer.device)
+
+            metadata_json_path = model_path / 'metadata.json'
+            if metadata_json_path.exists():
+                # 通过 api_version 校验训练产物格式，避免旧模型与新代码不兼容。
+                import json
+                with open(metadata_json_path, 'r', encoding='utf-8') as f:
+                    metadata_json = json.load(f)
+                api_version = str(metadata_json.get('api_version', ''))
+                if api_version and api_version != MODEL_API_VERSION:
+                    raise ValueError(
+                        f"模型 api_version 不匹配: model={api_version}, expected={MODEL_API_VERSION}"
+                    )
+
+            metadata_path = model_path / 'metadata.pkl'
+            if metadata_path.exists():
+                with open(metadata_path, 'rb') as f:
+                    metadata = pickle.load(f)
+                self.analyzer.label_encoder = metadata.get('label_encoder')
+                self.analyzer.bert_model_name = metadata.get('bert_model_name', 'bert-base-chinese')
+
+            self.analyzer.use_bert = True
+            return True
+        except Exception as e:
+            logger.exception(f"加载 BERT 模型失败: {e}")
+            return False
+
+    def load_naive_bayes_model(self, path: str) -> bool:
+        try:
+            with open(path, 'rb') as f:
+                model_data = pickle.load(f)
+
+            if isinstance(model_data, dict):
+                self.analyzer.model = model_data.get('model')
+                self.analyzer.vectorizer = model_data.get('vectorizer')
+            else:
+                self.analyzer.model = model_data
+                self.analyzer.vectorizer = None
+
+            self.analyzer.use_bert = False
+            return True
+        except Exception as e:
+            logger.exception(f"加载朴素贝叶斯模型失败: {e}")
+            return False
 # ==================== SentimentAnalyzer 主类 ====================
 class SentimentAnalyzer:
     """
-    情感分析器（基于 cntext）
+    情感分析主入口。
+
+    统一对外暴露词典分析、模型分析、批量预测、趋势统计和报告生成等能力。
     """
     # ==== 类常量 ====
     SENTIMENT_POSITIVE = "Positive"
@@ -158,14 +420,15 @@ class SentimentAnalyzer:
                  custom_dict_path: Optional[str] = None,
                  model_path: Optional[str] = None,
                  stopwords_path: Optional[str] = './rules/hit_stopwords.txt',
-                 bert_model_name: str = 'bert-base-chinese',
+                 bert_model_name: str = 'hfl/chinese-roberta-wwm-ext',
                  use_bert: bool = False):
         if not CNTEXT_AVAILABLE:
             logger.error("没有安装 cntext 库，建议 pip install cntext")
             raise ImportError("cntext is required but not installed")
-        self.diction = diction  # 保存词典名
-        self._cntext_dict_cache: Optional[Dict[str, Any]] = None  # 缓存词典
-        self.stopwords_path = stopwords_path  # 停用词路径
+        self.diction = diction  # 保存当前使用的词典配置名或词典对象
+        self._cntext_dict_cache: Optional[Dict[str, Any]] = None  # 缓存解析后的词典，避免重复读取
+        self.stopwords_path = stopwords_path  # 停用词文件路径
+        self._stopwords_cache: set[str] | None = None  # 停用词缓存，避免重复读取文件
         # ===== 加载词典 =====
         if isinstance(self.diction, dict):
             loaded = self.diction
@@ -174,7 +437,7 @@ class SentimentAnalyzer:
                 if self.diction.lower().endswith((".yaml", ".yml")):
                     loaded = ct.read_yaml_dict(self.diction)
                 else:
-                    logger.warning("diction 建议使用内置 yaml 名")
+                    logger.warning("diction 建议使用内置 yaml 名或 yaml 文件路径")
                     loaded = None
             except Exception as e:
                 logger.exception(f"读取 YAML 词典失败: {e}")
@@ -184,7 +447,7 @@ class SentimentAnalyzer:
         if isinstance(loaded, dict):
             self._cntext_dict_cache = loaded.get('Dictionary', loaded)
             if self._cntext_dict_cache:
-                logger.info(f"词典加载成功，包含键: {list(self._cntext_dict_cache.keys())[:10]}")
+                logger.info(f"词典加载成功，已缓存，包含键: {list(self._cntext_dict_cache.keys())[:10]}")
         else:
             logger.warning("词典加载失败")
             self._cntext_dict_cache = None
@@ -210,7 +473,7 @@ class SentimentAnalyzer:
                 else:
                     self.model = data
                     self.vectorizer = None
-                    logger.warning("模型文件中没有 vectorizer")
+                    logger.warning("模型文件中未包含 vectorizer，传统模型能力可能受限")
             except Exception as e:
                 logger.exception(f"加载模型失败: {e}")
                 self.model = None
@@ -225,9 +488,19 @@ class SentimentAnalyzer:
         self.bert_tokenizer = None
         self.label_encoder = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if BERT_AVAILABLE else None
+        self.cntext_backend = CntextSentimentBackend(self)
+        self.model_backend = ModelBackend(self)
         if self.use_bert:
             logger.info(f"BERT 模式已启用，设备: {self.device}")
         logger.info(f"初始化完成 - 词典: {diction}, BERT: {self.use_bert}")
+
+    @classmethod
+    def load(cls, model_path: Path) -> "SentimentAnalyzer":
+        """稳定推理入口：加载模型并返回可用的分析器实例。"""
+        analyzer = cls(use_bert=False)
+        if not analyzer.load_model(str(model_path)):
+            raise ValueError(f"Failed to load model from: {model_path}")
+        return analyzer
 
     # ==================== 静态方法 ====================
     
@@ -283,6 +556,36 @@ class SentimentAnalyzer:
             logger.error(f"识别文件格式失败: {e}")
             return 'unknown'
 
+    @staticmethod
+    def _is_empty_text(text: Any) -> bool:
+        """统一判断文本是否为空、缺失或仅包含空白字符。"""
+        return text is None or pd.isna(text) or str(text).strip() == ''
+
+    def _empty_cntext_score_result(self) -> Dict[str, Any]:
+        """cntext 打分失败/空文本时的统一返回。"""
+        return SentimentScore().to_dict()
+
+    def _load_stopwords(self) -> set[str]:
+        """加载停用词并缓存，避免每次分词都重复读取文件。"""
+        if self._stopwords_cache is not None:
+            return self._stopwords_cache
+
+        if not self.stopwords_path:
+            self._stopwords_cache = set()
+            return self._stopwords_cache
+
+        try:
+            with open(self.stopwords_path, 'r', encoding='utf-8') as f:
+                self._stopwords_cache = {line.strip() for line in f if line.strip()}
+        except OSError:
+            logger.warning(f"停用词词典不存在: {self.stopwords_path}")
+            self._stopwords_cache = set()
+        except Exception as e:
+            logger.exception(f"加载停用词失败: {e}")
+            self._stopwords_cache = set()
+
+        return self._stopwords_cache
+
     # ==================== 私有方法（内部使用）====================
 
     def _load_custom_dict(self, path: str) -> Dict[str, Any]:
@@ -297,6 +600,7 @@ class SentimentAnalyzer:
         """
 
         FILE_TYPE = self.identify_file_format(file_path=path)
+        # 先识别词典格式，再走对应解析逻辑。
 
         if FILE_TYPE == 'yaml':
             try:
@@ -349,243 +653,35 @@ class SentimentAnalyzer:
         返回:
             List[str]: 分词结果
         """
-        if text is None or pd.isna(text) or str(text).strip() == "":
-            logger.error("传入文本为 None")
+        if self._is_empty_text(text):
+            logger.error("传入文本为空")
             return []
 
         try:
-            words = jieba.lcut(text)
+            words = jieba.lcut(str(text))
         except Exception as e:
             logger.exception(f"出现异常，分词失败: {e}")
             return []
 
-        def load_stopwords(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    stopwords = {line.strip() for line in f if line.strip()}
-                return stopwords
-            except OSError:
-                logger.warning(f"停用词词典不存在: {path}")
-                return {}
-            except Exception as e:
-                logger.exception(f"出现未知错误: {e}")
-                return {}
-
-        stopwords_set = load_stopwords(self.stopwords_path)
+        stopwords_set = self._load_stopwords()
+        # 分词后去掉停用词与空白 token，减少后续噪声。
 
         filtered_words = [word for word in words if word not in stopwords_set and len(word.strip()) > 0]
 
         return filtered_words
     
     def _calculate_sentiment_score_cntext(self, text: str) -> Dict[str, Any]:
-        """
-        使用 cntext 计算情感相关统计
+        """使用 cntext 计算情感相关统计（委托给 CntextSentimentBackend）。"""
+        return self.cntext_backend.analyze_score(text).to_dict()
 
-        参数:
-            text: 待分析的文本
 
-        返回:
-            Dict[str, Any]: {
-                'pos': int,              # 正向词数（若词典不提供则为 0）
-                'neg': int,              # 负向词数（若词典不提供则为 0）
-                'pos_word': List[str],   # cntext 文档的标准返回不一定包含，保留兼容
-                'neg_word': List[str],
-                'categories': Dict[str, int],  # 其它维度的计数（*_num）
-                'raw': Dict[str, Any],   # 原始返回，便于调试
-            }
-        """
-        if text is None or pd.isna(text) or str(text).strip() == "":
-            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
-
-        try:
-            if ct is None:
-                logger.error("cntext 未安装，无法进行情感分析")
-                return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
-
-            # 优先使用自定义词典，否则使用缓存的词典
-            if self.custom_dict:
-                logger.debug("使用自定义词典进行分析")
-                raw = ct.sentiment(str(text), diction=self.custom_dict)
-            elif self._cntext_dict_cache is not None:
-                logger.debug("使用缓存词典进行分析")
-                raw = ct.sentiment(str(text), diction=self._cntext_dict_cache)
-            else:
-                # 尝试使用默认词典
-                logger.warning("未加载词典，尝试使用 cntext 默认行为")
-                try:
-                    default_yaml = ct.read_yaml_dict('zh_common_DUTIR.yaml')
-                    default_dict = default_yaml.get('Dictionary', default_yaml)
-                    raw = ct.sentiment(str(text), diction=default_dict)
-                except Exception as e:
-                    logger.error(f"使用默认词典失败: {e}")
-                    return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
-
-            # 调试：打印原始结果
-            logger.debug(f"cntext 原始返回: {raw}")
-
-            # ---- 字段归一化：兼容不同版本/不同词典的返回格式 ----
-            # 尝试多种可能的字段名
-            pos = raw.get('pos_num', raw.get('pos', 0))
-            neg = raw.get('neg_num', raw.get('neg', 0))
-
-            # 处理词列表字段
-            pos_words = raw.get('pos_word', raw.get('pos_words', []))
-            neg_words = raw.get('neg_word', raw.get('neg_words', []))
-
-            # 如果没有 pos/neg，尝试从情绪类别映射（DUTIR 词典）
-            if pos == 0 and neg == 0:
-                # 积极情绪：乐(喜)、好
-                pos_emotions = ['乐_num', '喜_num', '好_num']
-                # 消极情绪：怒(愤)、哀(悲)、惧(恐)、恶(厌)、惊(惊讶)
-                neg_emotions = ['怒_num', '愤_num', '哀_num', '悲_num', '惧_num', '恐_num', '恶_num', '厌_num', '惊_num', '惊讶_num']
-
-                # 计算积极情绪总数
-                for key in pos_emotions:
-                    if key in raw:
-                        pos += raw[key]
-
-                # 计算消极情绪总数
-                for key in neg_emotions:
-                    if key in raw:
-                        neg += raw[key]
-
-                logger.debug(f"从情绪类别映射 - pos: {pos}, neg: {neg}")
-
-            # 确保是列表类型
-            if not isinstance(pos_words, list):
-                pos_words = []
-            if not isinstance(neg_words, list):
-                neg_words = []
-
-            logger.debug(f"提取结果 - pos: {pos}, neg: {neg}, pos_words: {len(pos_words)}, neg_words: {len(neg_words)}")
-
-            # 收集其它 *_num 计数字段（排除通用统计字段）
-            exclude = {'stopword_num', 'word_num', 'sentence_num'}
-            categories = {
-                k: v for k, v in raw.items()
-                if isinstance(k, str) and k.endswith('_num') and k not in exclude
-            }
-
-            if pos == 0 and neg == 0 and categories:
-                logger.debug(
-                    "当前 diction 返回的结果未包含 pos/neg 维度，可能是多维度计数词典。"
-                    "你可以用 categories 做进一步的情绪/心理维度分析。"
-                )
-
-            return {
-                'pos': int(pos) if pd.notna(pos) else 0,
-                'neg': int(neg) if pd.notna(neg) else 0,
-                'pos_word': list(pos_words) if isinstance(pos_words, list) else [],
-                'neg_word': list(neg_words) if isinstance(neg_words, list) else [],
-                'categories': categories,
-                'raw': raw,
-            }
-
-        except Exception as e:
-            logger.exception(f"情感分析失败: {e}")
-            return {'pos': 0, 'neg': 0, 'pos_word': [], 'neg_word': [], 'categories': {}, 'raw': {}}
-
-    
     def _analyze_emotions_cntext(self, text: str) -> Dict[str, Any]:
-        """使用 cntext 分析具体情绪（仅“情绪类别型词典”支持；DUTIR 属于这一类）
-
-        参数:
-            text: 待分析文本
-
-        返回:
-            Dict[str, Any]: {"Joy": 1, "Anger": 0, ...}
-        """
-        if text is None or pd.isna(text) or str(text).strip() == "":
-            logger.error("传入文本为空")
-            return {}
-
-        expected_emotion_keys = {
-            '乐', '怒', '哀', '惧', '恶', '惊', '好',
-            '喜', '愤', '悲', '恐', '厌', '惊讶',
-        }
-
-        def _looks_like_emotion_dict(d: Any) -> bool:
-            """判断一个 diction（Python dict）是否像“情绪类别型词典”。"""
-            if not isinstance(d, dict) or not d:
-                return False
-            return any((k in expected_emotion_keys) for k in d.keys())
-
-        diction_for_emotion: Optional[Dict[str, Any]] = None
-        if _looks_like_emotion_dict(self.custom_dict):
-            diction_for_emotion = self.custom_dict
-        elif _looks_like_emotion_dict(self._cntext_dict_cache):
-            diction_for_emotion = self._cntext_dict_cache
-        else:
-            logger.info(
-                "当前词典不包含情绪类别 key（如 乐/怒/哀/惧/恶/惊/好），跳过情绪分析。"
-            )
-            return {}
-
-        emotion_key_mapping = {
-            '乐': self.EMOTION_JOY,
-            '喜': self.EMOTION_JOY,
-            '怒': self.EMOTION_ANGER,
-            '愤': self.EMOTION_ANGER,
-            '哀': self.EMOTION_SADNESS,
-            '悲': self.EMOTION_SADNESS,
-            '惧': self.EMOTION_FEAR,
-            '恐': self.EMOTION_FEAR,
-            '恶': self.EMOTION_DISGUST,
-            '厌': self.EMOTION_DISGUST,
-            '惊': self.EMOTION_SURPRISE,
-            '惊讶': self.EMOTION_SURPRISE,
-            '好': self.EMOTION_GOOD,
-        }
-
-        try:
-            if ct is None:
-                logger.error("cntext 未安装，无法进行情绪分析")
-                return {}
-            raw = ct.sentiment(str(text), diction=diction_for_emotion)
-
-            exclude = {'stopword_num', 'word_num', 'sentence_num'}
-
-            emotions: Dict[str, int] = {}
-            for key, value in raw.items():
-                if not (isinstance(key, str) and key.endswith('_num')):
-                    continue
-                if key in exclude:
-                    continue
-
-                category = key[:-4]
-
-                if category not in expected_emotion_keys:
-                    continue
-
-                mapped = emotion_key_mapping.get(category)
-                if mapped is None:
-                    logger.debug(f"发现未映射的情绪类别: {category}")
-                    continue
-
-                try:
-                    emotions[mapped] = emotions.get(mapped, 0) + int(value)
-                except Exception:
-                    continue
-
-            return emotions
-
-        except Exception as e:
-            logger.exception(f"情绪分析失败: {e}")
-            return {}
+        """使用 cntext 分析具体情绪（委托给 CntextSentimentBackend）。"""
+        return self.cntext_backend.analyze_emotions(text)
 
     def _score_to_sentiment(self, pos_count: int, neg_count: int,
                            threshold: float = 0.1) -> str:
-        """
-        将情感分数转换为情感类别
-
-        参数:
-            pos_count: 积极词数量
-            neg_count: 消极词数量
-            threshold: 判断阈值
-
-        返回:
-            str: 情感类别（SENTIMENT_POSITIVE/NEGATIVE/NEUTRAL）
-        """
+        """将正负词数量映射为离散情感标签。"""
         total_count = pos_count + neg_count
 
         if total_count == 0:
@@ -601,12 +697,7 @@ class SentimentAnalyzer:
             return self.SENTIMENT_NEUTRAL
     
     def _empty_result(self) -> Dict[str, Any]:
-        """
-        返回空文本的默认结果
-        
-        返回:
-            Dict[str, Any]: 默认结果
-        """
+        """返回空文本或分析失败时使用的默认预测结果。"""
         return {
             'sentiment': self.SENTIMENT_NEUTRAL,
             'polarity': 0.0,
@@ -636,8 +727,8 @@ class SentimentAnalyzer:
                 'neg_words': 消极词列表
             }
         """
-        if text is None or pd.isna(text) or str(text).strip() == '':
-            logger.error("传入文本为 None")
+        if self._is_empty_text(text):
+            logger.error("传入文本为空")
             return {
                 'sentiment': self.SENTIMENT_NEUTRAL,
                 'polarity': 0,
@@ -647,7 +738,8 @@ class SentimentAnalyzer:
                 'neg_words': []
             }
 
-        sentiment_score = self._calculate_sentiment_score_cntext(text)
+        sentiment_score_obj = self.cntext_backend.analyze_score(text)
+        sentiment_score = sentiment_score_obj.to_dict()
 
         pos_count = sentiment_score['pos']
         neg_count = sentiment_score['neg']
@@ -678,109 +770,16 @@ class SentimentAnalyzer:
         return result
 
     def predict_by_model(self, text: str) -> str | None:
-        """
-        基于自定义机器学习模型进行情感分析（支持 BERT 和朴素贝叶斯）
+        """基于自定义机器学习模型进行情感分析（委托给 ModelBackend）。"""
+        return self.model_backend.predict(text)
 
-        参数:
-            text: 待分析的文本
-
-        返回:
-            str: 情感类别
-        """
-        # 检查文本
-        if text is None or pd.isna(text) or str(text).strip() == "":
-            logger.warning("文本为空")
-            return None
-        
-        try:
-            if self.use_bert and self.bert_model is not None:
-                logger.info("predict_by_model: 当前使用 BERT 进行预测")
-                return self._predict_by_bert(text)
-            elif self.model is not None:
-                logger.info("predict_by_model: 当前使用 Naive Bayes 进行预测")
-                return self._predict_by_naive_bayes(text)
-            else:
-                logger.error("predict_by_model: 没有可用模型（BERT/NB 都未加载）")
-                return None
-        except Exception as e:
-            logger.exception(f"模型预测失败: {e}")
-            return None
-    
     def _predict_by_bert(self, text: str) -> str:
-        """
-        使用 BERT 模型预测
-
-        参数:
-            text: 待分析的文本
-
-        返回:
-            str: 情感类别
-        """
-        self.bert_model.eval()
-
-        # 编码文本
-        # 直接调用 tokenizer(...)，兼容 Transformers 5.x
-        encoding = self.bert_tokenizer(
-            text,  # 输入文本
-            add_special_tokens=True,  # 自动加特殊 token
-            max_length=128,  # 最大长度
-            padding="max_length",  # padding 到固定长度
-            truncation=True,  # 超长截断
-            return_attention_mask=True,  # 返回 mask
-            return_tensors="pt",  # 返回 torch 张量
-        )
-        # input_ids / attention_mask shape 是 [1, 128]，直接放到 device 上
-        input_ids = encoding["input_ids"].to(self.device)
-        attention_mask = encoding["attention_mask"].to(self.device)
-
-        # 预测
-        with torch.no_grad():
-            outputs = self.bert_model(
-                input_ids=input_ids,
-                attention_mask=attention_mask
-            )
-            logits = outputs.logits
-            prediction = torch.argmax(logits, dim=1).cpu().numpy()[0]
-
-        # 转换回原始标签
-        if self.label_encoder is not None:
-            prediction_label = self.label_encoder.inverse_transform([prediction])[0]
-        else:
-            prediction_label = str(prediction)
-
-        logger.debug(f"BERT 预测结果: {prediction_label}")
-        return prediction_label
+        """使用 BERT 模型预测（委托给 ModelBackend）。"""
+        return self.model_backend.predict_by_bert(text)
 
     def _predict_by_naive_bayes(self, text: str) -> str | None:
-        """
-        使用朴素贝叶斯模型预测（原有实现）
-
-        参数:
-            text: 待分析的文本
-
-        返回:
-            str: 情感类别
-        """
-        if self.model is None:
-            logger.error("模型未加载")
-            return None
-
-        if self.vectorizer is None:
-            logger.error("向量化器未加载")
-            return None
-
-        # 文本分词
-        words = self._segment_text(text)
-        text_processed = ' '.join(words)
-
-        # 文本向量化
-        X = self.vectorizer.transform([text_processed])
-
-        # 模型预测
-        prediction = self.model.predict(X)[0]
-
-        logger.debug(f"朴素贝叶斯预测结果: {prediction}")
-        return str(prediction)
+        """使用朴素贝叶斯模型预测（委托给 ModelBackend）。"""
+        return self.model_backend.predict_by_naive_bayes(text)
 
     def predict(self, text: str,
                include_emotions: bool = True,
@@ -807,7 +806,7 @@ class SentimentAnalyzer:
                 'emotions': 情绪分析结果 (可选)
             }
         """
-        if text is None or pd.isna(text) or str(text).strip() == '':
+        if self._is_empty_text(text):
             logger.error("传入文本为空，无法进行预测")
             return None
 
@@ -827,34 +826,38 @@ class SentimentAnalyzer:
         else:
             confidence = 0.0
 
-        final_result = {
-            'sentiment': sentiment,
-            'polarity': polarity,
-            'pos_count': pos_count,
-            'neg_count': neg_count,
-            'confidence': confidence
-        }
+        prediction = SentimentPrediction(
+            sentiment=sentiment,
+            polarity=polarity,
+            pos_count=pos_count,
+            neg_count=neg_count,
+            confidence=confidence,
+            pos_words=result.get('pos_words', []),
+            neg_words=result.get('neg_words', []),
+            emotions=result.get('emotions') if 'emotions' in result else None,
+        )
 
         has_custom_model = (self.model is not None) or (self.use_bert and self.bert_model is not None)
         if use_custom_model and has_custom_model:
+            # 词典结果与模型结果同时可用时，用模型结果辅助修正并调整置信度。
             model_sentiment = self.predict_by_model(text)
             if model_sentiment:
                 if model_sentiment != sentiment:
                     logger.info(f"模型预测 ({model_sentiment}) 与词典预测 ({sentiment}) 不一致")
-                    final_result['confidence'] *= 0.7
-                    final_result['model_sentiment'] = model_sentiment
-                    final_result['sentiment'] = model_sentiment
+                    prediction.confidence *= 0.7
+                    prediction.model_sentiment = model_sentiment
+                    prediction.sentiment = model_sentiment
                 else:
-                    final_result['confidence'] = min(confidence * 1.2, 1.0)
+                    prediction.confidence = min(confidence * 1.2, 1.0)
 
-        if include_words:
-            final_result['pos_words'] = result.get('pos_words', [])
-            final_result['neg_words'] = result.get('neg_words', [])
+        final_result = prediction.to_dict(
+            include_words=include_words,
+            include_emotions=include_emotions
+        )
 
-        if include_emotions and 'emotions' in result:
-            final_result['emotions'] = result['emotions']
-
-        logger.info(f"预测完成: {sentiment} (置信度: {confidence:.3f})")
+        logger.info(
+            f"预测完成: {final_result['sentiment']} (置信度: {final_result['confidence']:.3f})"
+        )
         return final_result
     
     def batch_predict(self, df: pd.DataFrame,
@@ -921,7 +924,7 @@ class SentimentAnalyzer:
                     )
 
                     if result is None:
-                        # 预测失败，使用默认值
+                        # 预测失败时退回默认中性结果，避免中断整批任务。
                         sentiments.append(self.SENTIMENT_NEUTRAL)
                         polarities.append(0.0)
                         pos_counts.append(0)
@@ -954,7 +957,7 @@ class SentimentAnalyzer:
             progress = (processed / len(df)) * 100
             logger.info(f"已处理: {processed}/{len(df)} ({progress:.1f}%)")
 
-        # 将结果添加到 DataFrame
+        # 将结果写回副本，避免直接污染调用方传入的原始数据。
         # 创建副本避免修改原数据
         result_df = df.copy()
         result_df['sentiment'] = sentiments
@@ -970,8 +973,8 @@ class SentimentAnalyzer:
 
         return result_df
 
-    # ==================== 模型训练方法 ====================
-    
+    # ==================== 模型训练方法（已抽离到 sentiment_train.py） ====================
+
     def train_model(self,
                     train_df: pd.DataFrame,
                     text_column: str = 'text',
@@ -982,37 +985,11 @@ class SentimentAnalyzer:
                     batch_size: int = 16,
                     learning_rate: float = 2e-5,
                     max_length: int = 128) -> Dict[str, Any]:
-        """
-        训练情感分析模型（支持 BERT 和朴素贝叶斯）
-
-        参数:
-            train_df: 训练数据
-            text_column: 文本列名
-            label_column: 标签列名
-            test_size: 测试集比例
-            use_bert: 是否使用 BERT（默认 True）
-            epochs: 训练轮数（仅 BERT）
-            batch_size: 批次大小（仅 BERT）
-            learning_rate: 学习率（仅 BERT）
-            max_length: 最大序列长度（仅 BERT）
-
-        返回:
-            Dict[str, Any]: 训练结果，包含准确率、损失等信息
-        """
-        if text_column not in train_df.columns or label_column not in train_df.columns:
-            raise ValueError(f"列 '{text_column}' 或 '{label_column}' 不存在")
-
-        logger.info(f"开始训练模型，数据量: {len(train_df)}")
-
-        if use_bert and BERT_AVAILABLE:
-            return self._train_bert_model(
-                train_df, text_column, label_column, test_size,
-                epochs, batch_size, learning_rate, max_length
-            )
-        else:
-            return self._train_naive_bayes_model(
-                train_df, text_column, label_column, test_size
-            )
+        """训练逻辑已迁移到 sentiment_train.py。"""
+        raise NotImplementedError(
+            "Training has been moved to sentiment_train.py. "
+            "Please call sentiment_train.train(...) / sentiment_train.finetune(...)."
+        )
 
     def _train_bert_model(self,
                          train_df: pd.DataFrame,
@@ -1023,257 +1000,36 @@ class SentimentAnalyzer:
                          batch_size: int,
                          learning_rate: float,
                          max_length: int) -> Dict[str, Any]:
-        """
-        使用 BERT 训练模型
-
-        参数:
-            train_df: 训练数据
-            text_column: 文本列名
-            label_column: 标签列名
-            test_size: 测试集比例
-            epochs: 训练轮数
-            batch_size: 批次大小
-            learning_rate: 学习率
-            max_length: 最大序列长度
-
-        返回:
-            Dict[str, Any]: 训练结果
-        """
-        global predictions, true_labels, accuracy, f1
-        from sklearn.model_selection import train_test_split  # 数据集切分
-        from sklearn.preprocessing import LabelEncoder  # 标签编码
-        from sklearn.metrics import classification_report, accuracy_score, f1_score  # 评估指标
-
-        logger.info("=" * 50)
-        logger.info("开始 BERT 模型训练")
-        logger.info("=" * 50)
-
-        texts = train_df[text_column].astype(str).tolist()  # 文本列表
-        labels = train_df[label_column].tolist()  # 标签列表
-
-        self.label_encoder = LabelEncoder()  # 初始化编码器
-        labels_encoded = self.label_encoder.fit_transform(labels)  # 转换为数字标签
-        num_labels = len(self.label_encoder.classes_)  # 类别数
-        logger.info(f"标签类别: {self.label_encoder.classes_}")
-        logger.info(f"类别数量: {num_labels}")
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            texts,  # 文本
-            labels_encoded,  # 标签
-            test_size=test_size,  # 测试比例
-            random_state=42,  # 随机种子
-            stratify=labels_encoded  # 保持类别分布一致
-        )
-
-        logger.info(f"训练集: {len(X_train)}, 测试集: {len(X_test)}")
-
-        logger.info(f"加载 BERT 模型: {self.bert_model_name}")
-
-        self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)  # 分词器
-        self.bert_model = BertForSequenceClassification.from_pretrained(
-            self.bert_model_name,  # 模型名称
-            num_labels=num_labels  # 类别数
-        )
-
-        self.bert_model.to(self.device)  # 放到 GPU/CPU
-
-        train_dataset = SentimentDataset(X_train, y_train, self.bert_tokenizer, max_length)  # 训练集
-        test_dataset = SentimentDataset(X_test, y_test, self.bert_tokenizer, max_length)  # 测试集
-
-        # DataLoader 加速参数（CPU/GPU 都可用）
-        train_loader = DataLoader(
-            train_dataset,
+        """兼容旧接口：训练逻辑已迁移到 sentiment_train.py。"""
+        return self.train_model(
+            train_df=train_df,
+            text_column=text_column,
+            label_column=label_column,
+            test_size=test_size,
+            use_bert=True,
+            epochs=epochs,
             batch_size=batch_size,
-            shuffle=True,  # 打乱数据
-            num_workers=2,  # 子进程加载（Windows 建议 0~2）
-            pin_memory=True  # GPU 加速拷贝
+            learning_rate=learning_rate,
+            max_length=max_length,
         )
-
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            num_workers=2,
-            pin_memory=True
-        )
-
-        optimizer = AdamW(self.bert_model.parameters(), lr=learning_rate)  # AdamW 优化器
-        total_steps = len(train_loader) * epochs  # 总步数
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=0,  # 不做 warmup
-            num_training_steps=total_steps
-        )
-
-        # 混合精度
-        use_amp = torch.cuda.is_available()  # 仅在 GPU 上用混合精度
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)  # AMP 缩放器
-
-        logger.info("开始训练...")
-        training_stats = []  # 用于记录训练指标
-
-        for epoch in range(epochs):
-            logger.info(f"\nEpoch {epoch + 1}/{epochs}")
-            logger.info("-" * 50)
-            # ===== 训练阶段 =====
-            self.bert_model.train()  # 开启训练模式
-            total_train_loss = 0  # 训练损失累计
-
-            try:
-                from tqdm import tqdm  # 进度条
-                train_iterator = tqdm(train_loader, desc=f"训练 Epoch {epoch + 1}")
-            except ImportError:
-                tqdm = None
-                train_iterator = train_loader
-            for batch in train_iterator:
-
-                input_ids = batch['input_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['label'].to(self.device)
-
-                optimizer.zero_grad(set_to_none=True)
-
-                with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = self.bert_model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        labels=labels
-                    )
-                    loss = outputs.loss  # 取 loss
-                total_train_loss += loss.item()  # 记录 loss
-
-                scaler.scale(loss).backward()  # 反向传播 + 缩放
-
-                torch.nn.utils.clip_grad_norm_(self.bert_model.parameters(), 1.0)
-
-                scaler.step(optimizer)
-                scaler.update()
-                scheduler.step()
-
-            avg_train_loss = total_train_loss / len(train_loader)
-            logger.info(f"平均训练损失: {avg_train_loss:.4f}")
-
-            logger.info("开始验证...")
-            self.bert_model.eval()  # 开启验证模式
-
-            predictions = []  # 保存预测结果
-            true_labels = []  # 保存真实标签
-            total_eval_loss = 0  # 验证损失累计
-
-            with torch.inference_mode():
-                for batch in test_loader:
-                    input_ids = batch['input_ids'].to(self.device)
-                    attention_mask = batch['attention_mask'].to(self.device)
-                    labels = batch['label'].to(self.device)
-                    outputs = self.bert_model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        labels=labels
-                    )
-                    loss = outputs.loss
-                    total_eval_loss += loss.item()
-                    logits = outputs.logits
-                    preds = torch.argmax(logits, dim=1).cpu().numpy()
-                    predictions.extend(preds)
-                    true_labels.extend(labels.cpu().numpy())
-
-            avg_eval_loss = total_eval_loss / len(test_loader)
-            accuracy = accuracy_score(true_labels, predictions)
-            f1 = f1_score(true_labels, predictions, average='weighted')
-
-            logger.info(f"验证损失: {avg_eval_loss:.4f}")
-            logger.info(f"准确率: {accuracy:.4f}")
-            logger.info(f"F1 分数: {f1:.4f}")
-
-            training_stats.append({
-                'epoch': epoch + 1,
-                'train_loss': avg_train_loss,
-                'eval_loss': avg_eval_loss,
-                'accuracy': accuracy,
-                'f1_score': f1
-            })
-
-        logger.info("\n" + "=" * 50)
-        logger.info("训练完成！最终评估结果：")
-        logger.info("=" * 50)
-        predictions_labels = self.label_encoder.inverse_transform(predictions)
-        true_labels_original = self.label_encoder.inverse_transform(true_labels)
-        report = classification_report(true_labels_original, predictions_labels)
-        logger.info("\n分类报告:\n" + report)
-        self.use_bert = True  # 标记 BERT 可用
-        return {
-            'model_type': 'BERT',
-            'accuracy': accuracy,
-            'f1_score': f1,
-            'training_stats': training_stats,
-            'classification_report': report
-        }
 
     def _train_naive_bayes_model(self,
                                 train_df: pd.DataFrame,
                                 text_column: str,
                                 label_column: str,
                                 test_size: float) -> Dict[str, Any]:
-        """
-        使用朴素贝叶斯训练模型（原有实现）
-
-        参数:
-            train_df: 训练数据
-            text_column: 文本列名
-            label_column: 标签列名
-            test_size: 测试集比例
-
-        返回:
-            Dict[str, Any]: 训练结果
-        """
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.model_selection import train_test_split
-        from sklearn.naive_bayes import MultinomialNB
-        from sklearn.metrics import classification_report, accuracy_score
-
-        logger.info("=" * 50)
-        logger.info("开始朴素贝叶斯模型训练")
-        logger.info("=" * 50)
-
-        # 数据预处理（分词）
-        logger.info("正在分词...")
-        texts = []
-        for text in train_df[text_column]:
-            words = self._segment_text(str(text))
-            texts.append(' '.join(words))
-
-        labels = train_df[label_column].values
-
-        # 划分训练集和测试集
-        X_train, X_test, y_train, y_test = train_test_split(
-            texts, labels, test_size=test_size, random_state=42
+        """兼容旧接口：训练逻辑已迁移到 sentiment_train.py。"""
+        return self.train_model(
+            train_df=train_df,
+            text_column=text_column,
+            label_column=label_column,
+            test_size=test_size,
+            use_bert=False,
+            epochs=6,
+            batch_size=16,
+            learning_rate=2e-5,
+            max_length=128,
         )
-
-        logger.info(f"训练集: {len(X_train)}, 测试集: {len(X_test)}")
-
-        # 特征提取（TF-IDF）
-        logger.info("正在提取特征...")
-        self.vectorizer = TfidfVectorizer(max_features=5000)
-        X_train_vec = self.vectorizer.fit_transform(X_train)
-        X_test_vec = self.vectorizer.transform(X_test)
-
-        # 模型训练（朴素贝叶斯）
-        logger.info("正在训练模型...")
-        self.model = MultinomialNB()
-        self.model.fit(X_train_vec, y_train)
-
-        # 模型评估
-        y_pred = self.model.predict(X_test_vec)
-        accuracy = accuracy_score(y_test, y_pred)
-        report = classification_report(y_test, y_pred)
-
-        logger.info(f"模型训练完成，准确率: {accuracy:.4f}")
-        logger.info("\n分类报告:\n" + report)
-
-        return {
-            'model_type': 'Naive Bayes',
-            'accuracy': accuracy,
-            'classification_report': report
-        }
 
     # ==================== 高级分析方法 ====================
     
@@ -1360,11 +1116,7 @@ class SentimentAnalyzer:
         返回:
             float: 相似度分数 (0-1)
         """
-        def is_text_Empty(text) -> bool:
-            if text is None or pd.isna(text) or str(text).strip() == '':
-                return True
-            return False
-        if is_text_Empty(text1) or is_text_Empty(text2):
+        if self._is_empty_text(text1) or self._is_empty_text(text2):
             logger.error("传入的文本1或文本2为空，无法计算余弦相似度")
             return None
 
@@ -1382,58 +1134,11 @@ class SentimentAnalyzer:
     # ==================== 模型持久化方法 ====================
     
     def save_model(self, path: str) -> None:
-        """
-        保存训练好的模型（支持 BERT 和朴素贝叶斯）
-
-        参数:
-            path: 模型保存路径
-        """
-        save_path = Path(path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if self.use_bert and self.bert_model is not None:
-            # 保存 BERT 模型
-            logger.info("保存 BERT 模型...")
-
-            # 创建模型目录
-            model_dir = save_path.parent / f"{save_path.stem}_bert"
-            model_dir.mkdir(exist_ok=True)
-
-            # 保存模型和 tokenizer
-            self.bert_model.save_pretrained(model_dir)
-            self.bert_tokenizer.save_pretrained(model_dir)
-
-            # 保存标签编码器和其他元数据
-            metadata = {
-                'model_type': 'BERT',
-                'label_encoder': self.label_encoder,
-                'bert_model_name': self.bert_model_name,
-                'diction': self.diction
-            }
-
-            with open(model_dir / 'metadata.pkl', 'wb') as f:
-                pickle.dump(metadata, f)
-
-            logger.info(f"BERT 模型已保存到: {model_dir}")
-
-        elif self.model is not None:
-            # 保存朴素贝叶斯模型
-            logger.info("保存朴素贝叶斯模型...")
-
-            model_data = {
-                'model_type': 'Naive Bayes',
-                'model': self.model,
-                'vectorizer': self.vectorizer,
-                'diction': self.diction
-            }
-
-            with open(path, 'wb') as f:
-                pickle.dump(model_data, f)
-
-            logger.info(f"朴素贝叶斯模型已保存到: {path}")
-        else:
-            logger.error("没有可保存的模型")
-            raise ValueError("No model to save")
+        """模型保存逻辑已迁移到 sentiment_train.py。"""
+        raise NotImplementedError(
+            "Model saving has been moved to sentiment_train.py. "
+            "Please use sentiment_train.run_training_pipeline(...) / sentiment_train.train(...)."
+        )
 
     def load_model(self, path: str) -> bool:
         """
@@ -1462,79 +1167,12 @@ class SentimentAnalyzer:
             return False
 
     def _load_bert_model(self, model_dir: str) -> bool:
-        """
-        加载 BERT 模型
-
-        参数:
-            model_dir: BERT 模型目录
-
-        返回:
-            bool: 是否加载成功
-        """
-        if not BERT_AVAILABLE:
-            logger.error("BERT 不可用")
-            return False
-
-        try:
-            model_path = Path(model_dir)
-
-            logger.info(f"加载 BERT 模型: {model_path}")
-
-            # 加载模型和 tokenizer
-            self.bert_model = BertForSequenceClassification.from_pretrained(model_path)
-            self.bert_tokenizer = BertTokenizer.from_pretrained(model_path)
-            self.bert_model.to(self.device)
-
-            # 加载元数据
-            metadata_path = model_path / 'metadata.pkl'
-            if metadata_path.exists():
-                with open(metadata_path, 'rb') as f:
-                    metadata = pickle.load(f)
-
-                self.label_encoder = metadata.get('label_encoder')
-                self.bert_model_name = metadata.get('bert_model_name', 'bert-base-chinese')
-                logger.info(f"模型使用的词典: {metadata.get('diction')}")
-
-            self.use_bert = True
-            logger.info("BERT 模型加载成功")
-            return True
-
-        except Exception as e:
-            logger.exception(f"加载 BERT 模型失败: {e}")
-            return False
+        """加载 BERT 模型（委托给 ModelBackend）。"""
+        return self.model_backend.load_bert_model(model_dir)
 
     def _load_naive_bayes_model(self, path: str) -> bool:
-        """
-        加载朴素贝叶斯模型（原有实现）
-
-        参数:
-            path: 模型文件路径
-
-        返回:
-            bool: 是否加载成功
-        """
-        try:
-            with open(path, 'rb') as f:
-                model_data = pickle.load(f)
-
-            if isinstance(model_data, dict):
-                self.model = model_data.get('model')
-                self.vectorizer = model_data.get('vectorizer')
-                loaded_diction = model_data.get('diction')
-
-                if loaded_diction:
-                    logger.info(f"模型使用的词典: {loaded_diction}")
-            else:
-                self.model = model_data
-                self.vectorizer = None
-
-            self.use_bert = False
-            logger.info(f"朴素贝叶斯模型已从 {path} 加载")
-            return True
-
-        except Exception as e:
-            logger.exception(f"加载朴素贝叶斯模型失败: {e}")
-            return False
+        """加载朴素贝叶斯模型（委托给 ModelBackend）。"""
+        return self.model_backend.load_naive_bayes_model(path)
 
     # ==================== 统计分析方法 ====================
     
@@ -1556,7 +1194,7 @@ class SentimentAnalyzer:
             logger.warning("输入 DataFrame 为空")
             return pd.Series(dtype=int)
 
-        # 统计各情感类别的数量
+        # 统计各情感类别的数量，用于快速观察整体情绪结构。
         distribution = df['sentiment'].value_counts().sort_index()
 
         logger.info(f"情感分布统计完成: {dict(distribution)}")
@@ -1596,7 +1234,7 @@ class SentimentAnalyzer:
                     logger.warning(f"无效的情绪计数值: {emotion}={count}")
                     continue
 
-        # 转换为 DataFrame
+        # 转换为 DataFrame，便于后续展示与排序。
         if not emotion_counts:
             logger.warning("未找到有效的情绪数据")
             return pd.DataFrame(columns=['emotion', 'count'])
@@ -1639,7 +1277,7 @@ class SentimentAnalyzer:
         # 创建副本避免修改原数据
         df_copy = df.copy()
 
-        # 确保时间列是 datetime 类型
+        # 确保时间列是 datetime 类型，便于按频率分组。
         if not pd.api.types.is_datetime64_any_dtype(df_copy[time_column]):
             try:
                 df_copy[time_column] = pd.to_datetime(df_copy[time_column])
@@ -1648,7 +1286,7 @@ class SentimentAnalyzer:
                 logger.error(f"无法将 '{time_column}' 转换为 datetime: {e}")
                 raise ValueError(f"Cannot convert '{time_column}' to datetime: {e}")
 
-        # 按时间分组统计
+        # 按时间频率聚合情感统计。
         try:
             grouped = df_copy.groupby(pd.Grouper(key=time_column, freq=freq))
 
@@ -1657,7 +1295,7 @@ class SentimentAnalyzer:
                 'sentiment': 'count'
             }).reset_index()
 
-            # 扁平化列名
+            # 展平多层列名，便于下游直接使用。
             trend_data.columns = [
                 time_column,
                 'polarity_mean',
@@ -1667,10 +1305,10 @@ class SentimentAnalyzer:
                 'count'
             ]
 
-            # 填充 NaN 值（标准差在只有一个样本时为 NaN）
+            # 标准差在仅一个样本的分组中会是 NaN，这里统一补 0。
             trend_data['polarity_std'] = trend_data['polarity_std'].fillna(0)
 
-            # 计算移动平均（7 期窗口）
+            # 计算移动平均，帮助观察趋势而非单点波动。
             if len(trend_data) >= 3:
                 window_size = min(7, len(trend_data))
                 trend_data['polarity_ma'] = trend_data['polarity_mean'].rolling(
@@ -1680,7 +1318,7 @@ class SentimentAnalyzer:
             else:
                 trend_data['polarity_ma'] = trend_data['polarity_mean']
 
-            # 统计各时间段的情感分布
+            # 统计各时间段的情感分布，并并入主结果。
             sentiment_dist = df_copy.groupby(
                 [pd.Grouper(key=time_column, freq=freq), 'sentiment']
             ).size().unstack(fill_value=0)
@@ -1693,7 +1331,7 @@ class SentimentAnalyzer:
                 how='left'
             )
 
-            # 填充缺失的情感类别列
+            # 若某些时间段缺少某个情感类别，也补齐对应列，保持结构稳定。
             for sentiment_type in [self.SENTIMENT_POSITIVE, self.SENTIMENT_NEGATIVE, self.SENTIMENT_NEUTRAL]:
                 if sentiment_type not in trend_data.columns:
                     trend_data[sentiment_type] = 0
@@ -1725,12 +1363,12 @@ class SentimentAnalyzer:
             logger.warning("输入 DataFrame 为空")
             return {'error': 'Empty DataFrame'}
 
-        df = df.copy()  # 防止修改原数据
-        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转换为数字
-        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转换为数字
+        df = df.copy()  # 使用副本，避免修改调用方原始数据
+        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转成数值，非法值记为 NaN
+        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转成数值，便于统计
         report: Dict[str, Any] = {
-            'total_records': len(df),  # 总记录数
-            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 分析时间
+            'total_records': len(df),  # 报告覆盖的总记录数
+            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 报告生成时间
         }
 
         sentiment_dist = df['sentiment'].value_counts(dropna=True).to_dict()
@@ -1802,7 +1440,7 @@ if __name__ == "__main__":
         print("请运行: pip install cntext")
         exit(1)
 
-    print(f"cntext 版本: {ct.__version__}")
+    print(f"cntext 版本: {getattr(ct, '__version__', '未知')}")
 
     if BERT_AVAILABLE:
         print(f"PyTorch 版本: {torch.__version__}")
@@ -1811,46 +1449,101 @@ if __name__ == "__main__":
         print("警告: BERT 功能不可用")
         print("如需使用 BERT，请安装: pip install torch transformers")
 
-    print("choose:1.模型相关；2.词典相关:\n")
-    op = int(input())
+    def run_smoke_tests() -> None:
+        """快速冒烟测试（不依赖训练模型）。"""
+        print("\n=== 运行 sentiment.py 内置冒烟测试 ===")
+        analyzer = SentimentAnalyzer(use_bert=False)
+
+        samples = [
+            "今天心情很好，工作很顺利，太开心了！",
+            "糟糕透了，事情一团糟，我很难过。",
+            "今天下雨了，我按时吃饭然后休息。",
+            "",
+            None,
+        ]
+
+        for i, text in enumerate(samples, start=1):
+            try:
+                result = analyzer.predict(text, include_emotions=True, include_words=False, use_custom_model=False)
+                print(f"[单条预测-{i}] 输入: {repr(text)}")
+                print(f"           输出: {result}")
+            except Exception as e:
+                print(f"[单条预测-{i}] 异常: {e}")
+
+        df = pd.DataFrame({
+            'title': [
+                "非常满意这次体验，服务很好",
+                "真失望，问题一直没解决",
+                "天气一般，心情也一般",
+                None,
+            ],
+            'visit_time': pd.date_range('2024-01-01', periods=4, freq='D')
+        })
+
+        result_df = analyzer.batch_predict(df, text_column='title', include_emotions=True, batch_size=2)
+        print("\n[批量预测结果前几行]")
+        print(result_df.head())
+
+        report = analyzer.generate_sentiment_report(result_df)
+        print("\n[综合报告]")
+        print(report)
+
+        trend = analyzer.analyze_sentiment_trend(result_df, time_column='visit_time', freq='D')
+        print("\n[趋势分析]")
+        print(trend.head())
+
+        sim = analyzer.calculate_semantic_similarity("我今天很开心", "我现在很高兴")
+        print(f"\n[语义相似度] {sim}")
+
+        keywords = analyzer.extract_keywords("今天心情很好，工作效率提升，大家都很开心", top_k=5)
+        print(f"[关键词] {keywords}")
+
+        readability = analyzer.analyze_readability("今天阳光明媚，我们一起去公园散步。")
+        print(f"[可读性] {readability}")
+
+        print("=== 冒烟测试完成 ===\n")
+
+    print("\nchoose:1.模型相关；2.词典相关；3.冒烟测试\n")
+    op = int(input().strip())
 
     if op == 1:
-        print("训练并保存模型")
-
-        df = pd.read_csv("../training_data/converted_dataset.csv")
-        df = df.rename(columns={"label": "sentiment"})
-        analyzer = SentimentAnalyzer(use_bert=True)
-        result = analyzer.train_model(
-            train_df=df,
-            text_column="text",
-            label_column="sentiment",
-            use_bert=True
-        )
-        analyzer.save_model("./models/sentiment_model.pkl")
-        logger.info("✅ 模型保存完成")
-        print(result)
-
-        print("验证加载模型")
         analyzer = SentimentAnalyzer(use_bert=False)
-        success = analyzer.load_model("models/sentiment_model_bert")
-        text = """
-            我是一个积极乐观的人，我每天都过的很快乐，每天都嬉皮笑脸的，时不时的发出哈哈大笑的声音，你们见到了我千万别奇怪。但是我今天要说的最快乐的一天还是要说那天了。
+        analyzer.load_model('./models/sentiment_train')
 
-　　三年级的暑假，阳光明媚，太阳公公早早的就露出了笑脸，我早早的从床上起来了。树上的知了一直在叫个不停。这时候爸爸跑来了我的面前对我说：“天气太热了，走，我们一起去水上乐园玩吧。”我连忙点点头，我最开心了，因为我最喜欢玩水了，天那么热正好降降暑，还有就是我去年就学会了游泳，正好可以游个痛快了。我赶紧准备好了我的游泳帽子和眼镜，照了下镜子，哎呦妈呀，这是谁啊，也太帅了吧。
+        text1 = '''
+        今天我非常高兴！因为在家庭拼音本上得到了红星和“优”，这是因为我的拼音书写得很工整。老师在大家面前表扬了我，还要我也分享了我的小经验。我心\
+        里像吃了蜂蜜一样甜，开心极了。今后我一定要更加认真地写作业，争取每天都得到红星！ 
+        '''
+        text2 = '''
+        今天，我拿到乐理考试的成绩单，上面是一个鲜红的“不合格”。心瞬间揪在了一起，眼泪在眼眶里打转。虽然老师和妈妈安慰我说明年还可以考，但我心里\
+        还是很难受，觉得辜负了这段时间的努力。看着书桌上的乐谱，我暗暗发誓：一定要加倍努力，下一次我一定要考过！
+        '''
+        text3 = '''
+        清晨，太阳悄悄爬上地平线，金色的阳光洒满校园。操场上，露珠在绿草尖上闪烁。同学们背着书包，陆陆续续走进校门。操场那边，几位晨练的老师正在\
+        慢跑。教学楼里传出朗朗的读书声，开启了新的一天。校园的早晨真安静，也充满了生机。
+        '''
 
-　　准备就绪，我、爸爸和妈妈一起走进了水上乐园，早早的就挤满了人，爸爸买好票，我急匆匆地跑了进去，接下来就要看我的表演了，换好衣服之后，我下水了，凉飕飕的，太舒服了，我来立马来了个仰泳，像只快活的鱼儿在水里畅游，妈妈督促我不要往水深的地方游，接着我又在水里开始了自由泳，好多小朋友都羡慕我，“哇塞”哥哥姐姐们都很吃惊，我心里像吃了蜜一样甜，好多人说要我和他拍照，我摆出了各种姿势，那种感觉太爽了。
+        df = pd.DataFrame({
+            'title': [
+                text1,
+                text2,
+                text3,
+            ],
+            'visit_time': pd.date_range('2024-01-01', periods=3, freq='D')
+        })
 
-　　时间过的很快，马上就中午了，妈妈说要回去了，我有点依依不舍，我期待下次还能在水里玩个痛快。
+        result_df = analyzer.batch_predict(df, text_column='title', include_emotions=True, batch_size=2)
+        print("\n[批量预测结果前几行]")
+        print(result_df.head())
 
-　　这天我玩的很开心，我也很快乐。
-        """
-        print(analyzer.predict(text, use_custom_model=True))
-
-
-    if op == 2:
+    elif op == 2:
         d = ct.read_yaml_dict("zh_common_NTUSD.yaml")
         dict_only = d.get("Dictionary", {})
         print("词典键:", d.keys())
         text = "今天心情很好！"
         raw = ct.sentiment(text, diction=dict_only)
         print("raw:", raw)
+    elif op == 3:
+        run_smoke_tests()
+    else:
+        print("无效选项，请输入 1/2/3")

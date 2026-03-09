@@ -16,12 +16,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
-from db import get_conn, init_db
-from models import IngestAck, IngestItem
-from utils import normalize_text, normalize_url, sha256_hex
+from .db import get_conn, init_db
+from .models import IngestAck, IngestItem
+from .utils import normalize_text, normalize_url, sha256_hex
 
 from contextlib import asynccontextmanager
+
+from urllib.parse import urlparse
 
 MAX_TEXT_LEN = 1000
 EMBEDDING_DIM = 128
@@ -186,7 +189,9 @@ def _hashed_chargram_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[floa
     return vec
 
 
-def _upsert_embedding(conn: Any, item_id: int, title: Optional[str], text: Optional[str]) -> None:
+def _upsert_embedding(
+    conn: Any, item_id: int, title: Optional[str], text: Optional[str]
+) -> None:
     input_text = _embedding_input_text(title, text)
     vector = _hashed_chargram_embedding(input_text, dim=EMBEDDING_DIM)
     conn.execute(
@@ -249,7 +254,9 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
 
 
 def _stable_hash_payload(data: Dict[str, Any]) -> str:
-    payload = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(
+        data, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
     return sha256_hex(payload)
 
 
@@ -393,7 +400,9 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         df = pd.DataFrame(rows)
         df["title"] = df["title"].fillna("").astype(str)
         df["text"] = df["text"].fillna(df["title"]).astype(str)
-        df["analysis_text"] = df["text"].where(df["text"].str.strip() != "", df["title"])
+        df["analysis_text"] = df["text"].where(
+            df["text"].str.strip() != "", df["title"]
+        )
         df["url"] = df["url"].fillna("").astype(str)
         df["channel"] = df["channel"].fillna("unknown").astype(str)
 
@@ -406,8 +415,12 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             similarity_analyzer=similarity,
         )
 
-        df1 = classifier.batch_predict(df[["title", "url", "analysis_text", "channel", "ts"]].copy())
-        df2 = sentiment.batch_predict(df1, text_column="analysis_text", include_emotions=False, batch_size=500)
+        df1 = classifier.batch_predict(
+            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
+        )
+        df2 = sentiment.batch_predict(
+            df1, text_column="analysis_text", include_emotions=False, batch_size=500
+        )
         df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
         if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
             df3["similarity"] = df3["similarity_to_previous"]
@@ -417,14 +430,20 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
         category_norm = df3["category"].fillna("other").astype(str)
         polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
-        similarity_num = pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        similarity_num = (
+            pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+        )
 
         negative_ratio = float((sentiment_norm == "negative").mean())
         avg_sentiment = float(polarity_num.mean())
         repeat_ratio = float((similarity_num >= 0.85).mean())
 
-        category_counts = {str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()}
-        sentiment_counts = {str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()}
+        category_counts = {
+            str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
+        }
+        sentiment_counts = {
+            str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
+        }
 
         return {
             "input_count": int(len(df3)),
@@ -439,12 +458,16 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
     except Exception as exc:
         normalized = [
-            normalize_text(str(r.get("title") or ""), str(r.get("text") or r.get("title") or ""))
+            normalize_text(
+                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
+            )
             for r in rows
         ]
         total = len(normalized)
         distinct = len(set(normalized))
-        repeat_ratio = float(0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total))))
+        repeat_ratio = float(
+            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
+        )
         return {
             "input_count": total,
             "category_counts": {"unknown": total},
@@ -494,7 +517,9 @@ def insert_items(items: Iterable[IngestItem]) -> Tuple[int, int]:
             cur = conn.execute(sql, row)
             if cur.rowcount == 1:
                 inserted += 1
-                _upsert_embedding(conn, int(cur.lastrowid), row.get("title"), row.get("text"))
+                _upsert_embedding(
+                    conn, int(cur.lastrowid), row.get("title"), row.get("text")
+                )
             else:
                 duplicates += 1
     return inserted, duplicates
@@ -548,6 +573,237 @@ def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
         items.append(json.loads(line))
     return items
 
+
+# 以下函数用于辅助“后端->逻辑”的接口实现
+def _safe_json_loads(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _load_items_for_export(
+    conn: Any,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+) -> List[Dict[str, Any]]:
+    where_parts = ["1=1"]
+    params: List[Any] = []
+    if from_ts is not None:
+        where_parts.append("ts >= ?")
+        params.append(from_ts)
+    if to_ts is not None:
+        where_parts.append("ts <= ?")
+        params.append(to_ts)
+
+    where_sql = " AND ".join(where_parts)
+    sql = f"""
+        SELECT id, url, title, text, ts, source, lang, channel, author, tags, meta, created_at
+        FROM items
+        WHERE {where_sql}
+        ORDER BY ts ASC, id ASC
+        LIMIT ?
+    """
+    params.append(limit_rows)
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    shaped: List[Dict[str, Any]] = []
+    for r in rows:
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        tags = _safe_json_loads(r.get("tags"))
+        meta = _safe_json_loads(r.get("meta"))
+
+        if view == "analysis":
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "title": title,
+                    "url": r.get("url"),
+                    "analysis_text": text,
+                    "text": text,
+                    "channel": _clean_optional_str(r.get("channel")) or "unknown",
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                }
+            )
+        else:  # raw
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "url": r.get("url"),
+                    "title": title,
+                    "text": text,
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "channel": r.get("channel"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                    "created_at": r.get("created_at"),
+                }
+            )
+    return shaped
+
+
+def _to_jsonl(items: List[Dict[str, Any]]) -> str:
+    return "\n".join(json.dumps(x, ensure_ascii=False) for x in items)
+
+
+def _to_csv(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    buf = io.StringIO()
+    fieldnames = list(items[0].keys())
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in items:
+        safe_row = {}
+        for k, v in row.items():
+            if isinstance(v, (dict, list)):
+                safe_row[k] = json.dumps(v, ensure_ascii=False)
+            else:
+                safe_row[k] = v
+        writer.writerow(safe_row)
+    return buf.getvalue()
+
+
+def _host_is_private(host: str) -> bool:
+    h = (host or "").lower().strip()
+    if not h:
+        return False
+    if h in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    if h.endswith(".local"):
+        return True
+    if h.startswith("10."):
+        return True
+    if h.startswith("192.168."):
+        return True
+    if h.startswith("172."):
+        # 172.16.0.0 - 172.31.255.255
+        parts = h.split(".")
+        if len(parts) >= 2 and parts[1].isdigit():
+            sec = int(parts[1])
+            if 16 <= sec <= 31:
+                return True
+    return False
+
+
+def _is_internal_url(url: str) -> bool:
+    try:
+        u = urlparse(url)
+        return _host_is_private(u.hostname or "")
+    except Exception:
+        return False
+
+
+def _is_auth_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "login",
+        "signin",
+        "sign-in",
+        "signup",
+        "sign-up",
+        "oauth",
+        "authorize",
+        "sso",
+        "callback",
+        "logout",
+        "register",
+        "captcha",
+        "verify",
+        "auth",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _is_search_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "/search",
+        "search?",
+        "q=",
+        "query=",
+        "code search results",
+        "google search",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _compress_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _prepare_training_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    label_field: str,
+    exclude_internal: bool,
+    exclude_auth_pages: bool,
+    exclude_search_pages: bool,
+    dedup_by_input: bool,
+    max_input_len: int,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for r in rows:
+        url = str(r.get("url") or "")
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        if exclude_internal and _is_internal_url(url):
+            continue
+        if exclude_auth_pages and _is_auth_like(url, title):
+            continue
+        if exclude_search_pages and _is_search_like(url, title):
+            continue
+
+        input_text = _compress_ws(text)
+        if not input_text:
+            continue
+        if len(input_text) > max_input_len:
+            input_text = input_text[:max_input_len]
+
+        label = _clean_optional_str(r.get(label_field)) or "unknown"
+
+        if dedup_by_input:
+            key = normalize_text("", input_text)
+            if key in seen:
+                continue
+            seen.add(key)
+
+        out.append(
+            {
+                "input": input_text,
+                "label": label,
+                "ts": r.get("ts"),
+                "url": url,
+                "title": title,
+                "source": r.get("source"),
+            }
+        )
+    return out
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # 启动逻辑：和原来的 on_startup 完全一致
@@ -556,9 +812,10 @@ async def lifespan(_app: FastAPI):
     # 关闭逻辑（如果需要的话，比如关闭数据库连接）
     # 示例：await db.close() （如果有异步数据库连接的话）
 
+
 app = FastAPI(
     title="Information Diet Manager (MVP)",
-    lifespan=lifespan  # 关键：把生命周期函数关联到 app
+    lifespan=lifespan,  # 关键：把生命周期函数关联到 app
 )
 
 app.add_middleware(
@@ -568,6 +825,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.post("/collect", response_model=IngestAck)
 def collect(item: IngestItem) -> IngestAck:
@@ -591,7 +849,9 @@ def import_items(file: UploadFile = File(...)) -> IngestAck:
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type.")
     except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid file contents: {exc}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Invalid file contents: {exc}"
+        ) from exc
     items: List[IngestItem] = []
     for raw in raw_items:
         try:
@@ -690,7 +950,9 @@ def run_analysis(
         repeat_ratio = 0.0
         if total:
             repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
+        channel_counts = {
+            row["channel"] or "unknown": row["cnt"] for row in channel_rows
+        }
         now_ms = _now_ms()
         conn.execute(
             """
@@ -785,14 +1047,18 @@ def run_full_analysis(
     limit_rows: int = Query(5000, ge=1, le=50000),
 ) -> Dict[str, Any]:
     if from_ts is not None and to_ts is not None and from_ts > to_ts:
-        raise HTTPException(status_code=400, detail="from_ts cannot be greater than to_ts")
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
     day = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         item_state = conn.execute(
             "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
         ).fetchone()
         max_created_at = int(item_state["max_created_at"] or 0)
-        rows = _load_items_for_analysis(conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows)
+        rows = _load_items_for_analysis(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
         input_count = len(rows)
         job_key = {
             "day": day,
@@ -853,7 +1119,7 @@ def run_full_analysis(
                     "reused_from_job_id": int(cached["id"]),
                     "result": cached_payload,
                 }
-        #not cached的情况也自然下落到这里
+        # not cached的情况也自然下落到这里
         job_id = _insert_analysis_job(
             conn,
             status=JOB_QUEUED,
@@ -1002,7 +1268,9 @@ def get_analyze_result(job_id: int) -> Dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="job not found")
     if row.get("status") != JOB_COMPLETED:
-        raise HTTPException(status_code=409, detail=f"job not completed: {row.get('status')}")
+        raise HTTPException(
+            status_code=409, detail=f"job not completed: {row.get('status')}"
+        )
     return {
         "job_id": row["id"],
         "status": row["status"],
@@ -1021,6 +1289,133 @@ def dashboard_summary() -> Dict[str, Any]:
     if row:
         return _payload_from_stats_row(row)
     return run_analysis(force=False, backfill_limit=2000)
+
+
+# 以下路由用于“后端->逻辑”的接口
+@app.get("/export/lsj")
+def export_lsj(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    view: str = Query("analysis", pattern="^(analysis|raw)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+) -> Any:
+    """
+    导出给 lsj 使用：
+    - view=analysis: 含 analysis_text/channel/ts（推荐给分析）
+    - view=raw: 接近原始采集字段
+    - fmt=json|jsonl|csv
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _shape_export_rows(rows, view=view)
+
+    if fmt == "json":
+        return {
+            "count": len(items),
+            "view": view,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": f'attachment; filename="lsj_export_{view}.jsonl"'
+            },
+        )
+
+    # csv
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="lsj_export_{view}.csv"'
+        },
+    )
+
+
+@app.get("/export/lsj/training")
+def export_lsj_training(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    label_field: str = Query("channel", pattern="^(channel|source)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+    # 新增参数
+    bare: bool = Query(True, description="json格式时仅返回数组，适配 data_cleaning.py"),
+    exclude_internal: bool = Query(
+        True, description="过滤 localhost/127.0.0.1/内网地址"
+    ),
+    exclude_auth_pages: bool = Query(True, description="过滤登录/oauth/授权回调等页面"),
+    exclude_search_pages: bool = Query(False, description="过滤搜索结果页"),
+    dedup_by_input: bool = Query(True, description="按 input 去重"),
+    max_input_len: int = Query(1000, ge=50, le=5000),
+) -> Any:
+    """
+    导出为 data_cleaning.py 友好结构:
+    [{input, label, ts, url, title, source}]
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _prepare_training_rows(
+        rows,
+        label_field=label_field,
+        exclude_internal=exclude_internal,
+        exclude_auth_pages=exclude_auth_pages,
+        exclude_search_pages=exclude_search_pages,
+        dedup_by_input=dedup_by_input,
+        max_input_len=max_input_len,
+    )
+
+    if fmt == "json":
+        if bare:
+            return items
+        return {
+            "count": len(items),
+            "label_field": label_field,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": 'attachment; filename="lsj_training.jsonl"'
+            },
+        )
+
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="lsj_training.csv"'},
+    )
 
 
 if __name__ == "__main__":

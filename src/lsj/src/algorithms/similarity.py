@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-文本相似度分析模块
+文本相似度分析模块。
 
-功能概述：
-    对浏览记录进行相似度分析，识别相似内容、聚类分组、发现浏览模式
-    - 余弦相似度：基于 TF-IDF 向量的相似度计算
-    - 编辑距离：字符串层面的相似度（Levenshtein）
-    - 语义相似度：基于词向量的深度语义分析
-    - 文本聚类：自动分组相似内容
-    - 去重检测：识别重复或高度相似的浏览记录
+职责：
+    基于 TF-IDF、编辑距离与可选词向量能力，对文本执行相似度计算、聚类与重复检测。
+
+适用场景：
+    - 检测重复或高度相似的浏览记录；
+    - 发现内容同质化现象；
+    - 为上层评估模块提供多样性与相似度特征。
 """
 
-import logging
 import pickle
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any, Set
@@ -23,43 +22,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from sklearn.cluster import KMeans, DBSCAN, MiniBatchKMeans
 
-
-# ========= 标准化 logger 初始化 =========
-def setup_logger(name: str, log_file: str, level: int = logging.INFO) -> logging.Logger:
-    """
-    创建标准化 logger
-
-    参数:
-        name: logger 名称
-        log_file: 日志文件路径
-        level: 日志级别
-    """
-    logger_obj = logging.getLogger(name)
-    logger_obj.setLevel(level)
-
-    # 如果已经绑定过 handler，直接返回，避免重复写日志
-    if logger_obj.handlers:
-        return logger_obj
-
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    logger_obj.addHandler(file_handler)
-    logger_obj.addHandler(console_handler)
-
-    # 不向 root logger 传播，避免重复输出
-    logger_obj.propagate = False
-    return logger_obj
+from utils.logger import setup_logger
 
 
 logger = setup_logger(__name__, "../../logs/similarity.log")
@@ -67,15 +30,9 @@ logger = setup_logger(__name__, "../../logs/similarity.log")
 
 class SimilarityAnalyzer:
     """
-    文本相似度分析器
+    文本相似度分析主入口。
 
-    属性说明：
-        vectorizer: TF-IDF 向量化器
-        tfidf_matrix: 文档 TF-IDF 矩阵（仅有效文本）
-        stopwords: 停用词集合
-        word_vectors: 词向量模型（可选）
-        documents: 有效文本列表（过滤空值后）
-        _doc_indices: 有效文本在原始 texts 中的索引映射
+    负责维护分词、TF-IDF 向量化、相似度计算、聚类和模型持久化等状态。
     """
 
     # ==================== 类常量 ====================
@@ -102,13 +59,13 @@ class SimilarityAnalyzer:
         self.stopwords_path = stopwords_path
         self.stopwords = self._load_stopwords()
 
-        # TF-IDF 向量化器：
+        # TF-IDF 向量化器：统一负责中文分词后的特征抽取。
         self.vectorizer = TfidfVectorizer(
             max_features=max_features,
             tokenizer=self._tokenize,
             token_pattern=None,
             lowercase=True,
-            ngram_range=(1, 4),   # 1~4 gram
+            ngram_range=(1, 4),   # 允许 1~4 gram，兼顾短语与局部上下文
             dtype=np.float32,
             sublinear_tf=True,
             norm="l2"
@@ -116,9 +73,9 @@ class SimilarityAnalyzer:
 
         self.tfidf_matrix = None
         self.documents: List[str] = []
-        self._doc_indices: List[int] = []  # tfidf 行号 -> 原始 texts 索引
+        self._doc_indices: List[int] = []  # TF-IDF 行号到原始输入索引的映射
 
-        # 词向量相关
+        # 词向量相关：仅在显式开启时参与语义相似度计算。
         self.use_word_vectors = use_word_vectors
         self.word_vectors = None
 
@@ -164,7 +121,7 @@ class SimilarityAnalyzer:
 
         try:
             words = jieba.lcut(str(text))
-            # 过滤停用词和纯空白
+            # 过滤停用词和纯空白 token，降低噪声特征对相似度的干扰。
             filtered = [w for w in words if w.strip() and w not in self.stopwords]
             return filtered
         except Exception as e:
@@ -216,7 +173,7 @@ class SimilarityAnalyzer:
             try:
                 vectors.append(self.word_vectors[word])
             except KeyError:
-                # OOV 词忽略
+                # OOV（未登录词）直接忽略，避免词向量查找失败打断流程。
                 continue
 
         if not vectors:
@@ -239,17 +196,17 @@ class SimilarityAnalyzer:
         if not text1 or not text2:
             return max(len(text1 or ""), len(text2 or ""))
 
-        # 确保 text1 是较短的字符串，减少空间占用
+        # 确保 text1 是较短的字符串，以降低滚动数组实现的空间占用。
         if len(text1) > len(text2):
             text1, text2 = text2, text1
 
         m, n = len(text1), len(text2)
 
-        # prev[j] 表示 dp[i-1][j]，curr[j] 表示 dp[i][j]
+        # prev[j] 表示上一行 dp[i-1][j]，curr[j] 表示当前行 dp[i][j]。
         prev = list(range(n + 1))  # 初始化第 0 行：[0, 1, 2, ..., n]
         curr = [0] * (n + 1)
 
-        # 状态转移
+        # 状态转移：删除、插入、替换三种操作中取最小代价。
         for i in range(1, m + 1):
             curr[0] = i  # 边界：dp[i][0] = i
 
@@ -269,9 +226,7 @@ class SimilarityAnalyzer:
         return prev[n]
 
     def _similarity_to_category(self, score: float) -> str:
-        """
-        将相似度分数转换为类别
-        """
+        """将连续相似度分数映射为高/中/低三档类别。"""
         if score >= 0.8:
             return self.SIMILARITY_HIGH
         elif score >= 0.5:
@@ -310,7 +265,7 @@ class SimilarityAnalyzer:
         self._doc_indices = [idx for idx, _ in valid_pairs]
         self.documents = [txt for _, txt in valid_pairs]
 
-        # 稀疏 TF-IDF 矩阵
+        # 稀疏 TF-IDF 矩阵，仅对有效文本建模。
         self.tfidf_matrix = self.vectorizer.fit_transform(self.documents)
 
         logger.info(f"TF-IDF 矩阵形状: {self.tfidf_matrix.shape}")
@@ -326,6 +281,7 @@ class SimilarityAnalyzer:
 
         try:
             if self.tfidf_matrix is None:
+                # 若尚未 fit，则仅用当前两个文本临时构建词表。
                 self.fit([str(text1), str(text2)])
 
             vec1 = self.vectorizer.transform([str(text1)])
@@ -355,7 +311,7 @@ class SimilarityAnalyzer:
         if vec1 is None or vec2 is None:
             return 0.0
 
-        # 防止除以 0
+        # 防止除以 0，避免零向量导致 NaN。
         denom = (np.linalg.norm(vec1) * np.linalg.norm(vec2))
         if denom == 0:
             return 0.0
@@ -413,7 +369,7 @@ class SimilarityAnalyzer:
 
             sorted_indices = valid_indices[np.argsort(-similarities[valid_indices])][:top_k]
 
-            # 返回原始索引，避免“过滤空文本后索引错位”
+            # 返回原始索引，避免过滤空文本后出现索引错位。
             results = [(int(self._doc_indices[i]), float(similarities[i])) for i in sorted_indices]
 
             logger.info(f"找到 {len(results)} 个相似文档")
@@ -441,20 +397,20 @@ class SimilarityAnalyzer:
         except ValueError:
             return []
 
-        # 稀疏矩阵乘法：X @ X.T
-        # 因为 TF-IDF 是 L2 归一化，所以点积就是余弦相似度
+        # 稀疏矩阵乘法：X @ X.T，直接获得两两文档点积。
+        # 因为 TF-IDF 已做 L2 归一化，所以点积可直接视为余弦相似度。
         X = self.tfidf_matrix.tocsr()
         sim_coo = (X @ X.T).tocoo()
 
         duplicates = []
         for i, j, v in zip(sim_coo.row, sim_coo.col, sim_coo.data):
-            # 只取上三角，避免重复对 + 去掉自己和自己
+            # 只取上三角，避免重复配对，同时排除文本与自身的比较。
             if i < j and v >= threshold:
                 orig_i = self._doc_indices[i]
                 orig_j = self._doc_indices[j]
                 duplicates.append((int(orig_i), int(orig_j), float(v)))
 
-        # 按相似度降序，方便业务优先处理最像的
+        # 按相似度降序排列，便于业务优先处理最相似的样本。
         duplicates.sort(key=lambda x: x[2], reverse=True)
 
         logger.info(f"检测到 {len(duplicates)} 对重复文本")
@@ -508,7 +464,7 @@ class SimilarityAnalyzer:
             labels = clusterer.fit_predict(self.tfidf_matrix)
 
         elif method == "dbscan":
-            # 使用稀疏矩阵，避免 toarray() 占用大量内存
+            # 使用稀疏矩阵，避免 toarray() 带来的额外内存压力。
             clusterer = DBSCAN(
                 eps=0.5,
                 min_samples=min_samples,
@@ -557,7 +513,7 @@ class SimilarityAnalyzer:
                 logger.error(f"参考列 '{reference_column}' 不存在")
                 raise ValueError(f"Reference column '{reference_column}' not found")
 
-            # 统一做缺失值处理，避免 transform 报错
+            # 统一处理缺失值，避免 transform 阶段报错。
             texts = result_df[text_column].fillna("").astype(str).tolist()
             refs = result_df[reference_column].fillna("").astype(str).tolist()
 
@@ -566,25 +522,25 @@ class SimilarityAnalyzer:
             A = self.vectorizer.transform(texts)
             B = self.vectorizer.transform(refs)
 
-            # 行对行点积（L2 下即余弦），向量化计算快于逐行循环
+            # 行对行点积（L2 归一化下即余弦相似度），向量化方式快于逐行循环。
             sims = np.asarray(A.multiply(B).sum(axis=1)).ravel()
             result_df["similarity"] = sims.astype(float)
 
         else:
             texts = result_df[text_column].fillna("").astype(str).tolist()
 
-            # 若全空，直接返回全 0
+            # 若全为空文本，直接返回全 0，避免无意义建模。
             if all(not t.strip() for t in texts):
                 result_df["similarity_to_previous"] = [0.0] * len(result_df)
                 return result_df
 
-            # 训练词表
+            # 训练词表，确保后续相邻比较使用同一特征空间。
             self.fit(texts)
 
-            # 一次性向量化后，相邻行做稀疏点积
+            # 一次性向量化后，相邻行做稀疏点积，避免重复 transform。
             vecs = self.vectorizer.transform(texts)
 
-            similarities = [0.0]  # 第一条没有“前一条”
+            similarities = [0.0]  # 第一条记录没有“上一条”可供比较
             for i in range(1, len(texts)):
                 sim = float(vecs[i - 1].multiply(vecs[i]).sum())
                 similarities.append(sim)
@@ -597,9 +553,7 @@ class SimilarityAnalyzer:
     # ==================== 模型持久化 ====================
 
     def save_model(self, path: str) -> None:
-        """
-        保存模型
-        """
+        """保存当前向量化器、语料状态与索引映射。"""
         try:
             save_path = Path(path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -621,9 +575,7 @@ class SimilarityAnalyzer:
             logger.error(f"保存模型失败: {e}")
 
     def load_model(self, path: str) -> bool:
-        """
-        加载模型
-        """
+        """加载已保存的相似度分析模型及其内部状态。"""
         if not Path(path).exists():
             logger.error(f"模型文件不存在: {path}")
             return False
@@ -636,7 +588,7 @@ class SimilarityAnalyzer:
             self.tfidf_matrix = model_data["tfidf_matrix"]
             self.documents = model_data["documents"]
             self.stopwords = model_data.get("stopwords", set())
-            # 兼容老模型：若不存在 _doc_indices，则按顺序回填
+            # 兼容旧模型：若缺少 _doc_indices，则按当前 documents 顺序回填。
             self._doc_indices = model_data.get("_doc_indices", list(range(len(self.documents))))
 
             logger.info(f"✅ 模型已加载: {path}")
@@ -667,7 +619,7 @@ class SimilarityAnalyzer:
         stats: Dict[str, Any] = {}
 
         for col in similarity_cols:
-            # 强制转数值，非数值转 NaN，避免 describe 报错
+            # 强制转成数值，非法值记为 NaN，避免 describe 统计时报错。
             series = pd.to_numeric(df[col], errors="coerce")
             col_stats = series.describe().to_dict()
 

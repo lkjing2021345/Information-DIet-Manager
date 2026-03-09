@@ -1,15 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Markdown 构建器模块
+Markdown 构建与报告生成模块。
 
-提供 Markdown 文档构建和评估报告生成功能
+职责：
+    1. 提供通用的 MarkdownBuilder，封装常见文档片段拼装能力；
+    2. 基于评估结果对象生成结构化的健康评估报告。
 """
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote
 
-# 避免循环导入
+from utils.logger import setup_logger
+
+logger = setup_logger(__name__, "../../logs/markdown_builder.log")
+
+# 仅在类型检查阶段导入，避免运行时循环依赖。
 if TYPE_CHECKING:
     from lsj.src.algorithms.evaluator import (
         EvaluationReport, HealthLevel, RiskAlert,
@@ -20,7 +26,7 @@ if TYPE_CHECKING:
 
 
 class MarkdownBuilder:
-    """Markdown 构建器"""
+    """通用 Markdown 文本构建器，适合按步骤增量拼装文档。"""
 
     def __init__(self):
         self.lines: List[str] = []
@@ -101,7 +107,7 @@ class MarkdownBuilder:
 
     def add_badge(self, label: str, value: str, color: str = "blue") -> str:
         """生成徽章（GitHub风格）"""
-        # 对 label/value 做 URL 编码，避免中文、空格导致图片链接失效
+        # 统一做 URL 编码，避免中文、空格等字符导致徽章链接失效。
         safe_label = quote(str(label))
         safe_value = quote(str(value))
         safe_color = quote(str(color))
@@ -109,10 +115,10 @@ class MarkdownBuilder:
 
     def add_progress_bar(self, value: float, max_value: float = 100, width: int = 20) -> str:
         """生成进度条"""
-        # 防止 max_value <= 0 导致除零错误
+        # 容错处理，避免外部传入非法上限值导致除零。
         if max_value <= 0:
             max_value = 100
-        # 将 value 约束到 [0, max_value]，防止进度条越界
+        # 将值限制在合法范围内，防止进度条长度越界。
         safe_value = max(0.0, min(float(value), float(max_value)))
         # 计算百分比
         percentage = safe_value / max_value
@@ -121,7 +127,7 @@ class MarkdownBuilder:
         empty = width - filled
         # 构建条形图
         bar = "█" * filled + "░" * empty
-        # 展示原始值，更直观（如果你想展示裁剪值，可换成 safe_value）
+        # 使用裁剪后的数值计算填充长度，但显示原始值，便于发现异常输入。
         return f"`{bar}` {value:.1f}/{max_value}"
 
     def build(self) -> str:
@@ -133,10 +139,11 @@ class MarkdownBuilder:
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(self.build())
+        logger.info(f"MarkdownBuilder 已保存文件: {filepath}")
 
 
 class ReportMarkdownGenerator:
-    """评估报告 Markdown 生成器"""
+    """将评估结果对象渲染为可阅读的 Markdown 报告。"""
 
     def __init__(self):
         self.md = MarkdownBuilder()
@@ -152,7 +159,7 @@ class ReportMarkdownGenerator:
         返回:
             str: Markdown 文本
         """
-        self.md = MarkdownBuilder()  # 重置
+        self.md = MarkdownBuilder()  # 每次生成都重新初始化，避免复用实例时内容串联。
 
         # 1. 标题和元信息
         self._add_header(report)
@@ -198,6 +205,7 @@ class ReportMarkdownGenerator:
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
+        logger.info(f"Markdown 报告已保存: {filepath}")
 
     # ==================== 私有方法：各部分生成 ====================
 
@@ -209,7 +217,7 @@ class ReportMarkdownGenerator:
             f"至 {report.metadata.end_date.strftime('%Y-%m-%d')} "
             f"（共 {report.metadata.time_span_days} 天）"
         )
-        # 防止 total_records 为 0 时出现除零错误
+        # 防御性处理：当 total_records 为 0 时按 0% 有效率展示，避免除零。
         total_records = report.metadata.total_records or 0
         valid_records = report.metadata.valid_records or 0
         valid_rate = (valid_records / total_records * 100) if total_records > 0 else 0.0
@@ -238,7 +246,7 @@ class ReportMarkdownGenerator:
         for dimension, weight in report.metrics.dimension_weights.items():
             self.md.add_list_item(f"{dimension}: {weight * 100:.0f}%")
         self.md.add_line()
-        # 增加一个方法说明，便于读者理解“分数不是医学诊断”
+        # 补充使用说明，强调该报告用于行为分析而非医学诊断。
         self.md.add_paragraph("**说明**:")
         self.md.add_list_item("本报告用于行为模式与信息摄取结构分析，不构成医疗或心理诊断建议。")
         self.md.add_list_item("建议结合长期趋势观察，不建议仅凭单周期结果做重大决策。")
@@ -250,16 +258,16 @@ class ReportMarkdownGenerator:
         """添加执行摘要"""
         self.md.add_heading("📋 执行摘要", level=2)
 
-        # 健康等级徽章
+        # 通过颜色徽章快速传达整体健康等级。
         level_color = self._get_health_level_color(report.health_status.level)
         badge = self.md.add_badge("健康等级", report.health_status.level.value, level_color)
         self.md.add_paragraph(badge)
 
-        # 综合得分
+        # 将综合得分转为可视化条形表示，便于快速感知高低。
         score_bar = self.md.add_progress_bar(report.health_status.score, 100)
         self.md.add_paragraph(f"**综合得分**: {score_bar}")
 
-        # 关键发现
+        # 执行摘要只保留最值得优先关注的结论。
         self.md.add_paragraph("**关键发现**:")
         findings = self._generate_key_findings(report)
         for finding in findings:
@@ -316,7 +324,7 @@ class ReportMarkdownGenerator:
 
         self.md.add_table(headers, rows)
 
-        # 详细指标
+        # 先给出总览，再展开各维度细节，符合报告阅读习惯。
         self._add_diversity_metrics(report.metrics.diversity)
         self._add_sentiment_metrics(report.metrics.sentiment_health)
         self._add_content_quality_metrics(report.metrics.content_quality)
@@ -446,7 +454,7 @@ class ReportMarkdownGenerator:
             self.md.add_horizontal_rule()
             return
 
-        # 按严重程度分组
+        # 按严重程度分组展示，帮助读者先看高优先级问题。
         critical_risks = [r for r in report.risk_alerts if r.severity >= 4]
         warning_risks = [r for r in report.risk_alerts if 2 <= r.severity < 4]
         info_risks = [r for r in report.risk_alerts if r.severity < 2]
@@ -665,9 +673,9 @@ class ReportMarkdownGenerator:
         将健康等级映射为徽章颜色
         支持 enum.value / 字符串，两种输入都能兜底处理。
         """
-        # 尽量取 value（若是枚举），否则转字符串
+        # 兼容枚举对象和普通字符串输入，避免调用方类型差异影响展示。
         level_text = str(getattr(level, "value", level)).strip().lower()
-        # 中英混合关键词映射，尽可能鲁棒
+        # 同时支持中英文关键词，降低外部枚举文案变动带来的耦合。
         if any(k in level_text for k in ["优秀", "excellent", "great"]):
             return "brightgreen"
         if any(k in level_text for k in ["良好", "good"]):
@@ -678,7 +686,7 @@ class ReportMarkdownGenerator:
             return "orange"
         if any(k in level_text for k in ["危险", "risk", "danger", "critical"]):
             return "red"
-        # 未知等级兜底颜色
+        # 未识别到预设等级时使用中性色，避免误导。
         return "lightgrey"
 
     def _get_health_level_emoji(self, level) -> str:
@@ -701,12 +709,12 @@ class ReportMarkdownGenerator:
         根据 0~1 分数返回状态文案
         例如：0.82 -> 良好 ✅
         """
-        # 将输入尽量转换成 float，异常则按 0 处理
+        # 非法输入一律视为 0 分，保证状态判断稳定。
         try:
             s = float(score)
         except Exception:
             s = 0.0
-        # 边界保护
+        # 限制到 0~1 区间，避免上游传入异常值影响展示。
         s = max(0.0, min(1.0, s))
         if s >= 0.90:
             return "优秀 🟢"
@@ -721,14 +729,14 @@ class ReportMarkdownGenerator:
     def _generate_key_findings(self, report: 'EvaluationReport') -> List[str]:
         """
         生成执行摘要中的“关键发现”
-        规则尽量简单直观，方便后续维护与调参。
+        规则保持简单，便于维护和后续调整摘要口径。
         """
         findings: List[str] = []
         # 1) 总体结论
         findings.append(
             f"综合健康等级为「{report.health_status.level.value}」，总体得分 {report.health_status.score:.1f}/100。"
         )
-        # 2) 维度得分中最好/最弱
+        # 2) 提取最强与最弱维度，帮助读者快速判断优先级。
         dimension_scores = {
             "多样性": report.metrics.diversity.category_diversity_score,
             "情感健康": report.metrics.sentiment_health.sentiment_health_score,
@@ -743,14 +751,14 @@ class ReportMarkdownGenerator:
         findings.append(
             f"相对薄弱维度为「{worst_dim}」({dimension_scores[worst_dim] * 100:.1f}/100)，建议优先优化。"
         )
-        # 3) 风险摘要
+        # 3) 风险总览用于快速感知问题数量与严重程度。
         risk_count = len(report.risk_alerts) if report.risk_alerts else 0
         critical_count = len([r for r in report.risk_alerts if r.severity >= 4]) if report.risk_alerts else 0
         if risk_count == 0:
             findings.append("未发现显著风险项，当前信息摄取行为整体稳定。")
         else:
             findings.append(f"检测到 {risk_count} 项风险，其中严重风险 {critical_count} 项。")
-        # 4) 建议摘要
+        # 4) 若存在紧急建议，则在摘要中明确提示优先行动。
         urgent_count = len(report.recommendations.urgent_recommendations) \
             if report.recommendations and report.recommendations.urgent_recommendations else 0
         if urgent_count > 0:
