@@ -1,0 +1,58 @@
+[
+  {
+    "name": "gpt-4.1",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "gpt-5",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "gemini-2.5-flash",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "gpt-5.1",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "z-ai/glm4.7",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "deepseek-v3.2",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  },
+  {
+    "name": "Qwen/Qwen3-30B-A3B-Thinking-2507",
+    "provider": "openai",
+    "api_key": "sk-TV0FQT7mR6rO5i7tGshkNc1YQMvBsiaNmsZ975dK3J7FcDGe",
+    "base_url": "http://39.105.34.149:11451/v1",
+    "concurrency": 4,
+    "weight": 0.2
+  }
+]

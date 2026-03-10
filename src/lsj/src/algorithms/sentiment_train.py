@@ -812,7 +812,7 @@ def finetune(base_model_path: Path, new_data_path: Path, output_dir: Path) -> Pa
 
 if __name__ == "__main__":
     # 最小可运行示例：读取 CSV 后直接执行完整训练流水线
-    csv_path = "../training_data/converted_dataset.csv"
+    csv_path = "../training_data/sentiment_converted_data.csv"
     if not Path(csv_path).exists():
         raise FileNotFoundError(f"Dataset not found: {csv_path}")
 

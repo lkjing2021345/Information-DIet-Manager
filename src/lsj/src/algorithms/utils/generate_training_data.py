@@ -262,9 +262,53 @@ class AtomicFileIO:
 @dataclass
 class RetryConfig:
     request_timeout: float = 30.0
+    task_timeout: float = 45.0
     max_retries: int = 3
     backoff_base: float = 0.5
     backoff_max: float = 8.0
+
+
+@dataclass
+class ModelStats:
+    total_calls: int = 0
+    success_calls: int = 0
+    failed_calls: int = 0
+    total_items: int = 0
+    total_latency: float = 0.0
+    latencies: List[float] = field(default_factory=list)
+
+    def success_rate(self) -> float:
+        return 0.0 if self.total_calls == 0 else self.success_calls / self.total_calls
+
+    def avg_latency(self) -> float:
+        return 0.0 if self.success_calls == 0 else self.total_latency / self.success_calls
+
+    def p95_latency(self) -> float:
+        if not self.latencies:
+            return 0.0
+        sorted_latencies = sorted(self.latencies)
+        idx = int(0.95 * (len(sorted_latencies) - 1))
+        return sorted_latencies[idx]
+
+
+class CircuitBreaker:
+    def __init__(self, fail_threshold: int = 5, reset_timeout: float = 30.0):
+        self.fail_threshold = fail_threshold
+        self.reset_timeout = reset_timeout
+        self.fail_count = 0
+        self.open_until = 0.0
+
+    def is_open(self) -> bool:
+        return time.time() < self.open_until
+
+    def on_success(self) -> None:
+        self.fail_count = 0
+        self.open_until = 0.0
+
+    def on_failure(self) -> None:
+        self.fail_count += 1
+        if self.fail_count >= self.fail_threshold:
+            self.open_until = time.time() + self.reset_timeout
 
 
 @dataclass
@@ -287,7 +331,7 @@ class RuntimeConfig:
     progress_path: str
     input_file: Optional[str] = None
     output_format: str = "jsonl"
-    flush_every: int = 1000
+    flush_every: int = 100
     queue_maxsize: int = 50000
     batch_size_per_request: int = 20
     writer_batch_size: int = 2000
@@ -298,7 +342,10 @@ class RuntimeConfig:
     random_seed: int = 42
     min_confidence: float = 0.0
     enable_reasoning: bool = False
-    report_every: int = 5000
+    report_every: int = 500
+    strict_relabel_match: bool = False
+    temperature: float = 0.0
+    max_workers: Optional[int] = None
     retry: RetryConfig = field(default_factory=RetryConfig)
 
 
@@ -312,6 +359,8 @@ class ProgressState:
     failed_count: int = 0
     duplicate_count: int = 0
     invalid_count: int = 0
+    attempt_count: int = 0
+    generated_count: int = 0
     input_exhausted: bool = False
     status: str = "initialized"
     label_counts: Dict[str, int] = field(default_factory=dict)
@@ -555,79 +604,127 @@ class ModelClient:
                 await asyncio.sleep(self._min_interval - delta)
             self._last_request_ts = time.time()
 
+    async def _request_json_once(
+        self,
+        session: aiohttp.ClientSession,
+        payload: Dict[str, Any],
+    ) -> Tuple[int, str]:
+        headers = {
+            "Authorization": f"Bearer {self.cfg.api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{self.cfg.base_url.rstrip('/')}/chat/completions"
+        async with session.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=self.retry_cfg.request_timeout),
+        ) as response:
+            return response.status, await response.text()
+
     async def _request_json(
         self,
         session: aiohttp.ClientSession,
         system_prompt: str,
         user_prompt: str,
         max_tokens: int,
+        temperature: float,
     ) -> List[Dict[str, Any]]:
-        headers = {
-            "Authorization": f"Bearer {self.cfg.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
+        base_payload = {
             "model": self.cfg.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
+            "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        payload_variants = [
+            {**base_payload, "response_format": {"type": "json_object"}},
+            base_payload,
+        ]
 
-        url = f"{self.cfg.base_url.rstrip('/')}/chat/completions"
         max_retries = max(0, int(self.cfg.max_retries or self.retry_cfg.max_retries))
 
         for attempt in range(max_retries + 1):
             try:
                 await self._rate_limit_wait()
                 async with self.semaphore:
-                    async with session.post(
-                        url,
-                        headers=headers,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=self.retry_cfg.request_timeout),
-                    ) as response:
-                        body = await response.text()
-                        if response.status == 200:
-                            parsed_body = json.loads(body)
-                            content = parsed_body["choices"][0]["message"]["content"]
-                            return self._parse_batch_response(content)
-
-                        if response.status == 429:
-                            wait_seconds = min(
-                                self.retry_cfg.backoff_max,
-                                self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
-                            )
-                            log_event(
-                                "warning",
-                                "rate_limited",
-                                model=self.cfg.name,
-                                attempt=attempt + 1,
-                                wait_seconds=round(wait_seconds, 3),
-                            )
-                            await asyncio.sleep(wait_seconds)
+                    status = 0
+                    body = ""
+                    for variant_index, payload in enumerate(payload_variants):
+                        status, body = await self._request_json_once(session, payload)
+                        if status == 200:
+                            try:
+                                parsed_body = json.loads(body)
+                                content = parsed_body["choices"][0]["message"]["content"]
+                                parsed_results = self._parse_batch_response(content)
+                                if parsed_results:
+                                    return parsed_results
+                                log_event(
+                                    "warning",
+                                    "empty_or_unparseable_model_response",
+                                    model=self.cfg.name,
+                                    variant=variant_index,
+                                    body_preview=body[:300],
+                                )
+                            except Exception as parse_error:
+                                log_event(
+                                    "warning",
+                                    "model_response_parse_failed",
+                                    model=self.cfg.name,
+                                    variant=variant_index,
+                                    reason=str(parse_error),
+                                    body_preview=body[:300],
+                                )
                             continue
 
-                        if attempt < max_retries:
-                            backoff = min(
-                                self.retry_cfg.backoff_max,
-                                self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
-                            )
+                        if status == 429:
+                            break
+
+                        if status in {400, 404, 415, 422} and variant_index == 0:
                             log_event(
                                 "warning",
-                                "model_request_retry",
+                                "model_request_variant_fallback",
                                 model=self.cfg.name,
-                                status=response.status,
-                                attempt=attempt + 1,
-                                backoff=round(backoff, 3),
+                                status=status,
                                 body_preview=body[:200],
                             )
-                            await asyncio.sleep(backoff)
                             continue
-                        return []
+                        break
+
+                    if status == 429:
+                        wait_seconds = min(
+                            self.retry_cfg.backoff_max,
+                            self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
+                        )
+                        log_event(
+                            "warning",
+                            "rate_limited",
+                            model=self.cfg.name,
+                            attempt=attempt + 1,
+                            wait_seconds=round(wait_seconds, 3),
+                        )
+                        await asyncio.sleep(wait_seconds)
+                        continue
+
+                    if attempt < max_retries:
+                        backoff = min(
+                            self.retry_cfg.backoff_max,
+                            self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
+                        )
+                        log_event(
+                            "warning",
+                            "model_request_retry",
+                            model=self.cfg.name,
+                            status=status,
+                            attempt=attempt + 1,
+                            backoff=round(backoff, 3),
+                            body_preview=body[:200],
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    return []
             except asyncio.TimeoutError:
                 if attempt < max_retries:
                     backoff = min(self.retry_cfg.backoff_max, self.retry_cfg.backoff_base * (2 ** attempt))
@@ -650,6 +747,7 @@ class ModelClient:
         system_prompt: str,
         batch_inputs: List[Tuple[str, str]],
         enable_reasoning: bool,
+        temperature: float,
     ) -> List[Dict[str, Any]]:
         user_prompt = self._build_batch_prompt(batch_inputs, enable_reasoning)
         return await self._request_json(
@@ -657,6 +755,7 @@ class ModelClient:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=min(4000, 200 + len(batch_inputs) * 80),
+            temperature=temperature,
         )
 
     async def generate_labeled_batch(
@@ -666,6 +765,7 @@ class ModelClient:
         batch_size: int,
         desired_labels: List[str],
         enable_reasoning: bool,
+        temperature: float,
     ) -> List[Dict[str, Any]]:
         user_prompt = self._build_generation_prompt(batch_size, desired_labels, enable_reasoning)
         return await self._request_json(
@@ -673,6 +773,7 @@ class ModelClient:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=min(4000, 300 + batch_size * 100),
+            temperature=temperature,
         )
 
     @staticmethod
@@ -734,16 +835,22 @@ class ModelPool:
         self.model_cfgs = model_configs
         self.retry_cfg = retry_cfg
         self.clients = {cfg.name: ModelClient(cfg, retry_cfg) for cfg in model_configs}
-        self.model_stats: Dict[str, Dict[str, Any]] = {
-            cfg.name: {"calls": 0, "success": 0, "fail": 0, "items": 0, "latencies": []}
-            for cfg in model_configs
+        self.model_stats: Dict[str, ModelStats] = {
+            cfg.name: ModelStats() for cfg in model_configs
+        }
+        self.breakers: Dict[str, CircuitBreaker] = {
+            cfg.name: CircuitBreaker() for cfg in model_configs
         }
 
+    def _available_models(self) -> List[ModelConfig]:
+        return [cfg for cfg in self.model_cfgs if not self.breakers[cfg.name].is_open()]
+
     def pick_model(self) -> ModelConfig:
-        weights = [max(0.0, cfg.weight) for cfg in self.model_cfgs]
+        candidates = self._available_models() or self.model_cfgs
+        weights = [max(0.0, cfg.weight) for cfg in candidates]
         if sum(weights) <= 0:
-            return random.choice(self.model_cfgs)
-        return random.choices(self.model_cfgs, weights=weights, k=1)[0]
+            return random.choice(candidates)
+        return random.choices(candidates, weights=weights, k=1)[0]
 
     async def classify_batch(
         self,
@@ -751,19 +858,29 @@ class ModelPool:
         system_prompt: str,
         batch_inputs: List[Tuple[str, str]],
         enable_reasoning: bool,
+        temperature: float,
     ) -> Tuple[List[Dict[str, Any]], str]:
         cfg = self.pick_model()
         stats = self.model_stats[cfg.name]
-        stats["calls"] += 1
+        stats.total_calls += 1
         t0 = time.time()
-        results = await self.clients[cfg.name].classify_batch(session, system_prompt, batch_inputs, enable_reasoning)
+        results = await self.clients[cfg.name].classify_batch(
+            session,
+            system_prompt,
+            batch_inputs,
+            enable_reasoning,
+            temperature,
+        )
         latency = time.time() - t0
-        stats["latencies"].append(latency)
-        stats["items"] += len(batch_inputs)
+        stats.latencies.append(latency)
+        stats.total_items += len(batch_inputs)
         if results:
-            stats["success"] += 1
+            stats.success_calls += 1
+            stats.total_latency += latency
+            self.breakers[cfg.name].on_success()
         else:
-            stats["fail"] += 1
+            stats.failed_calls += 1
+            self.breakers[cfg.name].on_failure()
         return results, cfg.name
 
     async def generate_labeled_batch(
@@ -773,10 +890,11 @@ class ModelPool:
         batch_size: int,
         desired_labels: List[str],
         enable_reasoning: bool,
+        temperature: float,
     ) -> Tuple[List[Dict[str, Any]], str]:
         cfg = self.pick_model()
         stats = self.model_stats[cfg.name]
-        stats["calls"] += 1
+        stats.total_calls += 1
         t0 = time.time()
         results = await self.clients[cfg.name].generate_labeled_batch(
             session,
@@ -784,14 +902,18 @@ class ModelPool:
             batch_size,
             desired_labels,
             enable_reasoning,
+            temperature,
         )
         latency = time.time() - t0
-        stats["latencies"].append(latency)
-        stats["items"] += batch_size
+        stats.latencies.append(latency)
+        stats.total_items += batch_size
         if results:
-            stats["success"] += 1
+            stats.success_calls += 1
+            stats.total_latency += latency
+            self.breakers[cfg.name].on_success()
         else:
-            stats["fail"] += 1
+            stats.failed_calls += 1
+            self.breakers[cfg.name].on_failure()
         return results, cfg.name
 
 
@@ -825,9 +947,13 @@ class TrainingDataGenerator:
         self.input_queue: asyncio.Queue[Optional[Any]] = asyncio.Queue(maxsize=runtime_cfg.queue_maxsize)
         self.result_queue: asyncio.Queue[Optional[TitleRecord]] = asyncio.Queue(maxsize=runtime_cfg.queue_maxsize)
         self.start_ts = time.time()
+        self._writer_lock = asyncio.Lock()
         random.seed(runtime_cfg.random_seed)
 
         self.system_prompt = build_professional_system_prompt(runtime_cfg.enable_reasoning)
+        self.flush_every = max(1, int(runtime_cfg.flush_every))
+        self.report_every = max(1, int(runtime_cfg.report_every))
+        self.strict_relabel_match = bool(runtime_cfg.strict_relabel_match)
         base_target = max(1, runtime_cfg.target_count)
         per_label = base_target // len(self.VALID_LABELS)
         remainder = base_target % len(self.VALID_LABELS)
@@ -942,7 +1068,7 @@ class TrainingDataGenerator:
                 enqueued_count += 1
         finally:
             self.state.input_exhausted = True
-            worker_count = sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
+            worker_count = self.runtime_cfg.max_workers or sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
             for _ in range(worker_count):
                 await self.input_queue.put(None)
 
@@ -972,13 +1098,38 @@ class TrainingDataGenerator:
                     self.input_queue.task_done()
 
                 desired_labels = self._pick_generation_labels(len(batch_tokens))
-                generated_items, model_name = await self.pool.generate_labeled_batch(
-                    session,
-                    self.system_prompt,
-                    len(batch_tokens),
-                    desired_labels,
-                    self.runtime_cfg.enable_reasoning,
-                )
+                self.state.attempt_count += len(batch_tokens)
+                try:
+                    generated_items, model_name = await asyncio.wait_for(
+                        self.pool.generate_labeled_batch(
+                            session,
+                            self.system_prompt,
+                            len(batch_tokens),
+                            desired_labels,
+                            self.runtime_cfg.enable_reasoning,
+                            self.runtime_cfg.temperature,
+                        ),
+                        timeout=self.runtime_cfg.retry.task_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    self.state.failed_count += len(batch_tokens)
+                    log_event(
+                        "warning",
+                        "worker_generate_batch_timeout",
+                        worker_id=worker_id,
+                        batch_size=len(batch_tokens),
+                    )
+                    continue
+                except Exception as e:
+                    self.state.failed_count += len(batch_tokens)
+                    log_event(
+                        "error",
+                        "worker_generate_batch_failed",
+                        worker_id=worker_id,
+                        batch_size=len(batch_tokens),
+                        reason=str(e),
+                    )
+                    continue
 
                 candidate_inputs: List[Tuple[str, str]] = []
                 candidate_meta: Dict[str, Dict[str, Any]] = {}
@@ -1003,6 +1154,7 @@ class TrainingDataGenerator:
                     seen_titles_in_batch.add(title)
                     self.pending_entry_ids.add(entry_id)
                     candidate_inputs.append((entry_id, title))
+                    self.state.generated_count += 1
                     candidate_meta[entry_id] = {
                         "title": title,
                         "generated_label": label,
@@ -1023,12 +1175,40 @@ class TrainingDataGenerator:
                     )
                     continue
 
-                relabeled_items, relabel_model_name = await self.pool.classify_batch(
-                    session,
-                    self.system_prompt,
-                    candidate_inputs,
-                    self.runtime_cfg.enable_reasoning,
-                )
+                try:
+                    relabeled_items, relabel_model_name = await asyncio.wait_for(
+                        self.pool.classify_batch(
+                            session,
+                            self.system_prompt,
+                            candidate_inputs,
+                            self.runtime_cfg.enable_reasoning,
+                            self.runtime_cfg.temperature,
+                        ),
+                        timeout=self.runtime_cfg.retry.task_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    self.state.failed_count += len(candidate_inputs)
+                    for entry_id in candidate_meta:
+                        self.pending_entry_ids.discard(entry_id)
+                    log_event(
+                        "warning",
+                        "worker_relabel_batch_timeout",
+                        worker_id=worker_id,
+                        batch_size=len(candidate_inputs),
+                    )
+                    continue
+                except Exception as e:
+                    self.state.failed_count += len(candidate_inputs)
+                    for entry_id in candidate_meta:
+                        self.pending_entry_ids.discard(entry_id)
+                    log_event(
+                        "error",
+                        "worker_relabel_batch_failed",
+                        worker_id=worker_id,
+                        batch_size=len(candidate_inputs),
+                        reason=str(e),
+                    )
+                    continue
 
                 relabeled_index: Dict[str, Dict[str, Any]] = {}
                 for item in relabeled_items:
@@ -1053,7 +1233,7 @@ class TrainingDataGenerator:
                         self.pending_entry_ids.discard(entry_id)
                         continue
 
-                    if relabeled_label != meta["generated_label"]:
+                    if self.strict_relabel_match and relabeled_label != meta["generated_label"]:
                         filtered_by_relabel += 1
                         self.state.invalid_count += 1
                         self.pending_entry_ids.discard(entry_id)
@@ -1135,12 +1315,41 @@ class TrainingDataGenerator:
             if not batch_inputs:
                 continue
 
-            results, model_name = await self.pool.classify_batch(
-                session,
-                self.system_prompt,
-                batch_inputs,
-                self.runtime_cfg.enable_reasoning,
-            )
+            try:
+                self.state.attempt_count += len(batch_inputs)
+                results, model_name = await asyncio.wait_for(
+                    self.pool.classify_batch(
+                        session,
+                        self.system_prompt,
+                        batch_inputs,
+                        self.runtime_cfg.enable_reasoning,
+                        self.runtime_cfg.temperature,
+                    ),
+                    timeout=self.runtime_cfg.retry.task_timeout,
+                )
+            except asyncio.TimeoutError:
+                self.state.failed_count += len(batch_inputs)
+                for entry_id in batch_index:
+                    self.pending_entry_ids.discard(entry_id)
+                log_event(
+                    "warning",
+                    "worker_classify_batch_timeout",
+                    worker_id=worker_id,
+                    batch_size=len(batch_inputs),
+                )
+                continue
+            except Exception as e:
+                self.state.failed_count += len(batch_inputs)
+                for entry_id in batch_index:
+                    self.pending_entry_ids.discard(entry_id)
+                log_event(
+                    "error",
+                    "worker_classify_batch_failed",
+                    worker_id=worker_id,
+                    batch_size=len(batch_inputs),
+                    reason=str(e),
+                )
+                continue
 
             returned_ids = set()
             valid_records = 0
@@ -1197,16 +1406,20 @@ class TrainingDataGenerator:
     async def writer(self, worker_done_count: int) -> None:
         done_workers = 0
         pending: List[TitleRecord] = []
+        flush_threshold = max(1, min(self.runtime_cfg.writer_batch_size, self.flush_every))
         while done_workers < worker_done_count:
             item = await self.result_queue.get()
             if item is None:
                 done_workers += 1
                 self.result_queue.task_done()
+                if pending:
+                    await self.flush_records(pending)
+                    pending.clear()
                 continue
 
             pending.append(item)
             self.result_queue.task_done()
-            if len(pending) >= self.runtime_cfg.writer_batch_size:
+            if len(pending) >= flush_threshold:
                 await self.flush_records(pending)
                 pending.clear()
 
@@ -1216,38 +1429,39 @@ class TrainingDataGenerator:
         await self.progress.save(self.state)
 
     async def flush_records(self, records: List[TitleRecord]) -> None:
-        remaining_target = self._remaining_target()
-        if remaining_target <= 0:
+        async with self._writer_lock:
+            remaining_target = self._remaining_target()
+            if remaining_target <= 0:
+                for record in records:
+                    self.pending_entry_ids.discard(record.entry_id)
+                return
+
+            unique_records: List[TitleRecord] = []
             for record in records:
+                if len(unique_records) >= remaining_target:
+                    self.pending_entry_ids.discard(record.entry_id)
+                    continue
+                if record.entry_id in self.seen_entry_ids:
+                    self.state.duplicate_count += 1
+                    self.pending_entry_ids.discard(record.entry_id)
+                    continue
+                self.seen_entry_ids.add(record.entry_id)
                 self.pending_entry_ids.discard(record.entry_id)
-            return
+                unique_records.append(record)
 
-        unique_records: List[TitleRecord] = []
-        for record in records:
-            if len(unique_records) >= remaining_target:
-                self.pending_entry_ids.discard(record.entry_id)
-                continue
-            if record.entry_id in self.seen_entry_ids:
-                self.state.duplicate_count += 1
-                self.pending_entry_ids.discard(record.entry_id)
-                continue
-            self.seen_entry_ids.add(record.entry_id)
-            self.pending_entry_ids.discard(record.entry_id)
-            unique_records.append(record)
+            if not unique_records:
+                return
 
-        if not unique_records:
-            return
+            self.store.append_records(unique_records)
+            self.state.success_count += len(unique_records)
+            self.state.processed_count += len(unique_records)
+            for record in unique_records:
+                self.state.label_counts[record.label] = self.state.label_counts.get(record.label, 0) + 1
+                self.state.model_counts[record.model] = self.state.model_counts.get(record.model, 0) + 1
 
-        self.store.append_records(unique_records)
-        self.state.success_count += len(unique_records)
-        self.state.processed_count += len(unique_records)
-        for record in unique_records:
-            self.state.label_counts[record.label] = self.state.label_counts.get(record.label, 0) + 1
-            self.state.model_counts[record.model] = self.state.model_counts.get(record.model, 0) + 1
-
-        if self.state.success_count % max(1, self.runtime_cfg.report_every) < len(unique_records):
-            self.log_progress()
-        await self.progress.save(self.state)
+            if self.state.success_count % self.report_every < len(unique_records):
+                self.log_progress()
+            await self.progress.save(self.state)
 
     def log_progress(self) -> None:
         elapsed = max(1e-6, time.time() - self.start_ts)
@@ -1269,18 +1483,39 @@ class TrainingDataGenerator:
             model_counts=self.state.model_counts,
         )
         for model_name, stats in self.pool.model_stats.items():
-            latencies = stats["latencies"]
-            avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
             log_event(
                 "info",
                 "model_stats",
                 model=model_name,
-                calls=stats["calls"],
-                success=stats["success"],
-                fail=stats["fail"],
-                items=stats["items"],
-                avg_latency=round(avg_latency, 3),
+                calls=stats.total_calls,
+                success=stats.success_calls,
+                fail=stats.failed_calls,
+                items=stats.total_items,
+                succ_rate=round(stats.success_rate(), 4),
+                avg_latency=round(stats.avg_latency(), 3),
+                p95_latency=round(stats.p95_latency(), 3),
+                circuit_open=self.pool.breakers[model_name].is_open(),
             )
+
+    def _log_summary(self, final: bool = False) -> None:
+        elapsed = max(1e-6, time.time() - self.start_ts)
+        log_event(
+            "info",
+            "final_summary" if final else "summary",
+            processed_count=self.state.processed_count,
+            success_count=self.state.success_count,
+            existing_count=self.state.existing_count,
+            total_effective_count=self._total_effective_count(),
+            target_count=self.runtime_cfg.target_count,
+            remaining_target=self._remaining_target(),
+            generated_count=self.state.generated_count,
+            attempt_count=self.state.attempt_count,
+            duplicate_count=self.state.duplicate_count,
+            failed_count=self.state.failed_count,
+            invalid_count=self.state.invalid_count,
+            elapsed_seconds=round(elapsed, 3),
+            status=self.state.status,
+        )
 
     async def classify_batch(self, inputs: List[str]) -> List[Dict[str, Any]]:
         temp_output_path = str(Path(tempfile.gettempdir()) / f"generate_training_data_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.{self.runtime_cfg.output_format}")
@@ -1301,6 +1536,9 @@ class TrainingDataGenerator:
             min_confidence=self.runtime_cfg.min_confidence,
             enable_reasoning=self.runtime_cfg.enable_reasoning,
             report_every=self.runtime_cfg.report_every,
+            strict_relabel_match=self.runtime_cfg.strict_relabel_match,
+            temperature=self.runtime_cfg.temperature,
+            max_workers=self.runtime_cfg.max_workers,
             retry=self.runtime_cfg.retry,
         )
         generator = TrainingDataGenerator(temp_runtime, self.model_configs)
@@ -1334,12 +1572,14 @@ class TrainingDataGenerator:
                     pass
         return results
 
-    async def run(self, source: Optional[InputSource]) -> None:
+    async def collect(self, source: Optional[InputSource]) -> None:
         self.restore()
+        await self.progress.save(self.state)
         if self._is_done():
             self.state.status = "completed"
             await self.progress.save(self.state)
             self.log_progress()
+            self._log_summary(final=True)
             return
 
         self.state.status = "running"
@@ -1347,22 +1587,41 @@ class TrainingDataGenerator:
 
         connector = aiohttp.TCPConnector(limit=0, ttl_dns_cache=300, ssl=False)
         timeout = aiohttp.ClientTimeout(total=self.runtime_cfg.retry.request_timeout)
-        worker_count = sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
+        worker_count = self.runtime_cfg.max_workers or sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
 
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            producer_task = asyncio.create_task(self.produce_inputs(source))
-            worker_tasks = [
-                asyncio.create_task(self.worker(i + 1, session))
-                for i in range(worker_count)
-            ]
-            writer_task = asyncio.create_task(self.writer(worker_count))
+        try:
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                producer_task = asyncio.create_task(self.produce_inputs(source))
+                worker_tasks = [
+                    asyncio.create_task(self.worker(i + 1, session))
+                    for i in range(worker_count)
+                ]
+                writer_task = asyncio.create_task(self.writer(worker_count))
 
-            await producer_task
-            await asyncio.gather(*worker_tasks)
-            await self.result_queue.join()
-            await writer_task
+                await producer_task
+                await asyncio.gather(*worker_tasks)
+                await self.result_queue.join()
+                await writer_task
+        except KeyboardInterrupt:
+            self.state.status = "interrupted"
+            await self.progress.save(self.state)
+            self._log_summary(final=True)
+            raise
+        except Exception as e:
+            self.state.status = "failed"
+            log_event("error", "collector_failed", reason=str(e))
+            await self.progress.save(self.state)
+            self._log_summary(final=True)
+            raise
 
+        if not self.state.status == "completed":
+            self.state.status = "partial" if not self._is_done() else "completed"
+        await self.progress.save(self.state)
         self.log_progress()
+        self._log_summary(final=True)
+
+    async def run(self, source: Optional[InputSource]) -> None:
+        await self.collect(source)
 
     def append_to_training_data(self, new_data: List[Dict[str, Any]], training_data_path: str) -> None:
         records = []
@@ -1494,7 +1753,7 @@ def build_runtime_config(config: Dict[str, Any], args: argparse.Namespace) -> Ru
         progress_path=str(config.get("progress_path") or f"{training_data_path}.progress.json"),
         input_file=args.input_file or config.get("input_file"),
         output_format=str(config.get("output_format", "jsonl")).lower(),
-        flush_every=int(config.get("flush_every", 1000)),
+        flush_every=int(config.get("flush_every", 100)),
         queue_maxsize=int(config.get("queue_maxsize", 50000)),
         batch_size_per_request=int(config.get("batch_size_per_request", 20)),
         writer_batch_size=int(config.get("writer_batch_size", 2000)),
@@ -1505,9 +1764,11 @@ def build_runtime_config(config: Dict[str, Any], args: argparse.Namespace) -> Ru
         random_seed=int(config.get("random_seed", 42)),
         min_confidence=float(config.get("min_confidence", 0.0)),
         enable_reasoning=bool(config.get("enable_reasoning", False)),
-        report_every=int(config.get("report_every", 5000)),
+        report_every=int(config.get("report_every", 500)),
+        strict_relabel_match=bool(config.get("strict_relabel_match", False)),
         retry=RetryConfig(
             request_timeout=float(config.get("request_timeout", 30.0)),
+            task_timeout=float(config.get("task_timeout", 45.0)),
             max_retries=int(config.get("max_retries", 3)),
             backoff_base=float(config.get("backoff_base", 0.5)),
             backoff_max=float(config.get("backoff_max", 8.0)),
@@ -1564,6 +1825,8 @@ async def main() -> None:
             generate_mode=runtime_cfg.generate_mode,
             batch_size_per_request=runtime_cfg.batch_size_per_request,
             writer_batch_size=runtime_cfg.writer_batch_size,
+            flush_every=runtime_cfg.flush_every,
+            strict_relabel_match=runtime_cfg.strict_relabel_match,
             models=[cfg.name for cfg in model_configs],
         )
 

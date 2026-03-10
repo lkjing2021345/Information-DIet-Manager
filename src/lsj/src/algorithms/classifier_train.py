@@ -126,8 +126,8 @@ def ensure_model_cached(model_name_or_path: str) -> str:
 @dataclass
 class TransformerTrainingConfig:
     """Transformer 分类训练配置。"""
-    pretrained_model_name: str = "xlm-roberta-large"
-    output_dir: str = str(Path(__file__).parent / "models" / "classifier_xlm_roberta")
+    pretrained_model_name: str = "xlm-roberta-base"
+    output_dir: str = str(Path(__file__).parent / "models" / "classifier_xlm_base")
     max_length: int = 128
     train_batch_size: int = 4
     eval_batch_size: int = 8
