@@ -192,17 +192,20 @@ class TrainConfig:
 
     model_name: str = "hfl/chinese-macbert-base"
     max_length: int = 128
-    batch_size: int = 32
+    batch_size: int = 24
     epochs: int = 20
-    learning_rate: float = 1.5e-5
-    weight_decay: float = 0.12
-    warmup_ratio: float = 0.1
-    warmup_steps: int = 200
+    learning_rate: float = 9.0e-6
+    weight_decay: float = 0.06
+    warmup_ratio: float = 0.10
+    warmup_steps: int = 0
     max_grad_norm: float = 0.8
-    early_stopping_patience: int = 3
-    early_stopping_min_delta: float = 0.001
-    label_smoothing: float = 0.1
-
+    early_stopping_patience: int = 5
+    early_stopping_min_delta: float = 0.0001
+    label_smoothing: float = 0.08
+    '''
+    128 32 20 1.1e-5 0.05 0.08 0 1.0 5 0.0002 0.05 0.9640
+    128 24 20 9.0e-6 0.06 0.10 0 0.8 5 0.0001 0.08 0.9648
+    '''
     model_output_name: str = "sentiment_train"
 
 
