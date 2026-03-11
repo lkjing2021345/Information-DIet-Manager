@@ -1,12 +1,14 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -23,60 +25,83 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual Environment
+# =========================
+# Virtual environments
+# =========================
+.venv/
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
 
-# PyCharm
+# =========================
+# IDE / Editor
+# =========================
 .idea/
-
-# VS Code
 .vscode/
+.continue/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
 
+# =========================
 # Environment variables
+# =========================
 .env
 .env.local
 .env.*.local
 
-# OS
+# =========================
+# OS files
+# =========================
 .DS_Store
 Thumbs.db
 desktop.ini
 
+# =========================
 # Logs
+# =========================
 *.log
 logs/
 
-# Database
+# =========================
+# Database files
+# =========================
 *.db
 *.sqlite
 *.sqlite3
 
-# Data files (uncomment if needed)
- *.csv
- *.json
- *.xml
- *.jsonl
-
-# Model files
-*.model
-*.pkl
-*.pickle
-src/lsj/src/algorithms/models
-
+# =========================
 # Temporary files
+# =========================
 *.tmp
 *.temp
 *.swp
 *.swo
 *~
 
+# =========================
+# Data files (uncomment if needed)
+# =========================
+# *.csv
+# *.json
+# *.xml
+# *.jsonl
+
+# =========================
+# Model files
+# =========================
+*.model
+*.pkl
+*.pickle
+src/lsj/src/algorithms/models/
+
+# =========================
+# Project-specific files
+# =========================
 train_classifier.py
 功能开发计划.md
 开发计划.md
@@ -84,16 +109,18 @@ train_classifier.py
 src/lsj/src/algorithms/utils/output/
 src/lsj/tests/files/
 src/lsj/src/algorithms/utils/config.json
-
-.continue
-
-src/lsj/src/training_data. i d e a /
- 
- . i d e a / 
- 
-chrome-extension
-frontend
-node_modules
 src/lsj/src/algorithms/utils/*.json
-src/chrome-extension
-src/hyh
+src/lsj/src/training_data/
+
+# =========================
+# Frontend / extensions
+# =========================
+node_modules/
+frontend/
+chrome-extension/
+src/chrome-extension/
+
+# =========================
+# Local workspace directories
+# =========================
+src/hyh/
