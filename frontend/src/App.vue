@@ -147,6 +147,12 @@ const i18n = {
   }
 }
 const t = computed(() => i18n[settings.lang])
+i18n.zh.cats.other = '其他'
+i18n.zh.eval.otherScore = 'B 中性观察'
+i18n.zh.eval.otherMsg = '这部分内容暂未归入核心领域，建议结合来源与主题继续细分，避免 <b>未知/自定义渠道</b> 长期堆积。'
+i18n.en.cats.other = 'Other'
+i18n.en.eval.otherScore = 'B Mixed Bucket'
+i18n.en.eval.otherMsg = 'This bucket is not mapped to a core domain yet. Review those <b>unknown/custom channels</b> and classify them if they keep growing.'
 
 // === 核心数据源 (响应式，等待后端填充) ===
 const db = reactive({
@@ -154,7 +160,8 @@ const db = reactive({
   'ent': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense' },
   'edu': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'sparse' },
   'news': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed' },
-  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense' }
+  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense' },
+  'other': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed' }
 })
 
 const healthStatus = computed(() => {
@@ -164,6 +171,7 @@ const healthStatus = computed(() => {
     case 'edu': return { score: ev.eduScore, color: '#00ffaa', class: 'status-safe', borderClass: 'border-safe', message: ev.eduMsg.replace('{f}', f) }
     case 'news': return { score: ev.newsScore, color: '#ffd700', class: 'status-warn', borderClass: 'border-warn', message: ev.newsMsg.replace('{f}', f) }
     case 'soc': return { score: ev.socScore, color: '#ff4d4f', class: 'status-warn', borderClass: 'border-warn', message: ev.socMsg.replace('{f}', f) }
+    case 'other': return { score: ev.otherScore, color: '#94a3b8', class: 'status-warn', borderClass: 'border-warn', message: ev.otherMsg.replace('{f}', f) }
     default: return { score: ev.globScore, color: settings.themeColor, class: 'status-normal', borderClass: 'border-normal', message: ev.globMsg.replace('{f}', f) }
   }
 })
@@ -191,12 +199,13 @@ const fetchAndInjectData = async () => {
     const summary = summaryRes.data
     
     // 将后端的 channel_counts 转换为饼图需要的格式
-    const counts = summary.channel_counts || { '娱乐': 65, '学习': 15, '新闻': 10, '社交': 10 } // 容错假数据
+    const counts = summary.channel_counts || {}
     db['global'].pieData = [
-      { value: counts['娱乐'] || 65, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
-      { value: counts['学习'] || 15, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
-      { value: counts['新闻'] || 10, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: counts['社交'] || 10, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+      { value: counts.ent || 0, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
+      { value: counts.edu || 0, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
+      { value: counts.news || 0, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
+      { value: counts.soc || 0, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
+      { value: counts.other || 0, name: t.value.cats.other, id: 'other', itemStyle: {color: '#94a3b8'} }
     ]
     
     // 2. 请求历史趋势数据 (对应 API 契约 3.2: GET /analyze/history?limit=7)
@@ -215,7 +224,7 @@ const fetchAndInjectData = async () => {
     
     // 为各子领域生成基于全局数据的浮动伪数据（因为契约中未明确指出提供按天按领域拆分的数据接口）
     // 如果后端有详细接口，这里可以继续替换
-    ['ent', 'edu', 'news', 'soc'].forEach(key => {
+    ['ent', 'edu', 'news', 'soc', 'other'].forEach(key => {
         db[key] = {
             ...db[key],
             repData: db['global'].repData.map(v => key === 'ent' ? Math.min(v + 30, 98) : (key === 'edu' ? Math.max(v - 30, 10) : v)),
@@ -249,7 +258,7 @@ const fetchAndInjectData = async () => {
 const generateGraphData = (key) => {
   const config = db[key] || db['global']
   const nodes = []; const links = [];
-  const colorMap = { 'ent': '#ff00ea', 'edu': '#00ffaa', 'news': '#ffd700', 'soc': '#ff4d4f', 'global': settings.themeColor }
+  const colorMap = { 'ent': '#ff00ea', 'edu': '#00ffaa', 'news': '#ffd700', 'soc': '#ff4d4f', 'other': '#94a3b8', 'global': settings.themeColor }
   const baseColor = colorMap[key] || settings.themeColor
   const nodeCount = config.nodes || 30
   const linkCount = config.links || 40

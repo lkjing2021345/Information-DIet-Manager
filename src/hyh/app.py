@@ -45,6 +45,21 @@ CATEGORY_ALIAS_MAP = {
     "tools": "tools",
     "other": "other",
 }
+CHANNEL_CANONICAL_KEYS = ("ent", "edu", "news", "soc", "other")
+CHANNEL_ALIAS_MAP = {
+    "ent": "ent",
+    "edu": "edu",
+    "news": "news",
+    "soc": "soc",
+    "other": "other",
+    "entertainment": "ent",
+    "learning": "edu",
+    "social": "soc",
+    "娱乐": "ent",
+    "学习": "edu",
+    "新闻": "news",
+    "社交": "soc",
+}
 
 
 def _now_ms() -> int:
@@ -250,7 +265,7 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
     channel_counts = None
     if row["channel_counts"]:
         try:
-            channel_counts = json.loads(row["channel_counts"])
+            channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
         except json.JSONDecodeError:
             channel_counts = None
     return {
@@ -284,6 +299,27 @@ def _ensure_lsj_import_path() -> None:
 
 def _normalize_category_key(value: Any) -> str:
     return str(value or "other").strip().lower() or "other"
+
+
+def _canonicalize_channel_key(value: Any) -> str:
+    key = _clean_optional_str(value) or "other"
+    return CHANNEL_ALIAS_MAP.get(key.lower(), "other")
+
+
+def _normalize_channel_counts(counts: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]]:
+    if counts is None:
+        return None
+
+    normalized: Dict[str, int] = {}
+    for raw_key, raw_count in counts.items():
+        canonical_key = _canonicalize_channel_key(raw_key)
+        try:
+            count = int(raw_count or 0)
+        except (TypeError, ValueError):
+            continue
+        normalized[canonical_key] = normalized.get(canonical_key, 0) + count
+
+    return {key: normalized.get(key, 0) for key in CHANNEL_CANONICAL_KEYS}
 
 
 def _round_metric(value: Any) -> float:
@@ -1137,9 +1173,9 @@ def run_analysis(
         repeat_ratio = 0.0
         if total:
             repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = {
-            row["channel"] or "unknown": row["cnt"] for row in channel_rows
-        }
+        channel_counts = _normalize_channel_counts(
+            {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
+        ) or {key: 0 for key in CHANNEL_CANONICAL_KEYS}
         now_ms = _now_ms()
         conn.execute(
             """
@@ -1333,8 +1369,11 @@ def run_full_analysis(
 
             channel_counts: Dict[str, int] = {}
             for r in rows:
-                key = _clean_optional_str(r.get("channel")) or "unknown"
+                key = _canonicalize_channel_key(r.get("channel"))
                 channel_counts[key] = channel_counts.get(key, 0) + 1
+            channel_counts = _normalize_channel_counts(channel_counts) or {
+                key: 0 for key in CHANNEL_CANONICAL_KEYS
+            }
 
             conn.execute(
                 """
