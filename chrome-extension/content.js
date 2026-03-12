@@ -1,110 +1,179 @@
 (() => {
-  if (window.__IDM_COLLECTED__) return;
-  window.__IDM_COLLECTED__ = true;
+  let lastSentFingerprint = "";
+  let routeChangeTimer = null;
 
-  function clamp(str, maxLen) {
-    const s = (str || "").trim();
-    return s.length > maxLen ? s.slice(0, maxLen) : s;
+  function stableText(text) {
+    return String(text || "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
-  function getMetaMap() {
-    const metas = document.querySelectorAll("meta");
-    const result = {};
-    metas.forEach((m) => {
-      const k = m.getAttribute("name") || m.getAttribute("property");
-      const v = m.getAttribute("content");
-      if (k && v) result[k.toLowerCase()] = v;
-    });
-    return result;
+  function detectLang() {
+    return document.documentElement.lang || navigator.language || "zh-CN";
   }
 
-  function parseArticleText() {
-    try {
-      const article = new Readability(document.cloneNode(true)).parse();
-      return {
-        text: article?.textContent || "",
-        byline: article?.byline || "",
-        siteName: article?.siteName || "",
-        excerpt: article?.excerpt || "",
-        publishedTime: article?.publishedTime || "",
-      };
-    } catch (e) {
-      return {
-        text: "",
-        byline: "",
-        siteName: "",
-        excerpt: "",
-        publishedTime: "",
-      };
+  function extractMeta(name, attr = "name") {
+    const el = document.querySelector(`meta[${attr}="${name}"]`);
+    return el ? el.getAttribute("content") : "";
+  }
+
+  function extractTextFallback() {
+    const candidates = [
+      document.querySelector("article"),
+      document.querySelector("main"),
+      document.querySelector("[role='main']"),
+      document.querySelector(".article"),
+      document.querySelector(".content"),
+      document.body,
+    ].filter(Boolean);
+
+    for (const node of candidates) {
+      const text = stableText(node.innerText || "");
+      if (text.length > 120) {
+        return text.slice(0, 1000);
+      }
     }
+
+    return stableText(document.body?.innerText || "").slice(0, 1000);
   }
 
-  function inferChannel(url, meta) {
-    const host = new URL(url).hostname.toLowerCase();
-    const full =
-      `${host} ${meta["og:type"] || ""} ${meta["keywords"] || ""}`.toLowerCase();
-
-    if (/twitter|x\.com|weibo|zhihu|reddit|facebook|instagram/.test(full))
-      return "social";
-    if (/youtube|bilibili|douyin|tiktok/.test(full)) return "short_video";
-    if (/news|bbc|cnn|nytimes|xinhuanet|people\.com/.test(full)) return "news";
-    return "other";
-  }
-
-  function splitTags(meta) {
-    const raw = meta["keywords"] || "";
-    return raw
-      .split(/[,，;；]/)
-      .map((s) => s.trim())
+  function extractTags() {
+    const keywords = extractMeta("keywords");
+    if (!keywords) return [];
+    return keywords
+      .split(/[，,|]/)
+      .map((x) => x.trim())
       .filter(Boolean)
-      .slice(0, 20)
-      .map((s) => s.slice(0, 40));
+      .slice(0, 10);
   }
 
-  const meta = getMetaMap();
-  const article = parseArticleText();
+  function extractAuthor() {
+    return (
+      extractMeta("author") || extractMeta("article:author", "property") || ""
+    );
+  }
 
-  const url = location.href;
-  const title = clamp(
-    document.title ||
-      meta["og:title"] ||
-      meta["twitter:title"] ||
-      location.hostname,
-    300,
-  );
+  function detectPageType() {
+    const host = location.hostname;
+    if (/bilibili\.com/.test(host)) return "video";
+    if (/weibo\.com/.test(host)) return "social";
+    if (/zhihu\.com/.test(host)) return "social";
+    if (/news|163\.com|qq\.com|ifeng\.com|thepaper\.cn/.test(host))
+      return "news";
+    return "web";
+  }
 
-  const text = clamp(
-    article.text ||
-      meta["description"] ||
-      meta["og:description"] ||
-      article.excerpt ||
-      "",
-    2000,
-  );
+  function extractReadable() {
+    try {
+      if (typeof Readability !== "undefined") {
+        const cloned = document.cloneNode(true);
+        const article = new Readability(cloned).parse();
+        if (article && stableText(article.textContent).length > 80) {
+          return {
+            title: stableText(article.title || document.title),
+            text: stableText(article.textContent).slice(0, 1000),
+          };
+        }
+      }
+    } catch (e) {}
 
-  const item = {
-    url,
-    title: title || location.hostname,
-    text, // 可空
-    ts: Date.now(),
-    source: "plugin",
-    lang: clamp(document.documentElement.lang || "", 16) || undefined,
-    channel: clamp(inferChannel(url, meta), 32),
-    author: clamp(meta["author"] || article.byline || "", 120) || undefined,
-    tags: splitTags(meta),
-    meta: {
-      referrer: document.referrer || "",
-      site_name: article.siteName || meta["og:site_name"] || "",
-      published_time:
-        article.publishedTime || meta["article:published_time"] || "",
-      og_type: meta["og:type"] || "",
-    },
+    return {
+      title: stableText(document.title),
+      text: extractTextFallback(),
+    };
+  }
+
+  function buildPayload() {
+    const readable = extractReadable();
+    const title =
+      readable.title ||
+      extractMeta("og:title", "property") ||
+      extractMeta("twitter:title", "name") ||
+      stableText(document.title);
+
+    const text =
+      readable.text ||
+      extractMeta("description") ||
+      extractMeta("og:description", "property") ||
+      extractTextFallback();
+
+    return {
+      url: location.href,
+      title,
+      text,
+      ts: Date.now(),
+      lang: detectLang(),
+      author: extractAuthor() || null,
+      tags: extractTags(),
+      channel: detectPageType(),
+      meta: {
+        host: location.hostname,
+        pathname: location.pathname,
+        referrer: document.referrer || "",
+        pageType: detectPageType(),
+      },
+    };
+  }
+
+  function fingerprint(payload) {
+    return [
+      payload.url.split("#")[0],
+      stableText(payload.title).slice(0, 120),
+      stableText(payload.text).slice(0, 120),
+    ].join("::");
+  }
+
+  function sendPayload() {
+    const payload = buildPayload();
+
+    if (!payload.title && !payload.text) return;
+    if ((payload.text || "").length < 30 && !payload.title) return;
+
+    const fp = fingerprint(payload);
+    if (fp === lastSentFingerprint) return;
+    lastSentFingerprint = fp;
+
+    chrome.runtime.sendMessage(
+      {
+        type: "INGEST_ITEM",
+        payload,
+      },
+      () => void chrome.runtime.lastError,
+    );
+  }
+
+  function scheduleSend(delay = 1200) {
+    clearTimeout(routeChangeTimer);
+    routeChangeTimer = setTimeout(sendPayload, delay);
+  }
+
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function (...args) {
+    originalPushState.apply(this, args);
+    scheduleSend(800);
   };
 
-  // 去掉 undefined 字段，避免脏数据
-  Object.keys(item).forEach((k) => item[k] === undefined && delete item[k]);
+  history.replaceState = function (...args) {
+    originalReplaceState.apply(this, args);
+    scheduleSend(800);
+  };
 
-  chrome.runtime.sendMessage({ type: "INGEST_ITEM", payload: item }, () => {
-    // 忽略 callback 错误，后台会记录
+  window.addEventListener("popstate", () => scheduleSend(800));
+  window.addEventListener("load", () => scheduleSend(1200));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleSend(600);
+    }
+  });
+
+  const observer = new MutationObserver(() => {
+    scheduleSend(1500);
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
   });
 })();
