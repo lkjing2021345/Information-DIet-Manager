@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Information Diet Collector",
+  "version": "0.2.1",
+  "description": "Collect browsing information for analysis",
+
+  "permissions": [
+    "tabs",
+    "scripting",
+    "activeTab",
+    "storage",
+    "alarms"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["readability.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

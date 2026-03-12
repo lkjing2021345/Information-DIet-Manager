@@ -115,12 +115,12 @@ src/lsj/src/training_data/
 # =========================
 # Frontend / extensions
 # =========================
-node_modules/
-frontend/
-chrome-extension/
-src/chrome-extension/
+#node_modules/
+#frontend/
+#chrome-extension/
+#src/chrome-extension/
 
 # =========================
 # Local workspace directories
 # =========================
-src/hyh/
+#src/hyh/

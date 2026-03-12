@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Information Diet Manager",
+  "version": "0.1.0",
+  "description": "采集浏览数据，分析你的信息饮食结构，评估信息茧房程度。",
+  "permissions": [
+    "tabs",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "信息饮食管理器"
+  }
+}
