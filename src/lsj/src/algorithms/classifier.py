@@ -1,8 +1,13 @@
 """
-文本分类器模块
+文本分类模块。
 
-功能概述：
-    对浏览记录的标题/URL进行自动分类，判断用户访问的是新闻、娱乐、学习等哪类内容
+职责：
+    基于浏览记录的标题与 URL 输出业务类别标签。
+
+分类策略：
+    1. 先执行关键词规则，优先处理高确定性样本；
+    2. 规则未命中时，再调用 Transformer 模型兜底；
+    3. 输入为空、模型未加载或推理失败时，统一回退为 Other。
 """
 import json
 from typing import Dict, List, Optional, Tuple, Union
@@ -13,16 +18,14 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from utils.logger import setup_logger
 
+logger = setup_logger(__name__, '../../logs/classifier.log')
 
 class ContentClassifier:
     """
-    浏览记录内容分类器
+    浏览记录内容分类器。
 
-    设计思路：
-        采用"规则优先，Transformer 模型兜底"的混合策略：
-        1. 先用关键词规则快速匹配（准确率高、速度快）
-        2. 规则未命中时，使用训练好的 Transformer 文本分类模型
-        3. 都失败则归类为 Other
+    设计上将“可解释的规则匹配”与“泛化能力更强的模型预测”结合，
+    使高频常见样本走低成本路径，长尾样本交由模型处理。
     """
 
     CATEGORY_NEWS = "News"
@@ -66,6 +69,7 @@ class ContentClassifier:
         logger.info(f"ContentClassifier 初始化完成，设备: {self.device}")
 
     def _load_default_rules(self) -> Dict[str, List[str]]:
+        """加载默认分类规则，并将配置文件中的类别键映射为类内统一常量。"""
         current_dir = Path(__file__).parent
         config_path = current_dir.joinpath("rules", "default_classify_rules.json")
 
@@ -100,11 +104,13 @@ class ContentClassifier:
             return {}
 
     def _normalize_text(self, text: Optional[str]) -> str:
+        """将输入统一转为可安全处理的字符串，避免后续拼接与推理时出现空值问题。"""
         if text is None:
             return ""
         return str(text).strip()
 
     def _prepare_text_for_model(self, text: Optional[str], url: Optional[str] = None) -> str:
+        """构造模型输入文本；当标题与 URL 同时存在时显式保留字段语义。"""
         normalized_text = self._normalize_text(text)
         normalized_url = self._normalize_text(url)
 
@@ -117,6 +123,7 @@ class ContentClassifier:
         return ""
 
     def _predict_by_model(self, text: str, url: Optional[str] = None) -> Tuple[str, float]:
+        """使用 Transformer 模型预测单条样本；模型不可用或输入为空时返回兜底结果。"""
         if self.model is None or self.tokenizer is None:
             logger.warning("Transformer 模型未加载，无法预测")
             return self.CATEGORY_OTHER, 0.0
@@ -135,6 +142,11 @@ class ContentClassifier:
         return labels[0], confidences[0]
 
     def _batch_predict_by_rules_vectorized(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        使用 pandas 向量化字符串匹配批量执行规则分类。
+
+        这样做的主要目的是减少逐行遍历带来的 Python 开销，提升大批量数据处理效率。
+        """
         import re
 
         df = df.copy()
@@ -143,6 +155,7 @@ class ContentClassifier:
 
         df['title'] = df['title'].fillna('')
         df['url'] = df['url'].fillna('')
+        # 提前生成小写副本，避免在每条规则上重复做字符串转换。
         df['title_lower'] = df['title'].str.lower()
         df['url_lower'] = df['url'].str.lower()
 
@@ -159,6 +172,7 @@ class ContentClassifier:
                 title_match = df['title_lower'].str.contains(pattern, case=False, na=False, regex=True)
                 url_match = df['url_lower'].str.contains(pattern, case=False, na=False, regex=True)
                 matched = title_match | url_match
+                # 仅覆盖此前尚未命中的记录，保证规则顺序就是优先级顺序。
                 need_update = matched & df['category'].isna()
                 df.loc[need_update, 'category'] = category
                 df.loc[need_update, 'confidence'] = 1.0
@@ -169,6 +183,7 @@ class ContentClassifier:
         return df.drop(columns=['title_lower', 'url_lower'])
 
     def predict_by_rules(self, text: str, url: Optional[str] = None) -> Optional[str]:
+        """按“先 URL、后标题”的顺序执行规则匹配；URL 通常更稳定，因此优先级更高。"""
         text_lower = str(text).lower() if text else ""
         url_lower = str(url).lower() if url else ""
 
@@ -196,6 +211,13 @@ class ContentClassifier:
         return_confidence: bool = False,
         batch_size: Optional[int] = None,
     ) -> Union[List[str], Tuple[List[str], List[float]]]:
+        """
+        批量执行模型预测。
+
+        返回值会根据 return_confidence 变化：
+        - False：仅返回标签列表；
+        - True：返回 (标签列表, 置信度列表)。
+        """
         if not isinstance(texts, list):
             raise TypeError("texts 必须是字符串列表")
 
@@ -246,6 +268,7 @@ class ContentClassifier:
         return (predictions, confidences) if return_confidence else predictions
 
     def predict(self, text: str, url: Optional[str] = None) -> str:
+        """单条预测主入口：规则优先，模型兜底。"""
         result = self.predict_by_rules(text=text, url=url)
         if result:
             logger.info(f"规则匹配成功: {result}")
@@ -256,6 +279,7 @@ class ContentClassifier:
         return model_result or self.CATEGORY_OTHER
 
     def predict_with_confidence(self, text: str, url: Optional[str] = None) -> Tuple[str, float]:
+        """返回标签与置信度；规则命中时置信度固定为 1.0。"""
         result = self.predict_by_rules(text=text, url=url)
         if result:
             return result, 1.0
@@ -268,6 +292,12 @@ class ContentClassifier:
         n_workers: int = None,
         batch_size: Optional[int] = None,
     ) -> pd.DataFrame:
+        """
+        对整批浏览记录执行分类。
+
+        当前实现保留了并行相关参数，但核心流程仍是：
+        先批量规则匹配，再仅对未命中的样本做模型推理。
+        """
         import time
 
         if df.empty:
@@ -296,6 +326,7 @@ class ContentClassifier:
 
         if need_model_count > 0:
             logger.info(f"进入 Transformer 批量推理: {need_model_count} 条")
+            # 仅对规则未命中的记录做模型推理，避免对全量数据进行高成本推理。
             need_model_df = df.loc[need_model, ['title', 'url']].copy()
             prepared_texts = [
                 self._prepare_text_for_model(title, url)
@@ -321,6 +352,7 @@ class ContentClassifier:
         return df
 
     def save_model(self, path: str) -> None:
+        """保存模型、分词器及标签映射，保证训练产物可独立用于推理。"""
         if self.model is None or self.tokenizer is None:
             logger.error("模型未加载，无法保存")
             return
@@ -347,6 +379,11 @@ class ContentClassifier:
             logger.error(f"模型保存失败: {e}")
 
     def load_model(self, path: str) -> bool:
+        """
+        从目录加载训练好的分类模型。
+
+        会优先读取显式保存的 label2id / id2label；若缺失，则退回模型配置中的映射。
+        """
         if not path:
             logger.error("模型目录路径为空")
             return False
@@ -401,6 +438,7 @@ class ContentClassifier:
             return False
 
     def get_category_distribution(self, df: pd.DataFrame) -> pd.Series:
+        """统计分类结果分布；输入不合法时返回空 Series，便于调用方安全处理。"""
         if df.empty:
             logger.error("数据为空")
             return pd.Series(dtype='int64')

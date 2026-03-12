@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-信息摄取质量评估模块
+信息摄取质量评估模块。
 
-功能概述：
-    整合分类、情感、相似度分析结果，评估用户信息摄取质量
-    - 信息茧房检测：识别内容单一、重复度高的浏览模式
-    - 信息毒品识别：检测负面情绪、娱乐过度的内容倾向
-    - 健康度评分：综合评估信息摄取的多样性和质量
-    - 时间趋势分析：追踪用户浏览习惯的变化
-    - 个性化建议：基于评估结果提供改进建议
+职责：
+    整合分类、情感与相似度分析结果，对用户的信息摄取结构、情绪暴露、内容质量和时间分配进行综合评估。
+
+输出能力：
+    - 识别信息茧房、情绪污染、过度娱乐、时间浪费等风险；
+    - 生成结构化评分、风险警报与个性化建议；
+    - 支持 JSON / Markdown / HTML 报告导出。
 """
 import json
 from pathlib import Path
@@ -22,7 +22,7 @@ import numpy as np
 
 from utils.logger import setup_logger
 
-# 导入已完成的模块
+# 导入已完成的分析模块，作为评估器的底层能力组件
 from sentiment import SentimentAnalyzer
 from classifier import ContentClassifier
 from similarity import SimilarityAnalyzer
@@ -33,7 +33,7 @@ logger = setup_logger(__name__, "../../logs/evaluator.log")
 
 # ========= 枚举类定义 =========
 class HealthLevel(Enum):
-    """健康等级"""
+    """综合健康等级枚举。"""
     EXCELLENT = "优秀"      # 90-100分
     GOOD = "良好"           # 75-89分
     FAIR = "一般"           # 60-74分
@@ -597,13 +597,13 @@ class EvaluationReport:
 # ========= 主评估器类 =========
 class InformationQualityEvaluator:
     """
-    信息摄取质量评估器
+    信息摄取质量评估主入口。
 
     设计思路：
-        1. 整合三个分析器的结果
-        2. 计算多维度评估指标
-        3. 识别潜在风险模式
-        4. 生成综合评估报告
+        1. 对输入数据做字段规范化与有效性校验；
+        2. 计算多样性、情感健康、内容质量、时间分配四大维度；
+        3. 基于指标识别潜在风险并生成建议；
+        4. 输出结构化报告，供可视化或导出模块使用。
     """
 
     def __init__(
@@ -785,7 +785,10 @@ class InformationQualityEvaluator:
 
     def _validate_dataframe(self, df: pd.DataFrame) -> bool:
         """
-        验证输入数据格式
+        验证输入数据格式与最低样本量要求。
+
+        当前要求输入至少包含：
+            title, url, category, sentiment, polarity, similarity
         """
         if not isinstance(df, pd.DataFrame):
             logger.error("输入数据必须是 pandas.DataFrame")
@@ -2182,16 +2185,12 @@ class InformationQualityEvaluator:
         detailed: bool = True
     ) -> EvaluationReport:
         """
-        执行完整评估（主入口）
+        执行完整评估并返回结构化 EvaluationReport。
 
         参数:
-            df: 包含分析结果的 DataFrame
-                必需列: title, url, category, sentiment, polarity, similarity
-            time_range: 评估时间范围 (start, end)
-            detailed: 是否生成详细报告
-
-        返回:
-            EvaluationReport: 完整评估报告
+            df: 已包含 category / sentiment / polarity / similarity 等字段的结果表
+            time_range: 可选时间过滤区间 (start, end)
+            detailed: 是否预留详细分析结构
         """
         if not self._validate_dataframe(df):
             raise TypeError("数据无效，无法评估")
@@ -2247,7 +2246,7 @@ class InformationQualityEvaluator:
 
     def quick_evaluate(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        快速评估（简化版）
+        执行轻量级快速评估，仅返回核心分数与样本信息。
         """
         self._validate_dataframe(df)
         processed_df = self._preprocess_data(df)
@@ -2441,7 +2440,7 @@ class InformationQualityEvaluator:
         format: str = "json"
     ) -> None:
         """
-        导出评估报告
+        导出评估报告，支持 json / markdown(md) / html 三种格式。
         """
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -2566,7 +2565,8 @@ class InformationQualityEvaluator:
 
 def calculate_shannon_entropy(distribution: List[float]) -> float:
     """
-    计算香农熵（衡量分布均匀度）
+    计算香农熵，用于衡量类别分布是否均匀。
+    熵越高，通常表示信息来源或内容结构越多样。
     """
     if not distribution:
         return 0.0
@@ -2615,7 +2615,7 @@ def weighted_average(scores: Dict[str, float], weights: Dict[str, float]) -> flo
 
 
 
-# ==================== 测试代码 ====================
+# ==================== 测试代码 / 端到端示例 ====================
 if __name__ == "__main__":
     try:
         # ===== 路径配置 =====

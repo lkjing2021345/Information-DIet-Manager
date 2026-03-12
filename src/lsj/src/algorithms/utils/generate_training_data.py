@@ -1,505 +1,1606 @@
 """
 训练数据生成脚本
-使用大模型对浏览器标签页标题进行分类，并添加到训练数据集中
+使用多模型并发 + 批量请求对浏览器标签页标题进行分类，并增量写入训练数据集。
+
+重构目标：
+1. 参考 sentiment_data_collector.py 的架构，引入断点续跑、进度持久化、去重、单写入器、结构化统计。
+2. 面向 generate_training_data.py 的业务场景，保留 7 类标题分类规则与 OpenAI 兼容接口。
+3. 重点优化长时间运行吞吐：批量请求、连接复用、异步 worker 队列、JSONL 追加写、失败重试、限流与监控。
 """
 
-import json
+from __future__ import annotations
+
+import argparse
 import asyncio
-import aiohttp
-from typing import List, Dict, Optional, Any
+import csv
+import hashlib
+import json
+import logging
+import os
+import random
+import tempfile
+import time
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from datetime import datetime
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+
+import aiohttp
 
 from logger import setup_logger
 
 logger = setup_logger(__name__, "../../../logs/generate_training_data.log")
 
 
-class TrainingDataGenerator:
-    """训练数据生成器"""
+# -----------------------------
+# Utilities
+# -----------------------------
+def log_event(level: str, event: str, **kwargs: Any) -> None:
+    payload = {"event": event, **kwargs}
+    message = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    getattr(logger, level.lower(), logger.info)(message)
 
-    VALID_LABELS = ['News', 'Tools', 'Learning', 'Shopping', 'Social', 'Entertainment', 'Other']
 
-    def __init__(
-        self,
-        models_config: Optional[List[Dict[str, Any]]] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
-        max_retries: int = 3,
-        concurrent_requests: int = 5
-    ):
-        """
-        初始化生成器
+def normalize_input_text(text: str) -> str:
+    return " ".join(str(text).replace("\u3000", " ").strip().split())
 
-        Args:
-            models_config: 多模型配置列表（优先）
-            api_key: 单模型API密钥（向后兼容）
-            base_url: 单模型API基础URL
-            model: 单模型名称
-            max_retries: 最大重试次数
-            concurrent_requests: 并发请求数
-        """
-        # 分类提示词（增强版）- 7大类别
-        self.system_prompt = """你是一个专业的浏览器标签页分类专家。任务：根据“标签页标题”判断其核心用途，并且只能输出 7 个类别之一：
-News, Tools, Learning, Shopping, Social, Entertainment, Other。
-【输入】
-- 仅提供一个标签页标题（可能中英混合、包含品牌名、短语、符号、emoji、版本号）
-【输出】
-- 只输出严格 JSON：
-{
-  "label": "News|Tools|Learning|Shopping|Social|Entertainment|Other",
-  "confidence": 0.50-1.00之间的小数,
-  "reasoning": "不超过30字，说明判定依据"
-}
-禁止输出任何额外文本、markdown、代码块、前后缀说明。
---------------------------------------------------
-一、类别定义（含扩展关键词与典型站点）
---------------------------------------------------
-1) News（新闻）
-定义：以“报道、时效资讯、媒体新闻”为主的页面。
-关键词（中英）：
-新闻、快讯、头条、今日、最新、报道、资讯、专题、深度、要闻、突发、财经快报、科技资讯、国际、国内、观察、社评、live、breaking、headline、news、report
-典型站点：
-人民网、新华网、央视网、澎湃新闻、财新、界面新闻、第一财经、观察者网、BBC、CNN、Reuters、Bloomberg、WSJ、FT、TechCrunch、The Verge、Wired、36氪、虎嗅、钛媒体、少数派资讯
-2) Tools（工具）
-定义：以“完成任务/提高效率/开发协作”为核心目的的工具页面。
-关键词（中英）：
-工具、在线工具、转换、压缩、OCR、翻译、表格、文档协作、网盘、云盘、下载器、格式化、正则、API、调试、控制台、仓库、CI/CD、部署、监控、dashboard、workspace、editor、converter、generator、utility
-典型站点：
-GitHub、GitLab、Gitee、Postman、Apifox、Swagger、Jira、Confluence、Notion、飞书文档、腾讯文档、石墨文档、语雀、Trello、Asana、Google Drive、Dropbox、OneDrive、Figma、Canva、Vercel、Netlify、Cloudflare、CodePen、JSFiddle、在线 JSON/SQL/Markdown 工具
-3) Learning（学习）
-定义：以“学习知识/教程课程/文档查阅/学术检索”为核心。
-关键词（中英）：
-教程、课程、文档、指南、手册、示例、原理、入门、进阶、实践、训练营、题解、笔记、学习路径、论文、文献、综述、lecture、course、tutorial、guide、docs、reference、paper、arxiv、scholar
-典型站点：
-Python Docs、MDN、PyTorch Docs、TensorFlow Docs、OpenCV Docs、Coursera、edX、Udemy、Khan Academy、中国大学MOOC、慕课网、网易云课堂、极客时间、CSDN（教程页）、掘金（技术文章页）、博客园、Stack Overflow（知识问答）、arXiv、Google Scholar、知网、ResearchGate、ACL Anthology
-4) Shopping（购物）
-定义：以“商品浏览、比价、下单、支付、订单管理”为核心。
-关键词（中英）：
-商品、店铺、购物车、下单、支付、优惠、券、促销、满减、拼团、秒杀、比价、评价、物流、订单、退换货、price、deal、coupon、checkout、order、cart、buy
-典型站点：
-淘宝、天猫、京东、拼多多、唯品会、苏宁易购、亚马逊、eBay、AliExpress、Shopee、Temu、Apple Store、小米商城、华为商城、网易严选、闲鱼、转转、得物、小红书商城、抖音商城、美团闪购
-5) Social（社交）
-定义：以“人与人互动、社区讨论、社交关系”为核心。
-关键词（中英）：
-动态、关注、粉丝、评论、点赞、转发、私信、话题、圈子、社区、帖子、回答、讨论、互动、group、community、thread、post、comment、chat、dm、follow
-典型站点：
-微博、知乎（社区互动页）、豆瓣小组、贴吧、小红书（社区内容页）、即刻、Twitter/X、Facebook、Instagram、Reddit、Discord、Telegram、QQ、微信网页版、V2EX、Quora、NGA、虎扑
-6) Entertainment（娱乐）
-定义：以“休闲消费内容（看/听/玩）”为核心。
-关键词（中英）：
-视频、短视频、直播、音乐、MV、歌单、电影、电视剧、综艺、番剧、动漫、游戏、攻略、赛事、直播间、play、watch、stream、music、movie、show、game
-典型站点：
-B站、YouTube、抖音、快手、腾讯视频、爱奇艺、优酷、Netflix、Disney+、HBO、网易云音乐、QQ音乐、Spotify、Apple Music、Steam、Epic、TapTap、斗鱼、虎牙、Twitch、豆瓣电影（观影内容页）
-7) Other（其他）
-定义：系统页面、本地页面、错误页面、功能不明或信息不足页面。
-关键词（中英）：
-设置、配置、帮助、支持、反馈、关于、登录、注册、权限、404、500、错误、无法访问、本地文件、新标签页、历史记录、书签、extension、settings、about、help、error、file://、chrome://、edge://
-典型场景：
-浏览器设置页、扩展管理页、系统控制台、空白页、新标签页、下载页、登录授权中转页、验证码页、文件预览页
---------------------------------------------------
-二、判定规则（高一致性）
---------------------------------------------------
-1. 按“当前页面核心用途”分类，不按网站品牌名机械分类。  
-2. 出现多重特征时，按以下优先级决策（从高到低）：
-   Shopping > Social > Entertainment > Learning > Tools > News > Other
-3. 例外修正：
-   - “科技媒体报道”优先 News（不是 Learning）
-   - “官方文档/教程页”优先 Learning（即使站点是开发平台）
-   - “代码仓库/项目管理/在线编辑器”优先 Tools
-   - “纯登录/错误/设置/跳转页”优先 Other
-4. 信息不足时归 Other，confidence 不高于 0.65。
-5. 必须返回且只返回一个标签。
---------------------------------------------------
-三、置信度标准
---------------------------------------------------
-- 0.90-1.00：标题语义非常明确，几乎无歧义
-- 0.75-0.89：基本明确，有轻微歧义
-- 0.60-0.74：存在明显歧义，但可判断
-- 0.50-0.59：信息较弱，仅弱判断
-- confidence 必须在 [0.50, 1.00]
---------------------------------------------------
-四、输出格式（严格）
---------------------------------------------------
-仅输出 JSON 对象：
-{
-  "label": "News|Tools|Learning|Shopping|Social|Entertainment|Other",
-  "confidence": 0.87,
-  "reasoning": "核心用途是xxx"
-}"""
 
-        # 多模型模式
-        if models_config:
-            self.models_config = models_config
-            self.multi_model_mode = True
-            self.current_model_index = 0
-            total_concurrent = sum(m.get('concurrent_requests', 5) for m in models_config)
-            self.concurrent_requests = total_concurrent
-            self.semaphore = asyncio.Semaphore(total_concurrent)
-            logger.info(f"多模型模式：{len(models_config)} 个模型，总并发数: {total_concurrent}")
-        else:
-            # 单模型模式（向后兼容）
-            self.models_config = [{
-                'name': 'default',
-                'api_key': api_key,
-                'base_url': base_url.rstrip('/') if base_url else '',
-                'model': model,
-                'max_retries': max_retries,
-                'concurrent_requests': concurrent_requests
-            }]
-            self.multi_model_mode = False
-            self.current_model_index = 0
-            self.concurrent_requests = concurrent_requests
-            self.semaphore = asyncio.Semaphore(concurrent_requests)
-            logger.info("单模型模式")
+def compute_entry_id(text: str) -> str:
+    return hashlib.sha1(normalize_input_text(text).encode("utf-8", errors="ignore")).hexdigest()
 
-    def _get_next_model(self) -> Dict[str, Any]:
-        """轮询获取下一个模型配置"""
-        model_cfg = self.models_config[self.current_model_index]
-        self.current_model_index = (self.current_model_index + 1) % len(self.models_config)
-        return model_cfg
 
-    @staticmethod
-    def _extract_json(content: str) -> Dict[str, Any]:
-        """尽量稳健地从模型响应中提取JSON"""
-        text = content.strip()
+def safe_json_extract(text: str) -> Optional[Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
 
-        # 去掉 markdown code block
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.lower().startswith("json"):
-                text = text[4:].strip()
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
 
-        # 优先直接解析
+    start_obj = cleaned.find("{")
+    end_obj = cleaned.rfind("}")
+    if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # 尝试截取第一个 {...}
-            start = text.find('{')
-            end = text.rfind('}')
-            if start != -1 and end != -1 and end > start:
-                return json.loads(text[start:end + 1])
-            raise
+            return json.loads(cleaned[start_obj : end_obj + 1])
+        except Exception:
+            pass
 
-    async def classify_single(
+    start_arr = cleaned.find("[")
+    end_arr = cleaned.rfind("]")
+    if start_arr != -1 and end_arr != -1 and end_arr > start_arr:
+        try:
+            return json.loads(cleaned[start_arr : end_arr + 1])
+        except Exception:
+            return None
+    return None
+
+
+def build_professional_system_prompt(enable_reasoning: bool) -> str:
+    reasoning_requirement = "reasoning 为必填字段，使用 8-30 个中文字符简要说明分类依据。" if enable_reasoning else "reasoning 字段必须返回，可为空字符串。"
+    return f"""你是一个专业的数据构建与标注专家，负责生成可直接用于监督学习训练、评估分析和规则验证的“浏览器标签页标题分类数据”。
+
+【数据生成目标】
+基于输入的浏览器标签页标题数组，生成高质量、结构化、可复用的标题分类结果，用于训练和优化自动分类模型。输出结果必须满足：字段完整、格式统一、语义清晰、低重复、低噪声、符合真实业务场景、便于后续训练、评估与分析。
+
+【数据类型】
+结构化文本分类数据。每条样本表示一个浏览器标签页标题及其唯一分类标签。
+
+【使用场景】
+- 浏览器标签页自动归类
+- 智能信息整理与标签聚合
+- 用户浏览行为分析
+- 个性化推荐与工作流优化
+- 文本分类模型训练、验证与测试集构建
+
+【目标受众】
+- 机器学习工程师
+- NLP 训练数据标注人员
+- 数据分析师
+- 产品算法团队
+- 需要高一致性分类样本的数据治理团队
+
+【任务说明】
+你会收到一个标题数组，每个元素包含 id 和 title。你需要对每个 title 进行单标签分类，并返回结构化 JSON 结果。禁止遗漏任何输入 id，禁止新增输入中不存在的 id。
+
+【字段结构】
+输出中每条结果必须包含以下字段：
+- id: 输入中的原始唯一编号，必须原样返回
+- label: 分类标签，必须为 News、Tools、Learning、Shopping、Social、Entertainment、Other 之一
+- confidence: 0.50 到 1.00 之间的小数，保留两位
+- reasoning: 简要说明判定依据，{reasoning_requirement}
+
+【格式要求】
+- 只输出 JSON 对象
+- 顶层结构必须严格为：
+{{
+  "results": [
+    {{
+      "id": "原始id",
+      "label": "News|Tools|Learning|Shopping|Social|Entertainment|Other",
+      "confidence": 0.95,
+      "reasoning": "判定依据"
+    }}
+  ]
+}}
+- 不允许输出 markdown
+- 不允许输出注释
+- 不允许输出任何解释、前后缀说明或额外文本
+- results 的数量必须与输入标题数量完全一致
+- 每个输入 id 必须且只能出现一次
+
+【样本数量要求】
+- 输出样本数量必须与输入标题数量完全一致
+- 不可遗漏、不可重复、不可额外生成无关样本
+
+【内容范围】
+输入标题可能来自以下场景：
+- 新闻网站首页、资讯文章、财经快讯、科技媒体
+- 开发平台、在线文档、协同办公、云盘、翻译工具、可视化工具
+- 官方文档、教程文章、在线课程、学术检索、技术问答
+- 电商平台、商品详情、购物车、订单页、优惠活动页
+- 社交平台首页、社区帖子、讨论串、个人动态、消息页
+- 视频平台、音乐平台、直播页、电影详情页、游戏平台
+- 浏览器设置页、扩展管理页、登录授权页、错误页、本地文件页
+
+【分类标签集合】
+标签只能从以下 7 个类别中选择，且每条标题只能对应 1 个标签：
+1. News
+2. Tools
+3. Learning
+4. Shopping
+5. Social
+6. Entertainment
+7. Other
+
+【标签定义与判定规范】
+1) News：以新闻报道、快讯、媒体资讯、时效性内容为核心用途的页面。
+2) Tools：以完成任务、提高效率、开发协作、在线处理、内容编辑、管理控制为核心目的的页面。
+3) Learning：以学习知识、阅读教程、查阅文档、课程学习、论文检索为核心目的的页面。
+4) Shopping：以商品浏览、购买、支付、订单管理、优惠促销、比价为核心目的的页面。
+5) Social：以社区互动、社交关系、动态交流、评论讨论、帖子内容为核心目的的页面。
+6) Entertainment：以休闲消费内容为核心，包括视频、音乐、影视、直播、游戏、动漫等。
+7) Other：无法明确归入以上类别，或属于系统页、本地页、登录页、错误页、空白页、设置页、授权页等。
+
+【优先级规则】
+当一个标题同时具有多个类别特征时，按照以下优先级判定：
+Shopping > Social > Entertainment > Learning > Tools > News > Other
+
+【例外修正规则】
+- 科技媒体报道页优先标注为 News，不标为 Learning
+- 官方文档、教程页优先标注为 Learning，不因品牌平台而标为 Tools
+- 代码仓库、在线编辑器、控制台、协作平台优先标注为 Tools
+- 纯登录页、错误页、设置页、跳转页、权限页优先标注为 Other
+- 信息过少、用途不清、歧义严重时标注为 Other，且 confidence 不高于 0.65
+
+【数据质量标准】
+输出结果必须满足：
+1. 字段完整
+2. 格式统一
+3. 语义清晰
+4. 低重复
+5. 低噪声
+6. 场景真实
+7. 类别边界清晰
+8. 适合后续模型训练与分析
+9. 标注逻辑一致
+10. 结果可人工抽查验证
+
+【约束条件】
+- 必须仅依据标题的“当前页面核心用途”分类，不按品牌名机械分类
+- 不得输出空 label、非法 label、缺失字段、错误类型值
+- 不得输出与标题明显冲突的标签
+- confidence 必须在 [0.50, 1.00] 范围内
+- 若无法确定，也必须返回合法标签，优先 Other
+- 不得返回任何敏感、无关、虚构解释文本
+
+【去重要求】
+- 不允许在 results 中重复返回同一个 id
+- 不允许一条输入产生多条结果
+- 每条结果必须与输入一一对应
+
+【异常值控制】
+以下情况禁止出现：
+- id 缺失或与输入不一致
+- label 不在允许集合内
+- confidence 越界
+- reasoning 过长、无关或完全空洞（如“无法判断”“随便猜测”）
+- 输出结构不完整或 JSON 非法
+
+【风格一致性要求】
+- reasoning 风格保持简洁、客观、稳定
+- 对相似标题使用一致的判定逻辑
+- confidence 与确定性一致：越明确越高，越模糊越低
+
+【标注规范】
+- 以“当前页面核心用途”作为唯一判定依据
+- 一个标题只能对应一个标签
+- 边界样本采用保守策略
+- 对近似场景保持一致标注
+
+【输出示例】
+{{
+  "results": [
+    {{
+      "id": "sample_001",
+      "label": "Tools",
+      "confidence": 0.98,
+      "reasoning": "代码仓库与开发协作工具"
+    }},
+    {{
+      "id": "sample_002",
+      "label": "Learning",
+      "confidence": 0.97,
+      "reasoning": "官方文档用于知识查阅"
+    }},
+    {{
+      "id": "sample_003",
+      "label": "Shopping",
+      "confidence": 0.99,
+      "reasoning": "核心用途是商品购买"
+    }}
+  ]
+}}
+
+【执行要求】
+现在请严格按照以上规则，对输入标题逐条分类。除合法 JSON 结果外，不输出任何其他内容。"""
+
+
+class AtomicFileIO:
+    @staticmethod
+    def atomic_write_text(path: str, content: str, encoding: str = "utf-8") -> None:
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding=encoding, dir=str(path_obj.parent)) as tf:
+            tf.write(content)
+            temp_path = tf.name
+        os.replace(temp_path, path)
+
+
+@dataclass
+class RetryConfig:
+    request_timeout: float = 30.0
+    max_retries: int = 3
+    backoff_base: float = 0.5
+    backoff_max: float = 8.0
+
+
+@dataclass
+class ModelConfig:
+    name: str
+    provider: str = "openai"
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    concurrent_requests: int = 5
+    qps_limit: float = 10.0
+    max_retries: int = 3
+    weight: float = 1.0
+    timeout: float = 30.0
+
+
+@dataclass
+class RuntimeConfig:
+    training_data_path: str
+    progress_path: str
+    input_file: Optional[str] = None
+    output_format: str = "jsonl"
+    flush_every: int = 1000
+    queue_maxsize: int = 50000
+    batch_size_per_request: int = 20
+    writer_batch_size: int = 2000
+    max_pending_tasks: int = 500
+    max_samples: int = 200000
+    target_count: int = 200000
+    generate_mode: bool = True
+    random_seed: int = 42
+    min_confidence: float = 0.0
+    enable_reasoning: bool = False
+    report_every: int = 5000
+    retry: RetryConfig = field(default_factory=RetryConfig)
+
+
+@dataclass
+class ProgressState:
+    training_data_path: str
+    target_count: int = 0
+    existing_count: int = 0
+    processed_count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    duplicate_count: int = 0
+    invalid_count: int = 0
+    input_exhausted: bool = False
+    status: str = "initialized"
+    label_counts: Dict[str, int] = field(default_factory=dict)
+    model_counts: Dict[str, int] = field(default_factory=dict)
+    last_update_ts: float = 0.0
+
+
+@dataclass
+class TitleRecord:
+    entry_id: str
+    input: str
+    label: str
+    confidence: float
+    model: str
+    reasoning: str = ""
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self, include_reasoning: bool = False) -> Dict[str, Any]:
+        payload = {
+            "entry_id": self.entry_id,
+            "input": self.input,
+            "label": self.label,
+            "confidence": self.confidence,
+            "model": self.model,
+            "created_at": self.created_at,
+        }
+        if include_reasoning:
+            payload["reasoning"] = self.reasoning
+        return payload
+
+
+# -----------------------------
+# Progress / Store
+# -----------------------------
+class ProgressTracker:
+    def __init__(self, progress_path: str):
+        self.progress_path = progress_path
+        self._lock = asyncio.Lock()
+
+    def load(self) -> Optional[ProgressState]:
+        if not self.progress_path or not os.path.exists(self.progress_path):
+            return None
+        try:
+            with open(self.progress_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return ProgressState(**data)
+        except Exception as e:
+            log_event("warning", "progress_load_failed", path=self.progress_path, reason=str(e))
+            return None
+
+    async def save(self, state: ProgressState) -> None:
+        async with self._lock:
+            state.last_update_ts = time.time()
+            AtomicFileIO.atomic_write_text(
+                self.progress_path,
+                json.dumps(asdict(state), ensure_ascii=False, indent=2),
+            )
+
+
+class TrainingDataStore:
+    def __init__(self, output_path: str, output_format: str = "jsonl", include_reasoning: bool = False):
+        self.output_path = output_path
+        self.output_format = output_format.lower()
+        self.include_reasoning = include_reasoning
+
+    def load_existing_ids(self) -> Tuple[Set[str], int]:
+        ids: Set[str] = set()
+        total_rows = 0
+        path = Path(self.output_path)
+        if not path.exists():
+            return ids, total_rows
+
+        if self.output_format == "json":
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                for row in data:
+                    if not isinstance(row, dict):
+                        continue
+                    text = normalize_input_text(row.get("input") or row.get("text") or "")
+                    entry_id = str(row.get("entry_id") or compute_entry_id(text)) if text else ""
+                    if entry_id:
+                        ids.add(entry_id)
+                        total_rows += 1
+            return ids, total_rows
+
+        if self.output_format == "csv":
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    text = normalize_input_text(row.get("input") or row.get("text") or "")
+                    entry_id = str(row.get("entry_id") or compute_entry_id(text)) if text else ""
+                    if entry_id:
+                        ids.add(entry_id)
+                        total_rows += 1
+            return ids, total_rows
+
+        with open(path, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                text = normalize_input_text(row.get("input") or row.get("text") or "")
+                entry_id = str(row.get("entry_id") or compute_entry_id(text)) if text else ""
+                if entry_id:
+                    ids.add(entry_id)
+                    total_rows += 1
+        return ids, total_rows
+
+    def append_records(self, records: List[TitleRecord]) -> None:
+        if not records:
+            return
+        path = Path(self.output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self.output_format == "csv":
+            file_exists = path.exists() and path.stat().st_size > 0
+            with open(path, "a", encoding="utf-8", newline="") as f:
+                fieldnames = ["entry_id", "input", "label", "confidence", "model", "created_at"]
+                if self.include_reasoning:
+                    fieldnames.append("reasoning")
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if not file_exists:
+                    writer.writeheader()
+                for record in records:
+                    writer.writerow(record.to_dict(include_reasoning=self.include_reasoning))
+            return
+
+        if self.output_format == "jsonl":
+            with open(path, "a", encoding="utf-8") as f:
+                for record in records:
+                    f.write(json.dumps(record.to_dict(include_reasoning=self.include_reasoning), ensure_ascii=False) + "\n")
+            return
+
+        existing: List[Dict[str, Any]] = []
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+                if isinstance(payload, list):
+                    existing = payload
+        existing.extend(record.to_dict(include_reasoning=self.include_reasoning) for record in records)
+        AtomicFileIO.atomic_write_text(path.as_posix(), json.dumps(existing, ensure_ascii=False, indent=2))
+
+
+# -----------------------------
+# Input Loader
+# -----------------------------
+class InputSource:
+    def __init__(self, input_file: Optional[str], inline_inputs: Optional[List[str]] = None):
+        self.input_file = input_file
+        self.inline_inputs = inline_inputs or []
+
+    def __iter__(self) -> Iterable[str]:
+        if self.inline_inputs:
+            for item in self.inline_inputs:
+                text = normalize_input_text(item)
+                if text:
+                    yield text
+            return
+
+        if not self.input_file:
+            return
+
+        path = Path(self.input_file)
+        suffix = path.suffix.lower()
+
+        if suffix == ".csv":
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                candidates = ["input", "title", "text"]
+                for row in reader:
+                    for col in candidates:
+                        if row.get(col):
+                            text = normalize_input_text(row[col])
+                            if text:
+                                yield text
+                            break
+            return
+
+        if suffix == ".jsonl":
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(row, dict):
+                        text = normalize_input_text(row.get("input") or row.get("title") or row.get("text") or "")
+                        if text:
+                            yield text
+                    elif isinstance(row, str):
+                        text = normalize_input_text(row)
+                        if text:
+                            yield text
+            return
+
+        if suffix == ".json":
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        text = normalize_input_text(item.get("input") or item.get("title") or item.get("text") or "")
+                    else:
+                        text = normalize_input_text(item)
+                    if text:
+                        yield text
+            return
+
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                text = normalize_input_text(line)
+                if text:
+                    yield text
+
+
+# -----------------------------
+# Model Layer
+# -----------------------------
+class ModelClient:
+    def __init__(self, cfg: ModelConfig, retry_cfg: RetryConfig):
+        self.cfg = cfg
+        self.retry_cfg = retry_cfg
+        self.semaphore = asyncio.Semaphore(max(1, cfg.concurrent_requests))
+        self._rate_lock = asyncio.Lock()
+        self._last_request_ts = 0.0
+        self._min_interval = 1.0 / max(0.1, float(cfg.qps_limit))
+
+    async def _rate_limit_wait(self) -> None:
+        async with self._rate_lock:
+            now = time.time()
+            delta = now - self._last_request_ts
+            if delta < self._min_interval:
+                await asyncio.sleep(self._min_interval - delta)
+            self._last_request_ts = time.time()
+
+    async def _request_json(
         self,
         session: aiohttp.ClientSession,
-        input_text: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        分类单个标签页标题（循环重试版，避免递归重入）
-        """
-        model_config = self._get_next_model()
-        api_key = model_config.get('api_key')
-        base_url = (model_config.get('base_url') or '').rstrip('/')
-        model = model_config.get('model')
-        model_name = model_config.get('name', 'unknown')
-        max_retries = int(model_config.get('max_retries', 3))
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+    ) -> List[Dict[str, Any]]:
+        headers = {
+            "Authorization": f"Bearer {self.cfg.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.cfg.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+            "max_tokens": max_tokens,
+        }
 
-        if not api_key or not base_url or not model:
-            logger.error(f"[{model_name}] 模型配置不完整，跳过: api_key/base_url/model")
-            return None
+        url = f"{self.cfg.base_url.rstrip('/')}/chat/completions"
+        max_retries = max(0, int(self.cfg.max_retries or self.retry_cfg.max_retries))
 
         for attempt in range(max_retries + 1):
             try:
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-
-                payload = {
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": f"请分析并分类这个标签页标题：\n\n标题：{input_text}\n\n请给出分类、置信度和理由。"}
-                    ],
-                    "temperature": 0.2,
-                    "response_format": {"type": "json_object"},
-                    "max_tokens": 200
-                }
-
+                await self._rate_limit_wait()
                 async with self.semaphore:
                     async with session.post(
-                        f"{base_url}/chat/completions",
+                        url,
                         headers=headers,
                         json=payload,
-                        timeout=aiohttp.ClientTimeout(total=30)
+                        timeout=aiohttp.ClientTimeout(total=self.retry_cfg.request_timeout),
                     ) as response:
-
+                        body = await response.text()
                         if response.status == 200:
-                            result = await response.json()
-                            content = result['choices'][0]['message']['content']
-                            classification = self._extract_json(content)
+                            parsed_body = json.loads(body)
+                            content = parsed_body["choices"][0]["message"]["content"]
+                            return self._parse_batch_response(content)
 
-                            label = classification.get('label')
-                            if label not in self.VALID_LABELS:
-                                logger.warning(f"[{model_name}] 无效分类标签: {label}, 标题: {input_text[:50]}")
-                                return None
-
-                            confidence = classification.get('confidence', 1.0)
-                            try:
-                                confidence = float(confidence)
-                            except (ValueError, TypeError):
-                                confidence = 1.0
-
-                            logger.info(
-                                f"✓ [{model_name}] 分类成功: {input_text[:40]}... -> {label} (置信度: {confidence:.2f})"
-                            )
-                            return {
-                                "input": input_text,
-                                "label": label,
-                                "confidence": confidence
-                            }
-
-                        # 非200响应
-                        error_text = await response.text()
                         if response.status == 429:
-                            wait_time = 2 ** (attempt + 1)
-                            logger.warning(f"[{model_name}] 触发速率限制，等待{wait_time}秒: {input_text[:40]}...")
-                            await asyncio.sleep(wait_time)
+                            wait_seconds = min(
+                                self.retry_cfg.backoff_max,
+                                self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
+                            )
+                            log_event(
+                                "warning",
+                                "rate_limited",
+                                model=self.cfg.name,
+                                attempt=attempt + 1,
+                                wait_seconds=round(wait_seconds, 3),
+                            )
+                            await asyncio.sleep(wait_seconds)
                             continue
 
-                        logger.error(f"[{model_name}] API错误 {response.status}: {error_text[:200]}")
                         if attempt < max_retries:
-                            await asyncio.sleep(2 ** attempt)
+                            backoff = min(
+                                self.retry_cfg.backoff_max,
+                                self.retry_cfg.backoff_base * (2 ** attempt) + random.uniform(0, 0.5),
+                            )
+                            log_event(
+                                "warning",
+                                "model_request_retry",
+                                model=self.cfg.name,
+                                status=response.status,
+                                attempt=attempt + 1,
+                                backoff=round(backoff, 3),
+                                body_preview=body[:200],
+                            )
+                            await asyncio.sleep(backoff)
                             continue
-                        return None
-
+                        return []
             except asyncio.TimeoutError:
-                logger.error(f"[{model_name}] 请求超时: {input_text[:40]}...")
                 if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    backoff = min(self.retry_cfg.backoff_max, self.retry_cfg.backoff_base * (2 ** attempt))
+                    await asyncio.sleep(backoff)
                     continue
-                return None
-
-            except json.JSONDecodeError as je:
-                logger.error(f"[{model_name}] JSON解析失败: {input_text[:40]}... - {je}")
-                if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                return None
-
+                log_event("warning", "request_timeout", model=self.cfg.name)
+                return []
             except Exception as e:
-                logger.error(f"[{model_name}] 分类失败: {input_text[:40]}... - {e}")
                 if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    backoff = min(self.retry_cfg.backoff_max, self.retry_cfg.backoff_base * (2 ** attempt))
+                    await asyncio.sleep(backoff)
                     continue
-                return None
+                log_event("error", "batch_classify_failed", model=self.cfg.name, reason=str(e))
+                return []
+        return []
 
-        return None
-
-    async def classify_batch(self, inputs: List[str]) -> List[Dict[str, Any]]:
-        """
-        批量分类标签页标题
-
-        Args:
-            inputs: 输入文本列表
-
-        Returns:
-            分类结果列表
-        """
-        logger.info(f"开始批量分类 {len(inputs)} 条数据，并发数: {self.concurrent_requests}")
-
-        async with aiohttp.ClientSession() as session:
-            tasks = [self.classify_single(session, input_text) for input_text in inputs]
-            results = await asyncio.gather(*tasks)
-
-        # 过滤失败结果并统计
-        valid_results = [r for r in results if r is not None]
-        failed_count = len(inputs) - len(valid_results)
-
-        if valid_results:
-            label_dist: Dict[str, int] = {}
-            for r in valid_results:
-                label = r['label']
-                label_dist[label] = label_dist.get(label, 0) + 1
-
-            logger.info(f"\n分类完成: 成功 {len(valid_results)}/{len(inputs)}, 失败 {failed_count}")
-            logger.info("分类分布:")
-            for label, count in sorted(label_dist.items()):
-                logger.info(f"  {label}: {count}")
-        else:
-            logger.warning(f"分类失败: 0/{len(inputs)} 成功")
-
-        return valid_results
-
-    def append_to_training_data(
+    async def classify_batch(
         self,
-        new_data: List[Dict[str, Any]],
-        training_data_path: str
-    ) -> None:
-        """
-        将新数据追加到训练数据文件
+        session: aiohttp.ClientSession,
+        system_prompt: str,
+        batch_inputs: List[Tuple[str, str]],
+        enable_reasoning: bool,
+    ) -> List[Dict[str, Any]]:
+        user_prompt = self._build_batch_prompt(batch_inputs, enable_reasoning)
+        return await self._request_json(
+            session=session,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=min(4000, 200 + len(batch_inputs) * 80),
+        )
 
-        Args:
-            new_data: 新的训练数据（每项至少包含 input,label）
-            training_data_path: 训练数据文件路径
-        """
+    async def generate_labeled_batch(
+        self,
+        session: aiohttp.ClientSession,
+        system_prompt: str,
+        batch_size: int,
+        desired_labels: List[str],
+        enable_reasoning: bool,
+    ) -> List[Dict[str, Any]]:
+        user_prompt = self._build_generation_prompt(batch_size, desired_labels, enable_reasoning)
+        return await self._request_json(
+            session=session,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=min(4000, 300 + batch_size * 100),
+        )
+
+    @staticmethod
+    def _build_batch_prompt(batch_inputs: List[Tuple[str, str]], enable_reasoning: bool) -> str:
+        items = [{"id": item_id, "title": title} for item_id, title in batch_inputs]
+        reasoning_rule = (
+            "reasoning 为必填字段，使用 8-30 个中文字符，简要说明判定依据"
+            if enable_reasoning
+            else "reasoning 字段必须返回，可为空字符串"
+        )
+        return (
+            "请基于系统规则，对下面输入标题生成高质量结构化分类结果。"
+            "输出目标是可直接用于训练和分析的低噪声标注数据。"
+            "严格保证字段完整、格式统一、语义清晰、低重复、低噪声、符合真实业务场景。"
+            "顶层只允许返回一个 JSON 对象，格式必须为 "
+            '{"results":[{"id":"原始id","label":"News|Tools|Learning|Shopping|Social|Entertainment|Other",'
+            '"confidence":0.95,"reasoning":"判定依据"}]}'
+            f"。{reasoning_rule}。results 数量必须与输入数量完全一致，每个输入 id 必须且只能返回一次，"
+            "禁止遗漏、禁止重复、禁止新增无关样本、禁止输出任何额外文本。\n"
+            f"输入数据: {json.dumps(items, ensure_ascii=False)}"
+        )
+
+    @staticmethod
+    def _build_generation_prompt(batch_size: int, desired_labels: List[str], enable_reasoning: bool) -> str:
+        reasoning_rule = (
+            "reasoning 为必填字段，使用 8-30 个中文字符，简要说明标题核心用途与标签关系"
+            if enable_reasoning
+            else "reasoning 字段必须返回，可为空字符串"
+        )
+        label_plan = [{"index": i + 1, "label": label} for i, label in enumerate(desired_labels)]
+        return (
+            "请直接生成一批可用于浏览器标签页分类蒸馏训练的高质量候选标题数据。"
+            "你当前阶段只负责生成候选标题，并给出你预估的标签与理由，后续会由另一个标注阶段复核。"
+            "请根据给定的标签规划，为每一项生成一个真实、自然、低重复、具有明确页面用途的浏览器标签页标题，"
+            "标题必须像真实网页 title，不能是句子续写、不能是解释说明、不能是模板化占位文本。"
+            "生成的数据必须覆盖真实网页场景，如新闻、工具、学习、电商、社交、娱乐、系统页等。"
+            "不得生成乱码、模板化重复标题、无意义短语、明显虚构站点堆砌。"
+            "每条结果必须包含 title、label、confidence、reasoning 四个字段。"
+            f"{reasoning_rule}。"
+            "顶层只允许输出一个 JSON 对象，格式必须为 "
+            '{"results":[{"title":"页面标题","label":"News|Tools|Learning|Shopping|Social|Entertainment|Other","confidence":0.95,"reasoning":"判定依据"}]}'
+            f"。results 数量必须严格等于 {batch_size}。"
+            "每个标题都要唯一且风格多样，避免同义改写式重复。"
+            f"标签规划: {json.dumps(label_plan, ensure_ascii=False)}"
+        )
+
+    @staticmethod
+    def _parse_batch_response(content: str) -> List[Dict[str, Any]]:
+        payload = safe_json_extract(content)
+        if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+            return payload["results"]
+        if isinstance(payload, list):
+            return payload
+        return []
+
+
+class ModelPool:
+    def __init__(self, model_configs: List[ModelConfig], retry_cfg: RetryConfig):
+        self.model_cfgs = model_configs
+        self.retry_cfg = retry_cfg
+        self.clients = {cfg.name: ModelClient(cfg, retry_cfg) for cfg in model_configs}
+        self.model_stats: Dict[str, Dict[str, Any]] = {
+            cfg.name: {"calls": 0, "success": 0, "fail": 0, "items": 0, "latencies": []}
+            for cfg in model_configs
+        }
+
+    def pick_model(self) -> ModelConfig:
+        weights = [max(0.0, cfg.weight) for cfg in self.model_cfgs]
+        if sum(weights) <= 0:
+            return random.choice(self.model_cfgs)
+        return random.choices(self.model_cfgs, weights=weights, k=1)[0]
+
+    async def classify_batch(
+        self,
+        session: aiohttp.ClientSession,
+        system_prompt: str,
+        batch_inputs: List[Tuple[str, str]],
+        enable_reasoning: bool,
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        cfg = self.pick_model()
+        stats = self.model_stats[cfg.name]
+        stats["calls"] += 1
+        t0 = time.time()
+        results = await self.clients[cfg.name].classify_batch(session, system_prompt, batch_inputs, enable_reasoning)
+        latency = time.time() - t0
+        stats["latencies"].append(latency)
+        stats["items"] += len(batch_inputs)
+        if results:
+            stats["success"] += 1
+        else:
+            stats["fail"] += 1
+        return results, cfg.name
+
+    async def generate_labeled_batch(
+        self,
+        session: aiohttp.ClientSession,
+        system_prompt: str,
+        batch_size: int,
+        desired_labels: List[str],
+        enable_reasoning: bool,
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        cfg = self.pick_model()
+        stats = self.model_stats[cfg.name]
+        stats["calls"] += 1
+        t0 = time.time()
+        results = await self.clients[cfg.name].generate_labeled_batch(
+            session,
+            system_prompt,
+            batch_size,
+            desired_labels,
+            enable_reasoning,
+        )
+        latency = time.time() - t0
+        stats["latencies"].append(latency)
+        stats["items"] += batch_size
+        if results:
+            stats["success"] += 1
+        else:
+            stats["fail"] += 1
+        return results, cfg.name
+
+
+# -----------------------------
+# Core Generator
+# -----------------------------
+class TrainingDataGenerator:
+    """高吞吐训练数据生成器。"""
+
+    VALID_LABELS = ["News", "Tools", "Learning", "Shopping", "Social", "Entertainment", "Other"]
+
+    def __init__(self, runtime_cfg: RuntimeConfig, model_configs: List[ModelConfig]):
+        self.runtime_cfg = runtime_cfg
+        self.model_configs = model_configs
+        self.pool = ModelPool(model_configs, runtime_cfg.retry)
+        self.store = TrainingDataStore(
+            runtime_cfg.training_data_path,
+            output_format=runtime_cfg.output_format,
+            include_reasoning=runtime_cfg.enable_reasoning,
+        )
+        self.progress = ProgressTracker(runtime_cfg.progress_path)
+        self.state = ProgressState(
+            training_data_path=runtime_cfg.training_data_path,
+            target_count=runtime_cfg.target_count,
+            label_counts={label: 0 for label in self.VALID_LABELS},
+            model_counts={cfg.name: 0 for cfg in model_configs},
+        )
+
+        self.seen_entry_ids: Set[str] = set()
+        self.pending_entry_ids: Set[str] = set()
+        self.input_queue: asyncio.Queue[Optional[Any]] = asyncio.Queue(maxsize=runtime_cfg.queue_maxsize)
+        self.result_queue: asyncio.Queue[Optional[TitleRecord]] = asyncio.Queue(maxsize=runtime_cfg.queue_maxsize)
+        self.start_ts = time.time()
+        random.seed(runtime_cfg.random_seed)
+
+        self.system_prompt = build_professional_system_prompt(runtime_cfg.enable_reasoning)
+        base_target = max(1, runtime_cfg.target_count)
+        per_label = base_target // len(self.VALID_LABELS)
+        remainder = base_target % len(self.VALID_LABELS)
+        self.label_generation_targets = {
+            label: per_label + (1 if idx < remainder else 0)
+            for idx, label in enumerate(self.VALID_LABELS)
+        }
+
+    def _total_effective_count(self) -> int:
+        return max(0, int(self.state.existing_count) + int(self.state.success_count))
+
+    def _remaining_target(self) -> int:
+        return max(0, int(self.runtime_cfg.target_count) - self._total_effective_count())
+
+    def _is_done(self) -> bool:
+        return self._total_effective_count() >= int(self.runtime_cfg.target_count)
+
+    def _pick_generation_labels(self, batch_size: int) -> List[str]:
+        planned: List[str] = []
+        simulated_counts = dict(self.state.label_counts)
+        for _ in range(batch_size):
+            remaining = [
+                (label, max(1, self.label_generation_targets.get(label, 1) - simulated_counts.get(label, 0)))
+                for label in self.VALID_LABELS
+            ]
+            labels, weights = zip(*remaining)
+            selected = random.choices(labels, weights=weights, k=1)[0]
+            planned.append(selected)
+            simulated_counts[selected] = simulated_counts.get(selected, 0) + 1
+        return planned
+
+    def restore(self) -> None:
+        existing_ids, total_rows = self.store.load_existing_ids()
+        self.seen_entry_ids = existing_ids
+        restored = self.progress.load()
+        if restored and restored.training_data_path == self.runtime_cfg.training_data_path:
+            self.state = restored
+            self.state.target_count = self.runtime_cfg.target_count
+            self.state.existing_count = len(existing_ids)
+            self.state.label_counts = {label: restored.label_counts.get(label, 0) for label in self.VALID_LABELS}
+            for cfg in self.model_configs:
+                self.state.model_counts.setdefault(cfg.name, 0)
+            log_event(
+                "info",
+                "progress_resumed",
+                processed=self.state.processed_count,
+                success=self.state.success_count,
+                existing_count=self.state.existing_count,
+                target_count=self.state.target_count,
+            )
+        else:
+            self.state.target_count = self.runtime_cfg.target_count
+            self.state.existing_count = len(existing_ids)
+            self.state.label_counts = {label: 0 for label in self.VALID_LABELS}
+            self.state.model_counts = {cfg.name: 0 for cfg in self.model_configs}
+        log_event(
+            "info",
+            "existing_data_loaded",
+            existing_rows=total_rows,
+            unique_ids=len(existing_ids),
+            remaining_target=self._remaining_target(),
+        )
+
+    async def produce_inputs(self, source: Optional[InputSource]) -> None:
+        enqueued_count = 0
+        max_samples = max(0, int(self.runtime_cfg.max_samples))
+        target_remaining = self._remaining_target()
+        enqueue_limit = target_remaining if max_samples <= 0 else min(max_samples, target_remaining)
         try:
-            path = Path(training_data_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-
-            # 读取现有数据
-            if path.exists():
-                with open(path, 'r', encoding='utf-8') as f:
-                    existing_data = json.load(f)
-                    if not isinstance(existing_data, list):
-                        logger.warning("已有训练数据文件格式异常（非list），将重置为空列表")
-                        existing_data = []
-            else:
-                existing_data = []
-
-            # 去重：按 input 去重
-            existing_inputs = {item.get('input') for item in existing_data if isinstance(item, dict)}
-            unique_new_data = [item for item in new_data if item.get('input') not in existing_inputs]
-
-            if not unique_new_data:
-                logger.warning("没有新的唯一数据需要添加")
+            if self.runtime_cfg.generate_mode:
+                for _ in range(enqueue_limit):
+                    if self._is_done():
+                        log_event("info", "target_already_reached_before_enqueue", target_count=self.runtime_cfg.target_count)
+                        break
+                    await self.input_queue.put({"mode": "generate"})
+                    enqueued_count += 1
+                log_event(
+                    "info",
+                    "generation_tasks_enqueued",
+                    enqueued_count=enqueued_count,
+                    enqueue_limit=enqueue_limit,
+                    target_count=self.runtime_cfg.target_count,
+                )
                 return
 
-            combined_data = existing_data + unique_new_data
+            if source is None:
+                return
 
-            # 备份原文件
-            if path.exists():
-                backup_path = path.with_suffix(f'.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
-                path.rename(backup_path)
-                logger.info(f"已备份原文件到: {backup_path}")
+            for text in source:
+                if self._is_done():
+                    log_event("info", "target_already_reached_before_enqueue", target_count=self.runtime_cfg.target_count)
+                    break
+                if enqueue_limit and enqueued_count >= enqueue_limit:
+                    log_event(
+                        "info",
+                        "input_limit_reached",
+                        max_samples=max_samples,
+                        enqueue_limit=enqueue_limit,
+                        target_count=self.runtime_cfg.target_count,
+                    )
+                    break
 
-            # 写入新数据
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(combined_data, f, ensure_ascii=False, indent=2)
+                normalized = normalize_input_text(text)
+                if not normalized:
+                    continue
+                entry_id = compute_entry_id(normalized)
+                if entry_id in self.seen_entry_ids:
+                    self.state.duplicate_count += 1
+                    self.state.processed_count += 1
+                    continue
+                await self.input_queue.put(normalized)
+                enqueued_count += 1
+        finally:
+            self.state.input_exhausted = True
+            worker_count = sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
+            for _ in range(worker_count):
+                await self.input_queue.put(None)
 
-            logger.info(f"✓ 成功添加 {len(unique_new_data)} 条新数据到 {training_data_path}")
-            logger.info(f"总数据量: {len(combined_data)}")
+    async def worker(self, worker_id: int, session: aiohttp.ClientSession) -> None:
+        batch_size = max(1, self.runtime_cfg.batch_size_per_request)
+        while True:
+            if self.runtime_cfg.generate_mode:
+                batch_tokens: List[Dict[str, Any]] = []
+                first_item = await self.input_queue.get()
+                if first_item is None:
+                    self.input_queue.task_done()
+                    await self.result_queue.put(None)
+                    return
+                batch_tokens.append(first_item)
+                self.input_queue.task_done()
 
-        except Exception as e:
-            logger.error(f"写入训练数据失败: {str(e)}")
-            raise
+                for _ in range(batch_size - 1):
+                    try:
+                        item = self.input_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    if item is None:
+                        self.input_queue.task_done()
+                        await self.input_queue.put(None)
+                        break
+                    batch_tokens.append(item)
+                    self.input_queue.task_done()
+
+                desired_labels = self._pick_generation_labels(len(batch_tokens))
+                generated_items, model_name = await self.pool.generate_labeled_batch(
+                    session,
+                    self.system_prompt,
+                    len(batch_tokens),
+                    desired_labels,
+                    self.runtime_cfg.enable_reasoning,
+                )
+
+                candidate_inputs: List[Tuple[str, str]] = []
+                candidate_meta: Dict[str, Dict[str, Any]] = {}
+                seen_titles_in_batch: Set[str] = set()
+                for item in generated_items:
+                    if not isinstance(item, dict):
+                        continue
+                    title = normalize_input_text(str(item.get("title", "")).strip())
+                    label = str(item.get("label", "")).strip()
+                    if not title or label not in self.VALID_LABELS:
+                        self.state.invalid_count += 1
+                        continue
+                    if title in seen_titles_in_batch:
+                        self.state.duplicate_count += 1
+                        continue
+
+                    entry_id = compute_entry_id(title)
+                    if entry_id in self.seen_entry_ids or entry_id in self.pending_entry_ids:
+                        self.state.duplicate_count += 1
+                        continue
+
+                    seen_titles_in_batch.add(title)
+                    self.pending_entry_ids.add(entry_id)
+                    candidate_inputs.append((entry_id, title))
+                    candidate_meta[entry_id] = {
+                        "title": title,
+                        "generated_label": label,
+                        "generated_reasoning": str(item.get("reasoning", "")).strip(),
+                    }
+
+                if not candidate_inputs:
+                    log_event(
+                        "info",
+                        "worker_generate_batch_done",
+                        worker_id=worker_id,
+                        model=model_name,
+                        batch_size=len(batch_tokens),
+                        valid_records=0,
+                        missing=max(0, len(batch_tokens) - len(generated_items)),
+                        filtered_by_relabel=0,
+                        desired_labels=desired_labels,
+                    )
+                    continue
+
+                relabeled_items, relabel_model_name = await self.pool.classify_batch(
+                    session,
+                    self.system_prompt,
+                    candidate_inputs,
+                    self.runtime_cfg.enable_reasoning,
+                )
+
+                relabeled_index: Dict[str, Dict[str, Any]] = {}
+                for item in relabeled_items:
+                    if not isinstance(item, dict):
+                        continue
+                    entry_id = str(item.get("id", "")).strip()
+                    if entry_id in candidate_meta:
+                        relabeled_index[entry_id] = item
+
+                valid_records = 0
+                filtered_by_relabel = 0
+                for entry_id, meta in candidate_meta.items():
+                    relabeled = relabeled_index.get(entry_id)
+                    if relabeled is None:
+                        self.state.failed_count += 1
+                        self.pending_entry_ids.discard(entry_id)
+                        continue
+
+                    relabeled_label = str(relabeled.get("label", "")).strip()
+                    if relabeled_label not in self.VALID_LABELS:
+                        self.state.invalid_count += 1
+                        self.pending_entry_ids.discard(entry_id)
+                        continue
+
+                    if relabeled_label != meta["generated_label"]:
+                        filtered_by_relabel += 1
+                        self.state.invalid_count += 1
+                        self.pending_entry_ids.discard(entry_id)
+                        continue
+
+                    try:
+                        confidence = float(relabeled.get("confidence", 1.0))
+                    except (TypeError, ValueError):
+                        confidence = 1.0
+                    confidence = max(0.0, min(1.0, confidence))
+                    if confidence < self.runtime_cfg.min_confidence:
+                        self.state.invalid_count += 1
+                        self.pending_entry_ids.discard(entry_id)
+                        continue
+
+                    record = TitleRecord(
+                        entry_id=entry_id,
+                        input=meta["title"],
+                        label=relabeled_label,
+                        confidence=confidence,
+                        model=f"{model_name}->{relabel_model_name}",
+                        reasoning=str(relabeled.get("reasoning", meta["generated_reasoning"])).strip(),
+                    )
+                    await self.result_queue.put(record)
+                    valid_records += 1
+
+                missing_count = max(0, len(batch_tokens) - len(generated_items))
+                if missing_count:
+                    self.state.failed_count += missing_count
+
+                log_event(
+                    "info",
+                    "worker_generate_batch_done",
+                    worker_id=worker_id,
+                    model=model_name,
+                    relabel_model=relabel_model_name,
+                    batch_size=len(batch_tokens),
+                    generated_candidates=len(candidate_inputs),
+                    valid_records=valid_records,
+                    missing=missing_count,
+                    filtered_by_relabel=filtered_by_relabel,
+                    desired_labels=desired_labels,
+                )
+                continue
+
+            batch_texts: List[str] = []
+            first_item = await self.input_queue.get()
+            if first_item is None:
+                self.input_queue.task_done()
+                await self.result_queue.put(None)
+                return
+            batch_texts.append(first_item)
+            self.input_queue.task_done()
+
+            for _ in range(batch_size - 1):
+                try:
+                    item = self.input_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                if item is None:
+                    self.input_queue.task_done()
+                    await self.input_queue.put(None)
+                    break
+                batch_texts.append(item)
+                self.input_queue.task_done()
+
+            batch_inputs: List[Tuple[str, str]] = []
+            batch_index: Dict[str, str] = {}
+            for text in batch_texts:
+                entry_id = compute_entry_id(text)
+                if entry_id in self.seen_entry_ids or entry_id in self.pending_entry_ids:
+                    self.state.duplicate_count += 1
+                    self.state.processed_count += 1
+                    continue
+                batch_index[entry_id] = text
+                batch_inputs.append((entry_id, text))
+                self.pending_entry_ids.add(entry_id)
+
+            if not batch_inputs:
+                continue
+
+            results, model_name = await self.pool.classify_batch(
+                session,
+                self.system_prompt,
+                batch_inputs,
+                self.runtime_cfg.enable_reasoning,
+            )
+
+            returned_ids = set()
+            valid_records = 0
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                entry_id = str(item.get("id", "")).strip()
+                label = str(item.get("label", "")).strip()
+                if entry_id not in batch_index:
+                    continue
+                returned_ids.add(entry_id)
+                if label not in self.VALID_LABELS:
+                    self.state.invalid_count += 1
+                    self.pending_entry_ids.discard(entry_id)
+                    continue
+
+                try:
+                    confidence = float(item.get("confidence", 1.0))
+                except (TypeError, ValueError):
+                    confidence = 1.0
+                confidence = max(0.0, min(1.0, confidence))
+                if confidence < self.runtime_cfg.min_confidence:
+                    self.state.invalid_count += 1
+                    self.pending_entry_ids.discard(entry_id)
+                    continue
+
+                record = TitleRecord(
+                    entry_id=entry_id,
+                    input=batch_index[entry_id],
+                    label=label,
+                    confidence=confidence,
+                    model=model_name,
+                    reasoning=str(item.get("reasoning", "")).strip(),
+                )
+                await self.result_queue.put(record)
+                valid_records += 1
+
+            missing_ids = set(batch_index) - returned_ids
+            if missing_ids:
+                self.state.failed_count += len(missing_ids)
+                for missing_id in missing_ids:
+                    self.pending_entry_ids.discard(missing_id)
+
+            log_event(
+                "info",
+                "worker_batch_done",
+                worker_id=worker_id,
+                model=model_name,
+                batch_size=len(batch_inputs),
+                valid_records=valid_records,
+                missing=len(missing_ids),
+            )
+
+    async def writer(self, worker_done_count: int) -> None:
+        done_workers = 0
+        pending: List[TitleRecord] = []
+        while done_workers < worker_done_count:
+            item = await self.result_queue.get()
+            if item is None:
+                done_workers += 1
+                self.result_queue.task_done()
+                continue
+
+            pending.append(item)
+            self.result_queue.task_done()
+            if len(pending) >= self.runtime_cfg.writer_batch_size:
+                await self.flush_records(pending)
+                pending.clear()
+
+        if pending:
+            await self.flush_records(pending)
+        self.state.status = "completed"
+        await self.progress.save(self.state)
+
+    async def flush_records(self, records: List[TitleRecord]) -> None:
+        remaining_target = self._remaining_target()
+        if remaining_target <= 0:
+            for record in records:
+                self.pending_entry_ids.discard(record.entry_id)
+            return
+
+        unique_records: List[TitleRecord] = []
+        for record in records:
+            if len(unique_records) >= remaining_target:
+                self.pending_entry_ids.discard(record.entry_id)
+                continue
+            if record.entry_id in self.seen_entry_ids:
+                self.state.duplicate_count += 1
+                self.pending_entry_ids.discard(record.entry_id)
+                continue
+            self.seen_entry_ids.add(record.entry_id)
+            self.pending_entry_ids.discard(record.entry_id)
+            unique_records.append(record)
+
+        if not unique_records:
+            return
+
+        self.store.append_records(unique_records)
+        self.state.success_count += len(unique_records)
+        self.state.processed_count += len(unique_records)
+        for record in unique_records:
+            self.state.label_counts[record.label] = self.state.label_counts.get(record.label, 0) + 1
+            self.state.model_counts[record.model] = self.state.model_counts.get(record.model, 0) + 1
+
+        if self.state.success_count % max(1, self.runtime_cfg.report_every) < len(unique_records):
+            self.log_progress()
+        await self.progress.save(self.state)
+
+    def log_progress(self) -> None:
+        elapsed = max(1e-6, time.time() - self.start_ts)
+        throughput = self.state.success_count / elapsed
+        log_event(
+            "info",
+            "progress",
+            processed_count=self.state.processed_count,
+            success_count=self.state.success_count,
+            existing_count=self.state.existing_count,
+            total_effective_count=self._total_effective_count(),
+            target_count=self.runtime_cfg.target_count,
+            remaining_target=self._remaining_target(),
+            duplicate_count=self.state.duplicate_count,
+            failed_count=self.state.failed_count,
+            invalid_count=self.state.invalid_count,
+            throughput_per_sec=round(throughput, 2),
+            label_counts=self.state.label_counts,
+            model_counts=self.state.model_counts,
+        )
+        for model_name, stats in self.pool.model_stats.items():
+            latencies = stats["latencies"]
+            avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+            log_event(
+                "info",
+                "model_stats",
+                model=model_name,
+                calls=stats["calls"],
+                success=stats["success"],
+                fail=stats["fail"],
+                items=stats["items"],
+                avg_latency=round(avg_latency, 3),
+            )
+
+    async def classify_batch(self, inputs: List[str]) -> List[Dict[str, Any]]:
+        temp_output_path = str(Path(tempfile.gettempdir()) / f"generate_training_data_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.{self.runtime_cfg.output_format}")
+        temp_progress_path = f"{temp_output_path}.progress.json"
+        temp_runtime = RuntimeConfig(
+            training_data_path=temp_output_path,
+            progress_path=temp_progress_path,
+            output_format=self.runtime_cfg.output_format,
+            flush_every=self.runtime_cfg.flush_every,
+            queue_maxsize=max(len(inputs) * 2, 1000),
+            batch_size_per_request=self.runtime_cfg.batch_size_per_request,
+            writer_batch_size=max(1, min(len(inputs), self.runtime_cfg.writer_batch_size)),
+            max_pending_tasks=self.runtime_cfg.max_pending_tasks,
+            max_samples=min(len(inputs), self.runtime_cfg.max_samples),
+            target_count=min(len(inputs), self.runtime_cfg.target_count),
+            generate_mode=False,
+            random_seed=self.runtime_cfg.random_seed,
+            min_confidence=self.runtime_cfg.min_confidence,
+            enable_reasoning=self.runtime_cfg.enable_reasoning,
+            report_every=self.runtime_cfg.report_every,
+            retry=self.runtime_cfg.retry,
+        )
+        generator = TrainingDataGenerator(temp_runtime, self.model_configs)
+        await generator.run(InputSource(None, inline_inputs=inputs))
+        path = Path(temp_runtime.training_data_path)
+        if not path.exists():
+            return []
+
+        results: List[Dict[str, Any]] = []
+        try:
+            if temp_runtime.output_format == "json":
+                with open(path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                    if isinstance(payload, list):
+                        results.extend(payload)
+            elif temp_runtime.output_format == "csv":
+                with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                    results.extend(list(csv.DictReader(f)))
+            else:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            results.append(json.loads(line))
+        finally:
+            for cleanup_path in [temp_output_path, temp_progress_path]:
+                try:
+                    if os.path.exists(cleanup_path):
+                        os.remove(cleanup_path)
+                except Exception:
+                    pass
+        return results
+
+    async def run(self, source: Optional[InputSource]) -> None:
+        self.restore()
+        if self._is_done():
+            self.state.status = "completed"
+            await self.progress.save(self.state)
+            self.log_progress()
+            return
+
+        self.state.status = "running"
+        await self.progress.save(self.state)
+
+        connector = aiohttp.TCPConnector(limit=0, ttl_dns_cache=300, ssl=False)
+        timeout = aiohttp.ClientTimeout(total=self.runtime_cfg.retry.request_timeout)
+        worker_count = sum(max(1, cfg.concurrent_requests) for cfg in self.model_configs)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            producer_task = asyncio.create_task(self.produce_inputs(source))
+            worker_tasks = [
+                asyncio.create_task(self.worker(i + 1, session))
+                for i in range(worker_count)
+            ]
+            writer_task = asyncio.create_task(self.writer(worker_count))
+
+            await producer_task
+            await asyncio.gather(*worker_tasks)
+            await self.result_queue.join()
+            await writer_task
+
+        self.log_progress()
+
+    def append_to_training_data(self, new_data: List[Dict[str, Any]], training_data_path: str) -> None:
+        records = []
+        for item in new_data:
+            text = normalize_input_text(item.get("input") or item.get("text") or "")
+            label = str(item.get("label", "")).strip()
+            if not text or label not in self.VALID_LABELS:
+                continue
+            records.append(
+                TitleRecord(
+                    entry_id=compute_entry_id(text),
+                    input=text,
+                    label=label,
+                    confidence=float(item.get("confidence", 1.0)),
+                    model=str(item.get("model", "manual")),
+                    reasoning=str(item.get("reasoning", "")),
+                )
+            )
+        TrainingDataStore(training_data_path, self.runtime_cfg.output_format, self.runtime_cfg.enable_reasoning).append_records(records)
 
 
-async def main():
-    """主函数"""
-    import argparse
-    import sys
+# -----------------------------
+# Config Helpers / CLI
+# -----------------------------
+def _load_model_config_payload(raw_value: Any, base_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        return raw_value
+    if not isinstance(raw_value, str):
+        raise ValueError("model_config/models 必须为 JSON 数组、文件路径或数组对象")
 
-    parser = argparse.ArgumentParser(description='训练数据生成和分类工具')
-    parser.add_argument(
-        '--config',
-        default='config.json',
-        help='配置文件路径（默认: config.json）'
+    raw_text = raw_value.strip()
+    if not raw_text:
+        return []
+
+    candidate_paths: List[Path] = []
+    if base_dir is not None:
+        candidate_paths.append((base_dir / raw_text).resolve())
+    candidate_paths.append(Path(raw_text).resolve())
+
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            with open(candidate, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if not isinstance(payload, list):
+                raise ValueError("models/model_config 内容必须是数组")
+            return payload
+
+    payload = json.loads(raw_text)
+    if not isinstance(payload, list):
+        raise ValueError("models/model_config 内容必须是数组")
+    return payload
+
+
+def parse_model_configs(config: Dict[str, Any], base_dir: Optional[Path] = None) -> List[ModelConfig]:
+    models_payload = None
+    if config.get("models") is not None:
+        models_payload = config.get("models")
+    elif config.get("model_config") is not None:
+        models_payload = config.get("model_config")
+
+    if models_payload is not None:
+        models = _load_model_config_payload(models_payload, base_dir=base_dir)
+        if not models:
+            raise ValueError("models/model_config 配置为空")
+
+        cfgs = []
+        for idx, item in enumerate(models):
+            if not isinstance(item, dict):
+                raise ValueError(f"models[{idx}] 必须为对象")
+            provider = str(item.get("provider", "openai")).strip().lower()
+            for key in ["name"]:
+                if not item.get(key):
+                    raise ValueError(f"models[{idx}] 缺少必需字段: {key}")
+
+            model_name = str(item.get("model") or item.get("name") or "").strip()
+            if provider in {"openai", "local"}:
+                for key in ["base_url"]:
+                    if not item.get(key):
+                        raise ValueError(f"models[{idx}] 缺少必需字段: {key}")
+                if not model_name:
+                    raise ValueError(f"models[{idx}] 缺少必需字段: model 或 name")
+
+            cfgs.append(
+                ModelConfig(
+                    name=str(item["name"]),
+                    provider=provider,
+                    api_key=str(item.get("api_key") or ""),
+                    base_url=str(item.get("base_url") or "").rstrip("/"),
+                    model=model_name,
+                    concurrent_requests=int(item.get("concurrency", item.get("concurrent_requests", 5))),
+                    qps_limit=float(item.get("qps_limit", config.get("qps_limit", 10.0))),
+                    max_retries=int(item.get("max_retries", config.get("max_retries", 3))),
+                    weight=float(item.get("weight", 1.0)),
+                    timeout=float(item.get("timeout", config.get("request_timeout", 30.0))),
+                )
+            )
+        return cfgs
+
+    required_fields = ["api_key", "base_url", "model"]
+    missing_fields = [field for field in required_fields if not config.get(field)]
+    if missing_fields:
+        raise ValueError(f"配置文件缺少必需字段: {', '.join(missing_fields)}")
+
+    return [
+        ModelConfig(
+            name=str(config.get("name", "default")),
+            provider=str(config.get("provider", "openai")).strip().lower(),
+            api_key=str(config["api_key"]),
+            base_url=str(config["base_url"]).rstrip("/"),
+            model=str(config["model"]),
+            concurrent_requests=int(config.get("concurrent_requests", config.get("concurrency", 5))),
+            qps_limit=float(config.get("qps_limit", 10.0)),
+            max_retries=int(config.get("max_retries", 3)),
+            weight=1.0,
+            timeout=float(config.get("timeout", config.get("request_timeout", 30.0))),
+        )
+    ]
+
+
+def build_runtime_config(config: Dict[str, Any], args: argparse.Namespace) -> RuntimeConfig:
+    training_data_path = args.output or config.get("training_data_path")
+    if not training_data_path:
+        raise ValueError("缺少 training_data_path/--output 配置")
+
+    return RuntimeConfig(
+        training_data_path=training_data_path,
+        progress_path=str(config.get("progress_path") or f"{training_data_path}.progress.json"),
+        input_file=args.input_file or config.get("input_file"),
+        output_format=str(config.get("output_format", "jsonl")).lower(),
+        flush_every=int(config.get("flush_every", 1000)),
+        queue_maxsize=int(config.get("queue_maxsize", 50000)),
+        batch_size_per_request=int(config.get("batch_size_per_request", 20)),
+        writer_batch_size=int(config.get("writer_batch_size", 2000)),
+        max_pending_tasks=int(config.get("max_pending_tasks", 500)),
+        max_samples=max(0, int(args.max_samples if args.max_samples is not None else config.get("max_samples", 200000))),
+        target_count=max(0, int(args.target_count if args.target_count is not None else config.get("target_count", config.get("max_samples", 200000)))),
+        generate_mode=bool(config.get("generate_mode", True)),
+        random_seed=int(config.get("random_seed", 42)),
+        min_confidence=float(config.get("min_confidence", 0.0)),
+        enable_reasoning=bool(config.get("enable_reasoning", False)),
+        report_every=int(config.get("report_every", 5000)),
+        retry=RetryConfig(
+            request_timeout=float(config.get("request_timeout", 30.0)),
+            max_retries=int(config.get("max_retries", 3)),
+            backoff_base=float(config.get("backoff_base", 0.5)),
+            backoff_max=float(config.get("backoff_max", 8.0)),
+        ),
     )
-    parser.add_argument(
-        '--input',
-        nargs='+',
-        help='要分类的标题列表（可选，用于测试）'
-    )
+
+
+def build_runtime_configs(config: Dict[str, Any], args: argparse.Namespace) -> List[RuntimeConfig]:
+    jobs = config.get("jobs")
+    if isinstance(jobs, list) and jobs:
+        runtime_cfgs: List[RuntimeConfig] = []
+        for idx, job in enumerate(jobs):
+            if not isinstance(job, dict):
+                raise ValueError(f"jobs[{idx}] 必须为对象")
+            merged = dict(config)
+            merged.update(job)
+            merged.pop("jobs", None)
+            runtime_cfgs.append(build_runtime_config(merged, args))
+        return runtime_cfgs
+    return [build_runtime_config(config, args)]
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description="高吞吐训练数据生成和分类工具")
+    parser.add_argument("--config", default="config.json", help="配置文件路径（默认: config.json）")
+    parser.add_argument("--input", nargs="+", help="直接传入标题列表（测试模式）")
+    parser.add_argument("--input_file", type=str, help="输入文件路径，支持 .txt/.csv/.json/.jsonl")
+    parser.add_argument("--output", type=str, help="输出文件路径，默认读取 config 中 training_data_path")
+    parser.add_argument("--max_samples", type=int, help="本次最多处理多少条输入标题")
+    parser.add_argument("--target_count", type=int, help="目标最终总量（包含历史已存在数据）")
     args = parser.parse_args()
 
-    # 加载配置文件（相对当前脚本目录）
     config_path = Path(__file__).parent / args.config
     if not config_path.exists():
         logger.error(f"配置文件不存在: {config_path}")
-        logger.info("请创建 config.json")
-        sys.exit(1)
+        raise SystemExit(1)
 
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except Exception as e:
-        logger.error(f"读取配置文件失败: {str(e)}")
-        sys.exit(1)
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
 
-    # 待分类标题
-    if args.input:
-        sample_inputs = args.input
-    else:
-        sample_inputs = [
-            "GitHub - microsoft/vscode: Visual Studio Code",
-            "Python Documentation - Built-in Functions",
-            "Amazon.com: Online Shopping for Electronics",
-            "CNN - Breaking News, Latest News and Videos",
-            "YouTube - Broadcast Yourself",
-            "Stack Overflow - Where Developers Learn",
-            "Netflix - Watch TV Shows Online",
-            "Twitter / X - Home",
-            "Google Translate",
-            "Spotify - Web Player",
-            "淘宝网 - 淘！我喜欢",
-            "知乎 - 有问题，就会有答案",
-            "哔哩哔哩 (゜-゜)つロ 干杯~",
-            "微博 - 随时随地发现新鲜事",
-            "百度网盘 - 自由存，随心看",
-            "CSDN - 专业开发者社区",
-            "人民网 - 网上的人民日报",
-            "豆瓣电影 - 你的光影记录",
-            "腾讯新闻 - 事实派",
-            "网易云音乐 - 听见好时光",
-        ]
+    model_configs = parse_model_configs(config, base_dir=config_path.parent)
+    runtime_cfgs = build_runtime_configs(config, args)
 
-    # 统一检查 training_data_path
-    if 'training_data_path' not in config:
-        logger.error("配置文件缺少必需字段: training_data_path")
-        sys.exit(1)
-
-    enable_multi_model = config.get('enable_multi_model', False)
-
-    if enable_multi_model:
-        # 多模型模式校验
-        models = config.get('models')
-        if not isinstance(models, list) or not models:
-            logger.error("多模型模式下缺少 models 配置或为空")
-            sys.exit(1)
-
-        for idx, m in enumerate(models):
-            for field in ['api_key', 'base_url', 'model']:
-                if not m.get(field):
-                    logger.error(f"models[{idx}] 缺少必需字段: {field}")
-                    sys.exit(1)
-
-        logger.info(f"启用多模型模式，共 {len(models)} 个模型")
-        generator = TrainingDataGenerator(models_config=models)
-
-    else:
-        # 单模型模式校验
-        required_fields = ['api_key', 'base_url', 'model', 'training_data_path']
-        missing_fields = [field for field in required_fields if not config.get(field)]
-        if missing_fields:
-            logger.error(f"配置文件缺少必需字段: {', '.join(missing_fields)}")
-            sys.exit(1)
-
-        logger.info("使用单模型模式")
-        generator = TrainingDataGenerator(
-            api_key=config['api_key'],
-            base_url=config['base_url'],
-            model=config['model'],
-            max_retries=config.get('max_retries', 3),
-            concurrent_requests=config.get('concurrent_requests', 5)
+    for runtime_cfg in runtime_cfgs:
+        generator = TrainingDataGenerator(runtime_cfg=runtime_cfg, model_configs=model_configs)
+        log_event(
+            "info",
+            "run_config",
+            input_file=runtime_cfg.input_file,
+            output_path=runtime_cfg.training_data_path,
+            progress_path=runtime_cfg.progress_path,
+            max_samples=runtime_cfg.max_samples,
+            target_count=runtime_cfg.target_count,
+            generate_mode=runtime_cfg.generate_mode,
+            batch_size_per_request=runtime_cfg.batch_size_per_request,
+            writer_batch_size=runtime_cfg.writer_batch_size,
+            models=[cfg.name for cfg in model_configs],
         )
 
-    logger.info(f"开始分类 {len(sample_inputs)} 条标题...")
+        if args.input:
+            runtime_cfg.generate_mode = False
+            source = InputSource(None, inline_inputs=args.input)
+        elif runtime_cfg.input_file:
+            runtime_cfg.generate_mode = False
+            source = InputSource(runtime_cfg.input_file)
+        elif runtime_cfg.generate_mode:
+            source = None
+        else:
+            sample_inputs = [
+                "GitHub - microsoft/vscode: Visual Studio Code",
+                "Python Documentation - Built-in Functions",
+                "Amazon.com: Online Shopping for Electronics",
+                "CNN - Breaking News, Latest News and Videos",
+                "YouTube - Broadcast Yourself",
+                "Stack Overflow - Where Developers Learn",
+                "Netflix - Watch TV Shows Online",
+                "Twitter / X - Home",
+                "Google Translate",
+                "Spotify - Web Player",
+                "淘宝网 - 淘！我喜欢",
+                "知乎 - 有问题，就会有答案",
+                "哔哩哔哩 (゜-゜)つロ 干杯~",
+                "微博 - 随时随地发现新鲜事",
+                "百度网盘 - 自由存，随心看",
+                "CSDN - 专业开发者社区",
+                "人民网 - 网上的人民日报",
+                "豆瓣电影 - 你的光影记录",
+                "腾讯新闻 - 事实派",
+                "网易云音乐 - 听见好时光",
+            ]
+            source = InputSource(None, inline_inputs=sample_inputs)
 
-    # 批量分类
-    results = await generator.classify_batch(sample_inputs)
-
-    # 格式化结果（移除confidence，仅保留input和label）
-    formatted_results = [{"input": r["input"], "label": r["label"]} for r in results]
-
-    # 追加训练数据
-    if formatted_results:
-        generator.append_to_training_data(formatted_results, config['training_data_path'])
-
-        # 打印统计
-        label_counts: Dict[str, int] = {}
-        for item in formatted_results:
-            label = item['label']
-            label_counts[label] = label_counts.get(label, 0) + 1
-
-        logger.info("\n分类统计:")
-        for label, count in sorted(label_counts.items()):
-            logger.info(f"  {label}: {count}")
-    else:
-        logger.warning("没有成功分类的数据")
+        await generator.run(source)
 
 
 if __name__ == "__main__":

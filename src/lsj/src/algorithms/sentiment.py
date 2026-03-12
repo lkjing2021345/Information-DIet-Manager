@@ -1,34 +1,26 @@
 # -*- coding: utf-8 -*-  # 声明文件编码，避免中文乱码
 from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
 """
-情感分析模块
-功能概述：
-    使用 cntext 库对浏览记录进行多维度情感和心理分析
-    - 情感分析：积极、消极、中性情感倾向
-    - 情绪分析：喜悦、愤怒、悲伤、恐惧等具体情绪
-    - 心理特征：态度、认知、价值观等抽象构念
-    - 语义分析：主题、关键词、语义相似度
-依赖库：
-    - cntext: 中文文本分析工具包（核心）
-    - jieba: 中文分词
-    - pandas: 数据处理
-    
-安装 cntext：
-    pip install cntext
-    
-参考文档：
-    - cntext GitHub: https://github.com/hidadeng/cntext
+情感分析模块。
+
+职责：
+    基于 cntext 词典能力与可选的机器学习模型，对文本执行情感、情绪、可读性与趋势分析。
+
+说明：
+    - 词典分析适合快速、可解释的基础判断；
+    - 自定义模型适合在特定业务标注数据上提升一致性；
+    - 两者可以组合使用，以在可解释性与泛化能力之间取得平衡。
 """
 # ======== 环境变量设置 ========
-import os  # 导入系统环境变量模块
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 设置 HuggingFace 国内镜像
+import os  # 系统环境变量
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 为 HuggingFace 下载配置国内镜像
 # ======== 标准库导入 ========
 import pickle  # 模型持久化
-from pathlib import Path  # 跨平台路径处理
+from pathlib import Path  # 路径处理
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
-import csv  # CSV 文件格式识别
-import importlib.util  # 动态检查模块是否安装
+import csv  # 用于识别和读取 CSV 词典
+import importlib.util  # 动态检查依赖是否安装
 # ======== 第三方库导入 ========
 import jieba  # 中文分词
 import pandas as pd  # 数据处理
@@ -36,35 +28,35 @@ import yaml  # YAML 读取
 
 from utils.logger import setup_logger
 
-# 初始化 logger
+# 初始化日志器
 logger = setup_logger(__name__, "../../logs/sentiment.log")
 MODEL_API_VERSION = "1.0"
 # ==================== 判断依赖是否存在 ====================
 def _pkg_exists(name: str) -> bool:
     """判断某个包是否可被导入"""
-    return importlib.util.find_spec(name) is not None  # 返回 True/False
+    return importlib.util.find_spec(name) is not None  # 返回包是否可用
 # ==================== cntext 导入 ====================
-ct = None  # 默认值，避免 NameError
+ct = None  # 默认占位，避免后续直接引用时报 NameError
 CNTEXT_AVAILABLE = False  # 标记 cntext 是否可用
 if not _pkg_exists("cntext"):  # 如果未安装 cntext
     logger.warning("cntext 未安装（find_spec 找不到），请运行: python -m pip install cntext")
 else:
     try:
-        import cntext as ct  # 尝试导入
+        import cntext as ct  # 延迟导入，避免依赖缺失时模块直接崩溃
         CNTEXT_AVAILABLE = True  # 标记可用
         logger.info("cntext 加载成功: %s, version=%s", ct.__file__, getattr(ct, "__version__", "未知"))
     except Exception as e:
-        CNTEXT_AVAILABLE = False  # 导入失败
-        ct = None  # 清空引用
+        CNTEXT_AVAILABLE = False  # 导入失败，后续功能需走降级或抛错
+        ct = None  # 清空引用，避免误用半初始化对象
         logger.exception("cntext 已安装但导入失败。异常: %r", e)
 # ==================== BERT 相关导入 ====================
-torch = None  # 默认 torch
+torch = None  # 先给出默认占位，避免依赖缺失时报 NameError
 BertTokenizer = None
 BertForSequenceClassification = None
-BERT_AVAILABLE = False  # 标记 BERT 是否可用
+BERT_AVAILABLE = False  # 标记 BERT 相关依赖是否可用
 try:
     import torch  # PyTorch
-    from transformers import BertTokenizer, BertForSequenceClassification  # BERT 模型
+    from transformers import BertTokenizer, BertForSequenceClassification  # BERT 推理/训练组件
     BERT_AVAILABLE = True  # 标记可用
     logger.info("BERT 相关依赖加载成功：torch=%s, transformers 已可用", torch.__version__)
 except Exception as e:
@@ -125,7 +117,7 @@ class SentimentPrediction:
 
 
 class CntextSentimentBackend:
-    """词典/cntext 分析后端。"""
+    """封装基于 cntext 词典的情感与情绪分析逻辑。"""
 
     def __init__(self, analyzer: "SentimentAnalyzer"):
         self.analyzer = analyzer
@@ -154,6 +146,7 @@ class CntextSentimentBackend:
             neg_words = raw.get('neg_word', raw.get('neg_words', []))
 
             if pos == 0 and neg == 0:
+                # 某些词典不会直接返回 pos/neg，需要从细粒度情绪字段回推正负倾向。
                 for key in ['乐_num', '喜_num', '好_num']:
                     if key in raw:
                         pos += raw[key]
@@ -167,6 +160,7 @@ class CntextSentimentBackend:
                 neg_words = []
 
             exclude = {'stopword_num', 'word_num', 'sentence_num'}
+            # 仅保留 *_num 形式的情绪统计字段，供上层做更细粒度分析。
             categories = {
                 k: v for k, v in raw.items()
                 if isinstance(k, str) and k.endswith('_num') and k not in exclude
@@ -253,7 +247,7 @@ class CntextSentimentBackend:
 
 
 class ModelBackend:
-    """BERT / Naive Bayes 模型后端。"""
+    """封装 BERT 与朴素贝叶斯模型的加载、预测与兼容入口。"""
 
     def __init__(self, analyzer: "SentimentAnalyzer"):
         self.analyzer = analyzer
@@ -360,6 +354,7 @@ class ModelBackend:
 
             metadata_json_path = model_path / 'metadata.json'
             if metadata_json_path.exists():
+                # 通过 api_version 校验训练产物格式，避免旧模型与新代码不兼容。
                 import json
                 with open(metadata_json_path, 'r', encoding='utf-8') as f:
                     metadata_json = json.load(f)
@@ -402,7 +397,9 @@ class ModelBackend:
 # ==================== SentimentAnalyzer 主类 ====================
 class SentimentAnalyzer:
     """
-    情感分析器（基于 cntext）
+    情感分析主入口。
+
+    统一对外暴露词典分析、模型分析、批量预测、趋势统计和报告生成等能力。
     """
     # ==== 类常量 ====
     SENTIMENT_POSITIVE = "Positive"
@@ -428,9 +425,9 @@ class SentimentAnalyzer:
         if not CNTEXT_AVAILABLE:
             logger.error("没有安装 cntext 库，建议 pip install cntext")
             raise ImportError("cntext is required but not installed")
-        self.diction = diction  # 保存词典名
-        self._cntext_dict_cache: Optional[Dict[str, Any]] = None  # 缓存词典
-        self.stopwords_path = stopwords_path  # 停用词路径
+        self.diction = diction  # 保存当前使用的词典配置名或词典对象
+        self._cntext_dict_cache: Optional[Dict[str, Any]] = None  # 缓存解析后的词典，避免重复读取
+        self.stopwords_path = stopwords_path  # 停用词文件路径
         self._stopwords_cache: set[str] | None = None  # 停用词缓存，避免重复读取文件
         # ===== 加载词典 =====
         if isinstance(self.diction, dict):
@@ -440,7 +437,7 @@ class SentimentAnalyzer:
                 if self.diction.lower().endswith((".yaml", ".yml")):
                     loaded = ct.read_yaml_dict(self.diction)
                 else:
-                    logger.warning("diction 建议使用内置 yaml 名")
+                    logger.warning("diction 建议使用内置 yaml 名或 yaml 文件路径")
                     loaded = None
             except Exception as e:
                 logger.exception(f"读取 YAML 词典失败: {e}")
@@ -450,7 +447,7 @@ class SentimentAnalyzer:
         if isinstance(loaded, dict):
             self._cntext_dict_cache = loaded.get('Dictionary', loaded)
             if self._cntext_dict_cache:
-                logger.info(f"词典加载成功，包含键: {list(self._cntext_dict_cache.keys())[:10]}")
+                logger.info(f"词典加载成功，已缓存，包含键: {list(self._cntext_dict_cache.keys())[:10]}")
         else:
             logger.warning("词典加载失败")
             self._cntext_dict_cache = None
@@ -476,7 +473,7 @@ class SentimentAnalyzer:
                 else:
                     self.model = data
                     self.vectorizer = None
-                    logger.warning("模型文件中没有 vectorizer")
+                    logger.warning("模型文件中未包含 vectorizer，传统模型能力可能受限")
             except Exception as e:
                 logger.exception(f"加载模型失败: {e}")
                 self.model = None
@@ -561,7 +558,7 @@ class SentimentAnalyzer:
 
     @staticmethod
     def _is_empty_text(text: Any) -> bool:
-        """统一判断文本是否为空/无效。"""
+        """统一判断文本是否为空、缺失或仅包含空白字符。"""
         return text is None or pd.isna(text) or str(text).strip() == ''
 
     def _empty_cntext_score_result(self) -> Dict[str, Any]:
@@ -569,7 +566,7 @@ class SentimentAnalyzer:
         return SentimentScore().to_dict()
 
     def _load_stopwords(self) -> set[str]:
-        """加载停用词并缓存，避免每次分词都重复读文件。"""
+        """加载停用词并缓存，避免每次分词都重复读取文件。"""
         if self._stopwords_cache is not None:
             return self._stopwords_cache
 
@@ -603,6 +600,7 @@ class SentimentAnalyzer:
         """
 
         FILE_TYPE = self.identify_file_format(file_path=path)
+        # 先识别词典格式，再走对应解析逻辑。
 
         if FILE_TYPE == 'yaml':
             try:
@@ -666,6 +664,7 @@ class SentimentAnalyzer:
             return []
 
         stopwords_set = self._load_stopwords()
+        # 分词后去掉停用词与空白 token，减少后续噪声。
 
         filtered_words = [word for word in words if word not in stopwords_set and len(word.strip()) > 0]
 
@@ -682,17 +681,7 @@ class SentimentAnalyzer:
 
     def _score_to_sentiment(self, pos_count: int, neg_count: int,
                            threshold: float = 0.1) -> str:
-        """
-        将情感分数转换为情感类别
-
-        参数:
-            pos_count: 积极词数量
-            neg_count: 消极词数量
-            threshold: 判断阈值
-
-        返回:
-            str: 情感类别（SENTIMENT_POSITIVE/NEGATIVE/NEUTRAL）
-        """
+        """将正负词数量映射为离散情感标签。"""
         total_count = pos_count + neg_count
 
         if total_count == 0:
@@ -708,12 +697,7 @@ class SentimentAnalyzer:
             return self.SENTIMENT_NEUTRAL
     
     def _empty_result(self) -> Dict[str, Any]:
-        """
-        返回空文本的默认结果
-        
-        返回:
-            Dict[str, Any]: 默认结果
-        """
+        """返回空文本或分析失败时使用的默认预测结果。"""
         return {
             'sentiment': self.SENTIMENT_NEUTRAL,
             'polarity': 0.0,
@@ -855,6 +839,7 @@ class SentimentAnalyzer:
 
         has_custom_model = (self.model is not None) or (self.use_bert and self.bert_model is not None)
         if use_custom_model and has_custom_model:
+            # 词典结果与模型结果同时可用时，用模型结果辅助修正并调整置信度。
             model_sentiment = self.predict_by_model(text)
             if model_sentiment:
                 if model_sentiment != sentiment:
@@ -939,7 +924,7 @@ class SentimentAnalyzer:
                     )
 
                     if result is None:
-                        # 预测失败，使用默认值
+                        # 预测失败时退回默认中性结果，避免中断整批任务。
                         sentiments.append(self.SENTIMENT_NEUTRAL)
                         polarities.append(0.0)
                         pos_counts.append(0)
@@ -972,7 +957,7 @@ class SentimentAnalyzer:
             progress = (processed / len(df)) * 100
             logger.info(f"已处理: {processed}/{len(df)} ({progress:.1f}%)")
 
-        # 将结果添加到 DataFrame
+        # 将结果写回副本，避免直接污染调用方传入的原始数据。
         # 创建副本避免修改原数据
         result_df = df.copy()
         result_df['sentiment'] = sentiments
@@ -1209,7 +1194,7 @@ class SentimentAnalyzer:
             logger.warning("输入 DataFrame 为空")
             return pd.Series(dtype=int)
 
-        # 统计各情感类别的数量
+        # 统计各情感类别的数量，用于快速观察整体情绪结构。
         distribution = df['sentiment'].value_counts().sort_index()
 
         logger.info(f"情感分布统计完成: {dict(distribution)}")
@@ -1249,7 +1234,7 @@ class SentimentAnalyzer:
                     logger.warning(f"无效的情绪计数值: {emotion}={count}")
                     continue
 
-        # 转换为 DataFrame
+        # 转换为 DataFrame，便于后续展示与排序。
         if not emotion_counts:
             logger.warning("未找到有效的情绪数据")
             return pd.DataFrame(columns=['emotion', 'count'])
@@ -1292,7 +1277,7 @@ class SentimentAnalyzer:
         # 创建副本避免修改原数据
         df_copy = df.copy()
 
-        # 确保时间列是 datetime 类型
+        # 确保时间列是 datetime 类型，便于按频率分组。
         if not pd.api.types.is_datetime64_any_dtype(df_copy[time_column]):
             try:
                 df_copy[time_column] = pd.to_datetime(df_copy[time_column])
@@ -1301,7 +1286,7 @@ class SentimentAnalyzer:
                 logger.error(f"无法将 '{time_column}' 转换为 datetime: {e}")
                 raise ValueError(f"Cannot convert '{time_column}' to datetime: {e}")
 
-        # 按时间分组统计
+        # 按时间频率聚合情感统计。
         try:
             grouped = df_copy.groupby(pd.Grouper(key=time_column, freq=freq))
 
@@ -1310,7 +1295,7 @@ class SentimentAnalyzer:
                 'sentiment': 'count'
             }).reset_index()
 
-            # 扁平化列名
+            # 展平多层列名，便于下游直接使用。
             trend_data.columns = [
                 time_column,
                 'polarity_mean',
@@ -1320,10 +1305,10 @@ class SentimentAnalyzer:
                 'count'
             ]
 
-            # 填充 NaN 值（标准差在只有一个样本时为 NaN）
+            # 标准差在仅一个样本的分组中会是 NaN，这里统一补 0。
             trend_data['polarity_std'] = trend_data['polarity_std'].fillna(0)
 
-            # 计算移动平均（7 期窗口）
+            # 计算移动平均，帮助观察趋势而非单点波动。
             if len(trend_data) >= 3:
                 window_size = min(7, len(trend_data))
                 trend_data['polarity_ma'] = trend_data['polarity_mean'].rolling(
@@ -1333,7 +1318,7 @@ class SentimentAnalyzer:
             else:
                 trend_data['polarity_ma'] = trend_data['polarity_mean']
 
-            # 统计各时间段的情感分布
+            # 统计各时间段的情感分布，并并入主结果。
             sentiment_dist = df_copy.groupby(
                 [pd.Grouper(key=time_column, freq=freq), 'sentiment']
             ).size().unstack(fill_value=0)
@@ -1346,7 +1331,7 @@ class SentimentAnalyzer:
                 how='left'
             )
 
-            # 填充缺失的情感类别列
+            # 若某些时间段缺少某个情感类别，也补齐对应列，保持结构稳定。
             for sentiment_type in [self.SENTIMENT_POSITIVE, self.SENTIMENT_NEGATIVE, self.SENTIMENT_NEUTRAL]:
                 if sentiment_type not in trend_data.columns:
                     trend_data[sentiment_type] = 0
@@ -1378,12 +1363,12 @@ class SentimentAnalyzer:
             logger.warning("输入 DataFrame 为空")
             return {'error': 'Empty DataFrame'}
 
-        df = df.copy()  # 防止修改原数据
-        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转换为数字
-        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转换为数字
+        df = df.copy()  # 使用副本，避免修改调用方原始数据
+        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转成数值，非法值记为 NaN
+        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转成数值，便于统计
         report: Dict[str, Any] = {
-            'total_records': len(df),  # 总记录数
-            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 分析时间
+            'total_records': len(df),  # 报告覆盖的总记录数
+            'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 报告生成时间
         }
 
         sentiment_dist = df['sentiment'].value_counts(dropna=True).to_dict()
