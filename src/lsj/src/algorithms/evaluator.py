@@ -1417,7 +1417,7 @@ class InformationQualityEvaluator:
         else:
             peak_hour_efficiency = 0.5
 
-        # 时长近似：无 duration，用“每条记录约 3 分钟”估算
+        # 时长近似：用“每条记录约 3 分钟”估算
         minutes_per_record = 3.0
         low_efficiency_duration = float(off_hour_count * minutes_per_record / 60.0)
         late_night_entertainment_duration = float(late_night_entertainment_count * minutes_per_record / 60.0)
