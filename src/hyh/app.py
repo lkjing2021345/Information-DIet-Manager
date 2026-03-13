@@ -1089,7 +1089,10 @@ def import_items(file: UploadFile = File(...)) -> IngestAck:
 def list_items(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    limit: Optional[int] = Query(None, ge=1, le=200),
 ) -> Dict[str, Any]:
+    if limit is not None:
+        page_size = limit
     offset = (page - 1) * page_size
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) AS cnt FROM items").fetchone()["cnt"]
@@ -1509,10 +1512,14 @@ def get_analyze_result(job_id: int) -> Dict[str, Any]:
 @app.get("/dashboard/summary")
 def dashboard_summary() -> Dict[str, Any]:
     with get_conn() as conn:
+        item_state = conn.execute(
+            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
+        ).fetchone()
+        max_created_at = int(item_state["max_created_at"] or 0)
         row = conn.execute(
             "SELECT * FROM stats_daily ORDER BY day DESC LIMIT 1"
         ).fetchone()
-    if row:
+    if row and int(row["updated_at"] or 0) >= max_created_at:
         return _payload_from_stats_row(row)
     return run_analysis(force=False, backfill_limit=2000)
 
