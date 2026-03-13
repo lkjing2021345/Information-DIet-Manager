@@ -41,7 +41,7 @@ class ContentClassifier:
         self,
         keyword_dict: Optional[Dict[str, List[str]]] = None,
         model_path: Optional[str] = None,
-        pretrained_model_name: str = "xlm-roberta-large",
+        pretrained_model_name: str = "xlm-roberta-base",
         max_length: int = 128,
         inference_batch_size: int = 8,
         device: Optional[str] = None,
