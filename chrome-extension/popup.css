@@ -57,6 +57,13 @@ button {
     color: white;
 }
 
+#toggleBtn{
+    width: auto;
+        padding: 6px 16px;
+        font-size: 16px;
+        height: 36px;
+}
+
 button.danger {
     background: #d9363e;
 }
