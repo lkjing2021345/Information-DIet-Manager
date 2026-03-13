@@ -276,6 +276,7 @@ const currentDrawerData = reactive({
   timeline: []       
 })
 
+// 👉 抽屉数据拉取：已切换至正确的 /items 底层接口
 const loadDrawerData = async (silent = false) => {
   if (!silent) {
     currentDrawerData.isLoading = true;
@@ -286,22 +287,23 @@ const loadDrawerData = async (silent = false) => {
   }
 
   try {
-    const res = await axios.get(`${API_BASE_URL}/analyze/history?limit=50`)
+
+    const res = await axios.get(`${API_BASE_URL}/items?limit=50`)
     
     let records = [];
-    if (res.data && Array.isArray(res.data.runs)) {
-      records = res.data.runs.flatMap(run => run.items || []);
+    if (Array.isArray(res.data)) {
+      records = res.data; // 如果后端直接返回 [ {...}, {...} ]
     } else if (res.data && typeof res.data === 'object') {
-      records = res.data.items || res.data.data || res.data.records || res.data.history || [];
-    } else if (Array.isArray(res.data)) {
-      records = res.data;
+      // 如果后端包了一层，比如 { items: [...] } 或 { data: [...] }
+      records = res.data.items || res.data.data || res.data.records || [];
     }
 
-    if (!Array.isArray(records)) {
-      console.warn("未知的 History API 响应格式，已触发数组降级保护:", res.data);
+    if (!Array.isArray(records) || records.length === 0) {
+      console.warn("⚠️ /items 接口返回为空，或者格式无法识别:", res.data);
       records = [];
     }
 
+    // 筛选出属于当前领域的记录
     const catRecords = currentCategoryKey.value === 'global' 
       ? records 
       : records.filter(r => r.category === currentCategoryKey.value || r.alias === currentCategoryKey.value || r.category === t.value.cats[currentCategoryKey.value])
@@ -332,6 +334,7 @@ const loadDrawerData = async (silent = false) => {
         }
       })
 
+      // 提取关键词标签
       let extractedTags = [];
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
@@ -341,6 +344,7 @@ const loadDrawerData = async (silent = false) => {
       if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
       currentDrawerData.keywords = extractedTags;
 
+      // 动态 AI 处方
       const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
       const negCount = currentDrawerData.timeline.filter(i => i.sentiment === 'neg').length;
       
