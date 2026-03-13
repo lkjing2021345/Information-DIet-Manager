@@ -270,21 +270,26 @@ const loadDrawerData = async (silent = false) => {
   try {
     const res = await axios.get(`${API_BASE_URL}/analyze/history?limit=50`)
     
-    // 修复：智能解包后端的对象格式，寻找真正的数组
+    // 修复：多层级智能解包与数组扁平化 (Flatten)
     let records = [];
-    if (Array.isArray(res.data)) {
-      records = res.data; // 如果后端直接返回数组
+    
+    if (res.data && Array.isArray(res.data.runs)) {
+      // 如果存在 runs 数组，遍历所有的 run，把它们里面的 items 提取出来并“拍平”成一个一维数组
+      records = res.data.runs.flatMap(run => run.items || []);
     } else if (res.data && typeof res.data === 'object') {
-      // 适配标准的封装格式，自动去捞取 items, data, records 或 history 字段
+      // 兼容其他常规结构
       records = res.data.items || res.data.data || res.data.records || res.data.history || [];
+    } else if (Array.isArray(res.data)) {
+      // 兼容最简单的纯数组结构
+      records = res.data;
     }
 
-    // 保险：如果连这些字段都不是，强行设为空数组，防止 .filter 崩溃
     if (!Array.isArray(records)) {
       console.warn("未知的 History API 响应格式，已触发数组降级保护:", res.data);
       records = [];
     }
 
+    // 筛选出属于当前领域的记录
     const catRecords = currentCategoryKey.value === 'global' 
       ? records 
       : records.filter(r => r.category === currentCategoryKey.value || r.alias === currentCategoryKey.value || r.category === t.value.cats[currentCategoryKey.value])
@@ -293,6 +298,7 @@ const loadDrawerData = async (silent = false) => {
       currentDrawerData.hasData = true
       
       currentDrawerData.timeline = catRecords.map(r => {
+        // 重新对接 items 里的真实数据
         const dateObj = new Date(r.ts || r.created_at || Date.now());
         const timeStr = isNaN(dateObj.getTime()) ? '未知' : dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
@@ -300,15 +306,22 @@ const loadDrawerData = async (silent = false) => {
         if (r.sentiment > 0.1 || r.avg_sentiment > 0) sentimentKey = 'pos';
         if (r.sentiment < -0.1 || r.negative_ratio > 0) sentimentKey = 'neg';
 
-        const cachedFlag = r.is_cached !== undefined ? r.is_cached : (r.repeat_count > 1 || r.visits > 1);
+        const cachedFlag = r.is_cached !== undefined ? r.is_cached : (r.cached || false);
 
         return {
-          id: r.id || null, time: timeStr, title: r.title || '未知网页', url: r.url || '#', 
-          source: r.source || 'plugin', sentiment: sentimentKey, visits: r.repeat_count || r.visits || 1,
-          isCached: cachedFlag, isForceRunning: false 
+          id: r.id || null, 
+          time: timeStr, 
+          title: r.title || '未知网页',     // 对接 items 里的 title
+          url: r.url || '#',              // 对接 items 里的 url
+          source: r.source || 'plugin', 
+          sentiment: sentimentKey, 
+          visits: r.repeat_count || r.visits || 1, 
+          isCached: cachedFlag, 
+          isForceRunning: false 
         }
       })
 
+      // 提取关键词标签
       let extractedTags = [];
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
@@ -318,6 +331,7 @@ const loadDrawerData = async (silent = false) => {
       if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
       currentDrawerData.keywords = extractedTags;
 
+      // 动态 AI 处方
       const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
       const negCount = currentDrawerData.timeline.filter(i => i.sentiment === 'neg').length;
       
@@ -444,7 +458,7 @@ const fetchAndInjectData = async (silent = false) => {
       { value: getCount(['娱乐', 'ent', 'Entertainment', 'entertainment']), name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
       { value: getCount(['学习', 'edu', 'Education', 'education']), name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
       { value: getCount(['新闻', 'news', 'News', 'news']), name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+      { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
       { value: getCount(['其他', 'other', 'Other', 'other']), name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
     ]
 
@@ -511,7 +525,15 @@ const generateGraphData = (key) => {
 const handleCategorySwitch = (targetKey) => {
   if (currentCategoryKey.value === targetKey) return 
   currentCategoryKey.value = targetKey
-  fetchAndInjectData(false) // 切换分类时，强行展示 Loading 获取新数据
+  
+  // 开启短暂的 Loading 动画掩护重绘
+  isUpdating.value = true 
+  
+  // 延迟 400ms 更新图表
+  setTimeout(() => { 
+    updateAllCharts(); 
+    isUpdating.value = false;
+  }, 400)
 }
 
 const updateAllCharts = () => {
