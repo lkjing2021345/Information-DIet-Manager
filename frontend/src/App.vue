@@ -289,16 +289,29 @@ const loadDrawerData = async (silent = false) => {
     const res = await axios.get(`${API_BASE_URL}/analyze/history?limit=50`)
     
     let records = [];
-    if (res.data && Array.isArray(res.data.runs)) {
-      records = res.data.runs.flatMap(run => run.items || []);
-    } else if (res.data && typeof res.data === 'object') {
-      records = res.data.items || res.data.data || res.data.records || res.data.history || [];
-    } else if (Array.isArray(res.data)) {
-      records = res.data;
+    
+    console.log("👉 后端返回的原始数据:", res.data); // 
+
+    if (res.data) {
+      // 优先级 1：如果根目录下直接有 items，直接抓取！（大概率是这个）
+      if (Array.isArray(res.data.items)) {
+        records = res.data.items;
+      } 
+      // 优先级 2：如果真的是嵌套在 runs 里面的二维数组
+      else if (Array.isArray(res.data.runs) && res.data.runs.some(r => Array.isArray(r.items))) {
+        records = res.data.runs.flatMap(run => run.items || []);
+      }
+      // 优先级 3：其他常见情况
+      else if (Array.isArray(res.data.data)) records = res.data.data;
+      else if (Array.isArray(res.data.records)) records = res.data.records;
+      else if (Array.isArray(res.data.history)) records = res.data.history;
+      else if (Array.isArray(res.data)) records = res.data;
     }
 
-    if (!Array.isArray(records)) {
-      console.warn("未知的 History API 响应格式，已触发数组降级保护:", res.data);
+    console.log("👉 扫描后真正提取到的 records:", records);
+
+    if (!Array.isArray(records) || records.length === 0) {
+      console.warn("⚠️ 警告：解包后是个空数组，请检查上方打印的原始数据里到底有没有 url 和 title！");
       records = [];
     }
 
