@@ -200,7 +200,7 @@ const toggleSettings = () => showSettings.value = !showSettings.value
 const isUpdating = ref(true)
 const currentCategoryKey = ref('global')
 const showDrawer = ref(false)
-const isForceRefreshing = ref(false) // 👉 新增：大盘强制刷新状态锁
+const isForceRefreshing = ref(false)
 let pollingTimer = null; 
 
 const settings = reactive({
@@ -212,7 +212,6 @@ const settings = reactive({
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
-// 👉 修改：更新字典补充按钮文案
 const i18n = {
   zh: {
     sysUi: '系统级 UI 定制', langLabel: '🌐 界面语言 (Language)', visMode: '视觉引擎模式',
@@ -276,7 +275,6 @@ const currentDrawerData = reactive({
   timeline: []       
 })
 
-// 👉 抽屉数据拉取：已切换至正确的 /items 底层接口
 const loadDrawerData = async (silent = false) => {
   if (!silent) {
     currentDrawerData.isLoading = true;
@@ -287,14 +285,12 @@ const loadDrawerData = async (silent = false) => {
   }
 
   try {
-
     const res = await axios.get(`${API_BASE_URL}/items?limit=50`)
     
     let records = [];
     if (Array.isArray(res.data)) {
-      records = res.data; // 如果后端直接返回 [ {...}, {...} ]
+      records = res.data;
     } else if (res.data && typeof res.data === 'object') {
-      // 如果后端包了一层，比如 { items: [...] } 或 { data: [...] }
       records = res.data.items || res.data.data || res.data.records || [];
     }
 
@@ -303,10 +299,21 @@ const loadDrawerData = async (silent = false) => {
       records = [];
     }
 
-    // 筛选出属于当前领域的记录
+    // 修复：抽屉分类过滤严格对齐后端本地词典
+    const categoryMap = {
+      'ent': ['Entertainment', 'entertainment', '娱乐', 'ent', 'video'],
+      'edu': ['Learning', 'learning', 'Tools', 'tools', '学习', 'edu'],
+      'news': ['News', 'news', '新闻'],
+      'soc': ['Social', 'social', '社交', 'soc'],
+      'other': ['Shopping', 'shopping', 'Other', 'other', '其他']
+    };
+
     const catRecords = currentCategoryKey.value === 'global' 
       ? records 
-      : records.filter(r => r.category === currentCategoryKey.value || r.alias === currentCategoryKey.value || r.category === t.value.cats[currentCategoryKey.value])
+      : records.filter(r => {
+          const matchKeys = categoryMap[currentCategoryKey.value] || [];
+          return matchKeys.includes(r.category) || matchKeys.includes(r.alias) || r.category === t.value.cats[currentCategoryKey.value];
+        });
 
     if (catRecords && catRecords.length > 0) {
       currentDrawerData.hasData = true
@@ -334,7 +341,6 @@ const loadDrawerData = async (silent = false) => {
         }
       })
 
-      // 提取关键词标签
       let extractedTags = [];
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
@@ -344,7 +350,6 @@ const loadDrawerData = async (silent = false) => {
       if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
       currentDrawerData.keywords = extractedTags;
 
-      // 动态 AI 处方
       const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
       const negCount = currentDrawerData.timeline.filter(i => i.sentiment === 'neg').length;
       
@@ -454,7 +459,6 @@ let pieChart, graphChart, lineRepChart, lineSentChart;
 
 const getChartUIConfig = () => ({ text: settings.isLightMode ? '#334155' : '#cbd5e1', line: settings.isLightMode ? '#cbd5e1' : '#334155', tooltip: settings.isLightMode ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)', fontFamily: settings.fontFamily })
 
-// 👉 修改：大盘接口接收 force 标识并挂载到请求中
 const fetchAndInjectData = async (silent = false, force = false) => {
   try {
     if (!silent && !force) isUpdating.value = true;
@@ -463,16 +467,28 @@ const fetchAndInjectData = async (silent = false, force = false) => {
     const summary = summaryRes.data
     const counts = summary.channel_counts || {} 
     
+    //  1. 计算总浏览量
+    const totalCount = Object.values(counts).reduce((sum, val) => sum + val, 0);
+
     const getCount = (keys) => keys.reduce((sum, k) => sum + (counts[k] || 0), 0)
+    
+    //  2. 扩充词库：完美对齐后端词典
+    const entCount = getCount(['Entertainment', 'entertainment', '娱乐', 'ent', 'video']);
+    const eduCount = getCount(['Learning', 'learning', 'Tools', 'tools', '学习', 'edu']);
+    const newsCount = getCount(['News', 'news', '新闻']);
+    const socCount = getCount(['Social', 'social', '社交', 'soc']);
+
+    //  3. 兜底：扣除四大类后，剩下的全进其他
+    const otherCount = Math.max(0, totalCount - entCount - eduCount - newsCount - socCount);
+
     db['global'].pieData = [
-      { value: getCount(['娱乐', 'ent', 'Entertainment', 'entertainment']), name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
-      { value: getCount(['学习', 'edu', 'Education', 'education']), name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
-      { value: getCount(['新闻', 'news', 'News', 'news']), name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
-      { value: getCount(['其他', 'other', 'Other', 'other']), name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
+      { value: entCount, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
+      { value: eduCount, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
+      { value: newsCount, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
+      { value: socCount, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
+      { value: otherCount, name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
     ]
 
-    // 根据 force 状态决定是否穿透缓存
     const visUrl = force 
       ? `${API_BASE_URL}/dashboard/visualization?days=7&force=1` 
       : `${API_BASE_URL}/dashboard/visualization?days=7`;
@@ -511,16 +527,12 @@ const fetchAndInjectData = async (silent = false, force = false) => {
   }
 }
 
-// 👉 新增：触发全局大盘强制刷新的方法
 const triggerGlobalForceRefresh = async () => {
   if (isForceRefreshing.value) return;
   isForceRefreshing.value = true;
   
   try {
-    // 强制调用接口刷新大盘数据
     await fetchAndInjectData(true, true); 
-    
-    // 如果抽屉正打开，顺带也刷新一下
     if (showDrawer.value) {
       await loadDrawerData(true);
     }
@@ -684,7 +696,6 @@ h1, h2, h3, h4, p, span, div, button, input, select, a { font-family: inherit; }
 .card-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .card-title-row h2 { margin: 0; font-size: 1.3rem; color: var(--text-main); }
 
-/* 👉 新增：操作组与按钮样式 */
 .card-actions { display: flex; gap: 12px; align-items: center; }
 .force-refresh-btn, .trace-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid; padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
 .force-refresh-btn:hover:not(:disabled), .trace-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
