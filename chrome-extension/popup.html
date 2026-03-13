@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>信息茧房采集器</title>
+    <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+    <div class="wrap">
+        <h1>信息茧房采集器</h1>
+
+        <div class="card">
+            <div class="row">
+                <span>插件状态</span>
+                <button id="toggleBtn">加载中</button>
+            </div>
+            <div class="row">
+                <span>队列长度</span>
+                <strong id="queueSize">-</strong>
+            </div>
+            <div class="row">
+                <span>最近同步</span>
+                <strong id="lastFlushAt">-</strong>
+            </div>
+            <div class="row">
+                <span>最近成功</span>
+                <strong id="lastSuccessAt">-</strong>
+            </div>
+        </div>
+
+        <div class="card">
+            <label for="endpoint">接口地址</label>
+            <input id="endpoint" type="text" placeholder="http://127.0.0.1:8000/collect" />
+
+            <label for="flushIntervalMinutes">同步间隔（分钟）</label>
+            <input id="flushIntervalMinutes" type="number" min="1" max="30" />
+
+            <label for="minTextLength">最小正文长度</label>
+            <input id="minTextLength" type="number" min="20" max="500" />
+
+            <button id="saveBtn">保存配置</button>
+        </div>
+
+        <div class="card">
+            <button id="flushBtn">立即同步</button>
+            <button id="clearBtn" class="danger">清空队列</button>
+            <div id="result" class="result"></div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

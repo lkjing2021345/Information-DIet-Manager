@@ -1,0 +1,69 @@
+body {
+    margin: 0;
+    font-family: Arial, "Microsoft YaHei", sans-serif;
+    background: #f6f8fa;
+    color: #222;
+}
+
+.wrap {
+    width: 340px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+h1 {
+    margin: 0 0 12px;
+    font-size: 18px;
+}
+
+.card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+label {
+    display: block;
+    font-size: 12px;
+    margin: 8px 0 4px;
+    color: #555;
+}
+
+input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+}
+
+button {
+    width: 100%;
+    border: none;
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    margin-top: 8px;
+    background: #1677ff;
+    color: white;
+}
+
+button.danger {
+    background: #d9363e;
+}
+
+.result {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #444;
+    word-break: break-all;
+}

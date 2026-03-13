@@ -1,29 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "Information Diet Collector",
-  "version": "0.2.1",
-  "description": "Collect browsing information for analysis",
-
+  "name": "信息茧房程度分析系统 - 采集插件",
+  "version": "0.2.0",
+  "description": "采集浏览内容并发送到信息茧房程度分析系统后端",
   "permissions": [
-    "tabs",
-    "scripting",
-    "activeTab",
     "storage",
-    "alarms"
+    "alarms",
+    "tabs",
+    "scripting"
   ],
-
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
   ],
-
   "background": {
     "service_worker": "background.js"
   },
-
-  "web_accessible_resources": [
+  "action": {
+    "default_title": "信息茧房采集器",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
     {
-      "resources": ["readability.js"],
-      "matches": ["<all_urls>"]
+      "matches": ["<all_urls>"],
+      "js": ["readability.js", "content.js"],
+      "run_at": "document_idle"
     }
   ]
 }

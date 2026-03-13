@@ -16,12 +16,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from .db import get_conn, init_db
 from .models import IngestAck, IngestItem
 from .utils import normalize_text, normalize_url, sha256_hex
 
 from contextlib import asynccontextmanager
+
+from urllib.parse import urlparse
 
 MAX_TEXT_LEN = 1000
 EMBEDDING_DIM = 128
@@ -31,6 +34,32 @@ JOB_QUEUED = "queued"
 JOB_RUNNING = "running"
 JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
+DEFAULT_VIS_DAYS = 7
+DEFAULT_REPEAT_THRESHOLD = 0.85
+CATEGORY_ALIAS_MAP = {
+    "entertainment": "ent",
+    "learning": "edu",
+    "news": "news",
+    "social": "soc",
+    "shopping": "shopping",
+    "tools": "tools",
+    "other": "other",
+}
+CHANNEL_CANONICAL_KEYS = ("ent", "edu", "news", "soc", "other")
+CHANNEL_ALIAS_MAP = {
+    "ent": "ent",
+    "edu": "edu",
+    "news": "news",
+    "soc": "soc",
+    "other": "other",
+    "entertainment": "ent",
+    "learning": "edu",
+    "social": "soc",
+    "娱乐": "ent",
+    "学习": "edu",
+    "新闻": "news",
+    "社交": "soc",
+}
 
 
 def _now_ms() -> int:
@@ -236,7 +265,7 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
     channel_counts = None
     if row["channel_counts"]:
         try:
-            channel_counts = json.loads(row["channel_counts"])
+            channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
         except json.JSONDecodeError:
             channel_counts = None
     return {
@@ -266,6 +295,242 @@ def _ensure_lsj_import_path() -> None:
     path = str(alg_dir)
     if path not in sys.path:
         sys.path.insert(0, path)
+
+
+def _normalize_category_key(value: Any) -> str:
+    return str(value or "other").strip().lower() or "other"
+
+
+def _canonicalize_channel_key(value: Any) -> str:
+    key = _clean_optional_str(value) or "other"
+    return CHANNEL_ALIAS_MAP.get(key.lower(), "other")
+
+
+def _normalize_channel_counts(counts: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]]:
+    if counts is None:
+        return None
+
+    normalized: Dict[str, int] = {}
+    for raw_key, raw_count in counts.items():
+        canonical_key = _canonicalize_channel_key(raw_key)
+        try:
+            count = int(raw_count or 0)
+        except (TypeError, ValueError):
+            continue
+        normalized[canonical_key] = normalized.get(canonical_key, 0) + count
+
+    return {key: normalized.get(key, 0) for key in CHANNEL_CANONICAL_KEYS}
+
+
+def _round_metric(value: Any) -> float:
+    return round(float(value or 0.0), 6)
+
+
+def _default_visualization_payload() -> Dict[str, Any]:
+    return {
+        "time_series": [],
+        "category_distribution": {},
+        "sentiment_distribution": {},
+        "similarity_histogram": {},
+        "hourly_distribution": {},
+    }
+
+
+def _default_visualization_result(
+    *,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+    input_count: int = 0,
+    generated_at: Optional[int] = None,
+    pipeline_warning: Optional[str] = None,
+) -> Dict[str, Any]:
+    aliases = {
+        key: alias for key, alias in sorted(CATEGORY_ALIAS_MAP.items(), key=lambda item: item[0])
+    }
+    return {
+        "window": {
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "limit_rows": limit_rows,
+            "input_count": input_count,
+        },
+        "global": _default_visualization_payload(),
+        "categories": {},
+        "category_aliases": aliases,
+        "pipeline_warning": pipeline_warning,
+        "generated_at": generated_at if generated_at is not None else _now_ms(),
+    }
+
+
+def _prepare_analysis_dataframe(rows: List[Dict[str, Any]]) -> Any:
+    import pandas as pd  # type: ignore
+
+    df = pd.DataFrame(rows)
+    df["title"] = df["title"].fillna("").astype(str)
+    df["text"] = df["text"].fillna(df["title"]).astype(str)
+    df["analysis_text"] = df["text"].where(
+        df["text"].str.strip() != "", df["title"]
+    )
+    df["url"] = df["url"].fillna("").astype(str)
+    df["channel"] = df["channel"].fillna("unknown").astype(str)
+    return df
+
+
+def _execute_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {"ok": True, "input_count": 0}
+
+    try:
+        _ensure_lsj_import_path()
+        from classifier import ContentClassifier  # type: ignore
+        from evaluator import InformationQualityEvaluator  # type: ignore
+        from sentiment import SentimentAnalyzer  # type: ignore
+        from similarity import SimilarityAnalyzer  # type: ignore
+
+        df = _prepare_analysis_dataframe(rows)
+
+        classifier = ContentClassifier()
+        sentiment = SentimentAnalyzer()
+        similarity = SimilarityAnalyzer()
+        evaluator = InformationQualityEvaluator(
+            sentiment_analyzer=sentiment,
+            content_classifier=classifier,
+            similarity_analyzer=similarity,
+        )
+
+        df1 = classifier.batch_predict(
+            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
+        )
+        df2 = sentiment.batch_predict(
+            df1, text_column="analysis_text", include_emotions=False, batch_size=500
+        )
+        df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
+        if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
+            df3["similarity"] = df3["similarity_to_previous"]
+
+        return {
+            "ok": True,
+            "input_count": int(len(df3)),
+            "evaluator": evaluator,
+            "df3": df3,
+        }
+    except Exception as exc:
+        normalized = [
+            normalize_text(
+                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
+            )
+            for r in rows
+        ]
+        total = len(normalized)
+        distinct = len(set(normalized))
+        repeat_ratio = float(
+            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
+        )
+        return {
+            "ok": False,
+            "input_count": total,
+            "repeat_ratio": repeat_ratio,
+            "warning": f"lsj pipeline unavailable: {exc}",
+        }
+
+
+def _build_daily_metric_rows(df: Any) -> List[Dict[str, Any]]:
+    if df.empty or "timestamp" not in df.columns:
+        return []
+
+    work = df.dropna(subset=["timestamp"]).copy()
+    if work.empty:
+        return []
+
+    work["date"] = work["timestamp"].dt.date.astype(str)
+    work["is_negative"] = (work["sentiment"] == "negative").astype(float)
+    work["is_positive"] = (work["sentiment"] == "positive").astype(float)
+    work["is_neutral"] = (work["sentiment"] == "neutral").astype(float)
+    work["is_repeat"] = (
+        work["similarity"].astype(float) >= DEFAULT_REPEAT_THRESHOLD
+    ).astype(float)
+
+    daily = (
+        work.groupby("date")
+        .agg(
+            count=("title", "count"),
+            avg_polarity=("polarity", "mean"),
+            avg_similarity=("similarity", "mean"),
+            repeat_ratio=("is_repeat", "mean"),
+            negative_ratio=("is_negative", "mean"),
+            positive_ratio=("is_positive", "mean"),
+            neutral_ratio=("is_neutral", "mean"),
+        )
+        .reset_index()
+        .sort_values(by="date")
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for item in daily.to_dict("records"):
+        rows.append(
+            {
+                "date": str(item["date"]),
+                "count": int(item["count"]),
+                "avg_polarity": _round_metric(item["avg_polarity"]),
+                "avg_similarity": _round_metric(item["avg_similarity"]),
+                "repeat_ratio": _round_metric(item["repeat_ratio"]),
+                "negative_ratio": _round_metric(item["negative_ratio"]),
+                "positive_ratio": _round_metric(item["positive_ratio"]),
+                "neutral_ratio": _round_metric(item["neutral_ratio"]),
+            }
+        )
+    return rows
+
+
+def _build_category_visualization(df: Any) -> Dict[str, Any]:
+    if df.empty or "category" not in df.columns:
+        return {}
+
+    categories: Dict[str, Any] = {}
+    for category, group in df.groupby("category"):
+        key = _normalize_category_key(category)
+        categories[key] = {
+            "alias": CATEGORY_ALIAS_MAP.get(key, key),
+            "label": str(category),
+            "time_series": _build_daily_metric_rows(group),
+        }
+
+    return dict(sorted(categories.items(), key=lambda item: item[0]))
+
+
+def _build_visualization_result(
+    rows: List[Dict[str, Any]],
+    *,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+) -> Dict[str, Any]:
+    base = _default_visualization_result(
+        from_ts=from_ts,
+        to_ts=to_ts,
+        limit_rows=limit_rows,
+        input_count=len(rows),
+    )
+    execution = _execute_lsj_pipeline(rows)
+
+    if not execution.get("ok"):
+        base["pipeline_warning"] = execution.get("warning")
+        return base
+
+    if int(execution.get("input_count") or 0) == 0:
+        return base
+
+    evaluator = execution["evaluator"]
+    df3 = execution["df3"]
+    processed = evaluator._preprocess_data(df3)
+    global_payload = evaluator.get_visualization_data(df3)
+    global_payload["time_series"] = _build_daily_metric_rows(processed)
+
+    base["window"]["input_count"] = int(execution["input_count"])
+    base["global"] = global_payload
+    base["categories"] = _build_category_visualization(processed)
+    return base
 
 
 def _load_items_for_analysis(
@@ -386,96 +651,57 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "full_report": None,
         }
 
-    try:
-        _ensure_lsj_import_path()
-        import pandas as pd  # type: ignore
-        from classifier import ContentClassifier  # type: ignore
-        from evaluator import InformationQualityEvaluator  # type: ignore
-        from sentiment import SentimentAnalyzer  # type: ignore
-        from similarity import SimilarityAnalyzer  # type: ignore
-
-        df = pd.DataFrame(rows)
-        df["title"] = df["title"].fillna("").astype(str)
-        df["text"] = df["text"].fillna(df["title"]).astype(str)
-        df["analysis_text"] = df["text"].where(
-            df["text"].str.strip() != "", df["title"]
-        )
-        df["url"] = df["url"].fillna("").astype(str)
-        df["channel"] = df["channel"].fillna("unknown").astype(str)
-
-        classifier = ContentClassifier()
-        sentiment = SentimentAnalyzer()
-        similarity = SimilarityAnalyzer()
-        evaluator = InformationQualityEvaluator(
-            sentiment_analyzer=sentiment,
-            content_classifier=classifier,
-            similarity_analyzer=similarity,
-        )
-
-        df1 = classifier.batch_predict(
-            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
-        )
-        df2 = sentiment.batch_predict(
-            df1, text_column="analysis_text", include_emotions=False, batch_size=500
-        )
-        df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
-        if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
-            df3["similarity"] = df3["similarity_to_previous"]
-        quick = evaluator.quick_evaluate(df3)
-        report = evaluator.evaluate(df3, detailed=False).to_dict()
-
-        sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
-        category_norm = df3["category"].fillna("other").astype(str)
-        polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
-        similarity_num = (
-            pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
-        )
-
-        negative_ratio = float((sentiment_norm == "negative").mean())
-        avg_sentiment = float(polarity_num.mean())
-        repeat_ratio = float((similarity_num >= 0.85).mean())
-
-        category_counts = {
-            str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
-        }
-        sentiment_counts = {
-            str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
-        }
-
-        return {
-            "input_count": int(len(df3)),
-            "category_counts": category_counts,
-            "sentiment_counts": sentiment_counts,
-            "negative_ratio": negative_ratio,
-            "avg_sentiment": avg_sentiment,
-            "repeat_ratio": repeat_ratio,
-            "quick_evaluation": quick,
-            "full_report": report,
-            "pipeline_warning": None,
-        }
-    except Exception as exc:
-        normalized = [
-            normalize_text(
-                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
-            )
-            for r in rows
-        ]
-        total = len(normalized)
-        distinct = len(set(normalized))
-        repeat_ratio = float(
-            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
-        )
+    execution = _execute_lsj_pipeline(rows)
+    if not execution.get("ok"):
+        total = int(execution.get("input_count") or 0)
         return {
             "input_count": total,
             "category_counts": {"unknown": total},
             "sentiment_counts": {"Neutral": total},
             "negative_ratio": 0.0,
             "avg_sentiment": 0.0,
-            "repeat_ratio": repeat_ratio,
+            "repeat_ratio": float(execution.get("repeat_ratio") or 0.0),
             "quick_evaluation": None,
             "full_report": None,
-            "pipeline_warning": f"lsj pipeline unavailable: {exc}",
+            "pipeline_warning": execution.get("warning"),
         }
+
+    import pandas as pd  # type: ignore
+
+    evaluator = execution["evaluator"]
+    df3 = execution["df3"]
+    quick = evaluator.quick_evaluate(df3)
+    report = evaluator.evaluate(df3, detailed=False).to_dict()
+
+    sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
+    category_norm = df3["category"].fillna("other").astype(str)
+    polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
+    similarity_num = (
+        pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    )
+
+    negative_ratio = float((sentiment_norm == "negative").mean())
+    avg_sentiment = float(polarity_num.mean())
+    repeat_ratio = float((similarity_num >= DEFAULT_REPEAT_THRESHOLD).mean())
+
+    category_counts = {
+        str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
+    }
+    sentiment_counts = {
+        str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
+    }
+
+    return {
+        "input_count": int(execution["input_count"]),
+        "category_counts": category_counts,
+        "sentiment_counts": sentiment_counts,
+        "negative_ratio": negative_ratio,
+        "avg_sentiment": avg_sentiment,
+        "repeat_ratio": repeat_ratio,
+        "quick_evaluation": quick,
+        "full_report": report,
+        "pipeline_warning": None,
+    }
 
 
 def _get_job_row(conn: Any, job_id: int) -> Optional[Dict[str, Any]]:
@@ -571,6 +797,236 @@ def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
     return items
 
 
+# 以下函数用于辅助“后端->逻辑”的接口实现
+def _safe_json_loads(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _load_items_for_export(
+    conn: Any,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+) -> List[Dict[str, Any]]:
+    where_parts = ["1=1"]
+    params: List[Any] = []
+    if from_ts is not None:
+        where_parts.append("ts >= ?")
+        params.append(from_ts)
+    if to_ts is not None:
+        where_parts.append("ts <= ?")
+        params.append(to_ts)
+
+    where_sql = " AND ".join(where_parts)
+    sql = f"""
+        SELECT id, url, title, text, ts, source, lang, channel, author, tags, meta, created_at
+        FROM items
+        WHERE {where_sql}
+        ORDER BY ts ASC, id ASC
+        LIMIT ?
+    """
+    params.append(limit_rows)
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
+    shaped: List[Dict[str, Any]] = []
+    for r in rows:
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        tags = _safe_json_loads(r.get("tags"))
+        meta = _safe_json_loads(r.get("meta"))
+
+        if view == "analysis":
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "title": title,
+                    "url": r.get("url"),
+                    "analysis_text": text,
+                    "text": text,
+                    "channel": _clean_optional_str(r.get("channel")) or "unknown",
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                }
+            )
+        else:  # raw
+            shaped.append(
+                {
+                    "id": r.get("id"),
+                    "url": r.get("url"),
+                    "title": title,
+                    "text": text,
+                    "ts": r.get("ts"),
+                    "source": r.get("source"),
+                    "lang": r.get("lang"),
+                    "channel": r.get("channel"),
+                    "author": r.get("author"),
+                    "tags": tags,
+                    "meta": meta,
+                    "created_at": r.get("created_at"),
+                }
+            )
+    return shaped
+
+
+def _to_jsonl(items: List[Dict[str, Any]]) -> str:
+    return "\n".join(json.dumps(x, ensure_ascii=False) for x in items)
+
+
+def _to_csv(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    buf = io.StringIO()
+    fieldnames = list(items[0].keys())
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in items:
+        safe_row = {}
+        for k, v in row.items():
+            if isinstance(v, (dict, list)):
+                safe_row[k] = json.dumps(v, ensure_ascii=False)
+            else:
+                safe_row[k] = v
+        writer.writerow(safe_row)
+    return buf.getvalue()
+
+
+def _host_is_private(host: str) -> bool:
+    h = (host or "").lower().strip()
+    if not h:
+        return False
+    if h in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    if h.endswith(".local"):
+        return True
+    if h.startswith("10."):
+        return True
+    if h.startswith("192.168."):
+        return True
+    if h.startswith("172."):
+        # 172.16.0.0 - 172.31.255.255
+        parts = h.split(".")
+        if len(parts) >= 2 and parts[1].isdigit():
+            sec = int(parts[1])
+            if 16 <= sec <= 31:
+                return True
+    return False
+
+
+def _is_internal_url(url: str) -> bool:
+    try:
+        u = urlparse(url)
+        return _host_is_private(u.hostname or "")
+    except Exception:
+        return False
+
+
+def _is_auth_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "login",
+        "signin",
+        "sign-in",
+        "signup",
+        "sign-up",
+        "oauth",
+        "authorize",
+        "sso",
+        "callback",
+        "logout",
+        "register",
+        "captcha",
+        "verify",
+        "auth",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _is_search_like(url: str, title: Optional[str] = None) -> bool:
+    s = f"{url} {title or ''}".lower()
+    keywords = [
+        "/search",
+        "search?",
+        "q=",
+        "query=",
+        "code search results",
+        "google search",
+    ]
+    return any(k in s for k in keywords)
+
+
+def _compress_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _prepare_training_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    label_field: str,
+    exclude_internal: bool,
+    exclude_auth_pages: bool,
+    exclude_search_pages: bool,
+    dedup_by_input: bool,
+    max_input_len: int,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for r in rows:
+        url = str(r.get("url") or "")
+        title = _clean_optional_str(r.get("title")) or ""
+        text = _clean_optional_str(r.get("text")) or title
+
+        if exclude_internal and _is_internal_url(url):
+            continue
+        if exclude_auth_pages and _is_auth_like(url, title):
+            continue
+        if exclude_search_pages and _is_search_like(url, title):
+            continue
+
+        input_text = _compress_ws(text)
+        if not input_text:
+            continue
+        if len(input_text) > max_input_len:
+            input_text = input_text[:max_input_len]
+
+        label = _clean_optional_str(r.get(label_field)) or "unknown"
+
+        if dedup_by_input:
+            key = normalize_text("", input_text)
+            if key in seen:
+                continue
+            seen.add(key)
+
+        out.append(
+            {
+                "input": input_text,
+                "label": label,
+                "ts": r.get("ts"),
+                "url": url,
+                "title": title,
+                "source": r.get("source"),
+            }
+        )
+    return out
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # 启动逻辑：和原来的 on_startup 完全一致
@@ -587,12 +1043,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=["*"],  # 允许前端请求
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.post("/collect", response_model=IngestAck)
 def collect(item: IngestItem) -> IngestAck:
@@ -717,9 +1173,9 @@ def run_analysis(
         repeat_ratio = 0.0
         if total:
             repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = {
-            row["channel"] or "unknown": row["cnt"] for row in channel_rows
-        }
+        channel_counts = _normalize_channel_counts(
+            {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
+        ) or {key: 0 for key in CHANNEL_CANONICAL_KEYS}
         now_ms = _now_ms()
         conn.execute(
             """
@@ -913,8 +1369,11 @@ def run_full_analysis(
 
             channel_counts: Dict[str, int] = {}
             for r in rows:
-                key = _clean_optional_str(r.get("channel")) or "unknown"
+                key = _canonicalize_channel_key(r.get("channel"))
                 channel_counts[key] = channel_counts.get(key, 0) + 1
+            channel_counts = _normalize_channel_counts(channel_counts) or {
+                key: 0 for key in CHANNEL_CANONICAL_KEYS
+            }
 
             conn.execute(
                 """
@@ -1055,7 +1514,170 @@ def dashboard_summary() -> Dict[str, Any]:
         ).fetchone()
     if row:
         return _payload_from_stats_row(row)
-    return run_analysis()
+    return run_analysis(force=False, backfill_limit=2000)
+
+
+# 以下路由用于“后端->逻辑”的接口
+@app.get("/dashboard/visualization")
+def dashboard_visualization(
+    days: int = Query(DEFAULT_VIS_DAYS, ge=1, le=90),
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=50000),
+) -> Dict[str, Any]:
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    now_ms = _now_ms()
+    resolved_to_ts = to_ts if to_ts is not None else now_ms
+    resolved_from_ts = (
+        from_ts
+        if from_ts is not None
+        else max(0, resolved_to_ts - days * 24 * 60 * 60 * 1000)
+    )
+
+    with get_conn() as conn:
+        rows = _load_items_for_analysis(
+            conn,
+            from_ts=resolved_from_ts,
+            to_ts=resolved_to_ts,
+            limit_rows=limit_rows,
+        )
+
+    return _build_visualization_result(
+        rows,
+        from_ts=resolved_from_ts,
+        to_ts=resolved_to_ts,
+        limit_rows=limit_rows,
+    )
+
+
+@app.get("/export/lsj")
+def export_lsj(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    view: str = Query("analysis", pattern="^(analysis|raw)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+) -> Any:
+    """
+    导出给 lsj 使用：
+    - view=analysis: 含 analysis_text/channel/ts（推荐给分析）
+    - view=raw: 接近原始采集字段
+    - fmt=json|jsonl|csv
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _shape_export_rows(rows, view=view)
+
+    if fmt == "json":
+        return {
+            "count": len(items),
+            "view": view,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": f'attachment; filename="lsj_export_{view}.jsonl"'
+            },
+        )
+
+    # csv
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="lsj_export_{view}.csv"'
+        },
+    )
+
+
+@app.get("/export/lsj/training")
+def export_lsj_training(
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=200000),
+    label_field: str = Query("channel", pattern="^(channel|source)$"),
+    fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
+    # 新增参数
+    bare: bool = Query(True, description="json格式时仅返回数组，适配 data_cleaning.py"),
+    exclude_internal: bool = Query(
+        True, description="过滤 localhost/127.0.0.1/内网地址"
+    ),
+    exclude_auth_pages: bool = Query(True, description="过滤登录/oauth/授权回调等页面"),
+    exclude_search_pages: bool = Query(False, description="过滤搜索结果页"),
+    dedup_by_input: bool = Query(True, description="按 input 去重"),
+    max_input_len: int = Query(1000, ge=50, le=5000),
+) -> Any:
+    """
+    导出为 data_cleaning.py 友好结构:
+    [{input, label, ts, url, title, source}]
+    """
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    with get_conn() as conn:
+        rows = _load_items_for_export(
+            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
+        )
+
+    items = _prepare_training_rows(
+        rows,
+        label_field=label_field,
+        exclude_internal=exclude_internal,
+        exclude_auth_pages=exclude_auth_pages,
+        exclude_search_pages=exclude_search_pages,
+        dedup_by_input=dedup_by_input,
+        max_input_len=max_input_len,
+    )
+
+    if fmt == "json":
+        if bare:
+            return items
+        return {
+            "count": len(items),
+            "label_field": label_field,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "items": items,
+        }
+
+    if fmt == "jsonl":
+        content = _to_jsonl(items)
+        return StreamingResponse(
+            io.StringIO(content),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": 'attachment; filename="lsj_training.jsonl"'
+            },
+        )
+
+    content = _to_csv(items)
+    return StreamingResponse(
+        io.StringIO(content),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="lsj_training.csv"'},
+    )
 
 
 if __name__ == "__main__":

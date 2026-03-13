@@ -237,6 +237,12 @@ const i18n = {
   }
 }
 const t = computed(() => i18n[settings.lang])
+i18n.zh.cats.other = '其他'
+i18n.zh.eval.otherScore = 'B 中性观察'
+i18n.zh.eval.otherMsg = '这部分内容暂未归入核心领域，建议结合来源与主题继续细分，避免 <b>未知/自定义渠道</b> 长期堆积。'
+i18n.en.cats.other = 'Other'
+i18n.en.eval.otherScore = 'B Mixed Bucket'
+i18n.en.eval.otherMsg = 'This bucket is not mapped to a core domain yet. Review those <b>unknown/custom channels</b> and classify them if they keep growing.'
 
 const getSentimentLabel = (sent) => {
   if (settings.lang === 'en') return sent === 'pos' ? '😍 Dopamine' : sent === 'neg' ? '😰 Anxiety' : '😐 Neutral';
@@ -364,11 +370,12 @@ const triggerForceRun = async (item) => {
 }
 
 const db = reactive({
-  'global': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 10, links: 10, focusMode: 'mixed', pieData: [], hasData: false },
+  'global': { repData: [0,0,0,0,0,0,0], sentPos: [0,0,0,0,0,0,0], sentNeu: [0,0,0,0,0,0,0], sentNeg: [0,0,0,0,0,0,0], nodes: 10, links: 10, focusMode: 'mixed', pieData: [], hasData: false },
   'ent': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense', hasData: false },
   'edu': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'sparse', hasData: false },
   'news': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed', hasData: false },
-  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense', hasData: false }
+  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense', hasData: false },
+  'other': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed', hasData: false }
 })
 
 const healthStatus = computed(() => {
@@ -382,9 +389,30 @@ const healthStatus = computed(() => {
     case 'edu': return { score: ev.eduScore, color: '#00ffaa', class: 'status-safe', borderClass: 'border-safe', message: ev.eduMsg.replace('{f}', f) }
     case 'news': return { score: ev.newsScore, color: '#ffd700', class: 'status-warn', borderClass: 'border-warn', message: ev.newsMsg.replace('{f}', f) }
     case 'soc': return { score: ev.socScore, color: '#ff4d4f', class: 'status-warn', borderClass: 'border-warn', message: ev.socMsg.replace('{f}', f) }
+    case 'other':
+      return {
+        score: ev.otherScore,
+        color: '#94a3b8',
+        class: 'status-warn',
+        borderClass: 'border-warn',
+        message: ev.otherMsg.replace('{f}', f)
+      }
+
     default: {
-      const maxItem = db['global'].pieData.reduce((prev, current) => (prev.value > current.value) ? prev : current, {value: -1});
-      return { score: ev.globScore, color: settings.themeColor, class: 'status-normal', borderClass: 'border-normal', message: ev.globMsg.replace('{f}', f).replace('{color}', maxItem.itemStyle?.color || settings.themeColor).replace('{maxCat}', maxItem.name) }
+      const maxItem = db['global'].pieData.reduce(
+        (prev, current) => (prev.value > current.value) ? prev : current,
+        { value: -1 }
+      )
+      return {
+        score: ev.globScore,
+        color: settings.themeColor,
+        class: 'status-normal',
+        borderClass: 'border-normal',
+        message: ev.globMsg
+          .replace('{f}', f)
+          .replace('{color}', maxItem.itemStyle?.color || settings.themeColor)
+          .replace('{maxCat}', maxItem.name)
+      }
     }
   }
 })
@@ -417,6 +445,7 @@ const fetchAndInjectData = async (silent = false) => {
       { value: getCount(['学习', 'edu', 'Education', 'education']), name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
       { value: getCount(['新闻', 'news', 'News', 'news']), name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
       { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+      { value: getCount(['其他', 'other', 'Other', 'other']), name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
     ]
 
     const visRes = await axios.get(`${API_BASE_URL}/dashboard/visualization?days=7`)
@@ -445,7 +474,8 @@ const fetchAndInjectData = async (silent = false) => {
     nextTick(() => { updateAllCharts() })
   } catch (error) {
     console.error("API 数据拉取失败:", error)
-    ['global', 'ent', 'edu', 'news', 'soc'].forEach(key => { db[key].hasData = false; db['global'].pieData = [] })
+    ['global', 'ent', 'edu', 'news', 'soc'].forEach(key => { db[key].hasData = false })
+    db['global'].pieData = []
     nextTick(() => { updateAllCharts() })
   } finally {
     if (!silent) setTimeout(() => { isUpdating.value = false }, 500)
