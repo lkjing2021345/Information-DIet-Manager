@@ -41,8 +41,8 @@ CATEGORY_ALIAS_MAP = {
     "learning": "edu",
     "news": "news",
     "social": "soc",
-    "shopping": "shopping",
-    "tools": "tools",
+    "shopping": "other",
+    "tools": "edu",
     "other": "other",
 }
 CHANNEL_CANONICAL_KEYS = ("ent", "edu", "news", "soc", "other")
@@ -55,10 +55,17 @@ CHANNEL_ALIAS_MAP = {
     "entertainment": "ent",
     "learning": "edu",
     "social": "soc",
+    "shopping": "other",
+    "tools": "edu",
+    "tool": "edu",
+    "video": "ent",
+    "web": "other",
+    "unknown": "other",
     "娱乐": "ent",
     "学习": "edu",
     "新闻": "news",
     "社交": "soc",
+    "其他": "other",
 }
 
 
@@ -268,10 +275,22 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
             channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
         except json.JSONDecodeError:
             channel_counts = None
+
+    category_counts = None
+    payload_raw = row["payload"] if "payload" in row.keys() else None
+    if payload_raw:
+        try:
+            payload = json.loads(payload_raw)
+            if isinstance(payload, dict):
+                category_counts = payload.get("category_counts")
+        except json.JSONDecodeError:
+            category_counts = None
+
     return {
         "day": row["day"],
         "total_count": row["total_count"],
         "channel_counts": channel_counts,
+        "category_counts": category_counts,
         "repeat_ratio": row["repeat_ratio"],
         "negative_ratio": row["negative_ratio"],
         "avg_sentiment": row["avg_sentiment"],
