@@ -430,7 +430,7 @@ const fetchAndInjectData = async (silent = false) => {
       { value: getCount(['娱乐', 'ent', 'Entertainment', 'entertainment']), name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
       { value: getCount(['学习', 'edu', 'Education', 'education']), name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
       { value: getCount(['新闻', 'news', 'News', 'news']), name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} }
+      { value: getCount(['社交', 'soc', 'Social', 'social']), name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
       { value: getCount(['其他', 'other', 'Other', 'other']), name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
     ]
 
