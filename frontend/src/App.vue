@@ -58,13 +58,28 @@
     <div class="summary-card tech-card" :class="healthStatus.borderClass">
       <div class="icon-pulse" :style="{ backgroundColor: healthStatus.color, boxShadow: `0 0 0 0 ${healthStatus.color}80` }"></div>
       <div class="summary-content" style="flex: 1;">
+        
         <div class="card-title-row">
           <h2>{{ t.report }}: {{ t.cats[currentCategoryKey] }} {{ t.domain }} <span class="hint-text">{{ t.hint }}</span></h2>
-          <button class="trace-btn" :style="{ color: healthStatus.color, borderColor: healthStatus.color }" @click="openDrawer">
-            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            {{ t.traceBtn }}
-          </button>
+          
+          <div class="card-actions">
+            <button class="force-refresh-btn" 
+                    :class="{ 'is-spinning': isForceRefreshing }" 
+                    :style="{ color: healthStatus.color, borderColor: healthStatus.color }" 
+                    @click="triggerGlobalForceRefresh" 
+                    :disabled="isForceRefreshing"
+                    title="跳过后端缓存，强制重新跑一遍模型推演">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" :class="{ 'spin-anim': isForceRefreshing }"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              {{ isForceRefreshing ? t.refreshing : t.forceRefreshBtn }}
+            </button>
+            
+            <button class="trace-btn" :style="{ color: healthStatus.color, borderColor: healthStatus.color, backgroundColor: `${healthStatus.color}15` }" @click="openDrawer">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              {{ t.traceBtn }}
+            </button>
+          </div>
         </div>
+
         <p class="summary-text" v-html="healthStatus.message"></p>
       </div>
     </div>
@@ -185,7 +200,8 @@ const toggleSettings = () => showSettings.value = !showSettings.value
 const isUpdating = ref(true)
 const currentCategoryKey = ref('global')
 const showDrawer = ref(false)
-let pollingTimer = null; // 👉 轮询定时器引用
+const isForceRefreshing = ref(false) // 👉 新增：大盘强制刷新状态锁
+let pollingTimer = null; 
 
 const settings = reactive({
   lang: 'zh',
@@ -196,13 +212,15 @@ const settings = reactive({
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
+// 👉 修改：更新字典补充按钮文案
 const i18n = {
   zh: {
     sysUi: '系统级 UI 定制', langLabel: '🌐 界面语言 (Language)', visMode: '视觉引擎模式',
     dark: '🌙 极客暗黑', light: '☀️ 护眼明亮', color: '神经突触高亮色', font: '全局渲染字体族',
     health: '生态健康度', report: '深度剖析报告', domain: '领域', hint: '(💡 点击左侧饼图交互)', loading: '正在通过神经网络链接服务器获取 [{cat}] 数据...',
     c1: '摄入结构特征 (点击切片下钻)', c2: '信息群落知识图谱', c3: '深度复读率走势', c4: '情感共振频段分析', mockHint: '(基于真实特征数据动态拓扑渲染)',
-    traceBtn: '深度溯源', drawerTitle: '领域底层数据透视', kwTitle: '高频特征提取', aiTitle: 'AI 干预处方', tlTitle: '原始浏览行为迹线',
+    traceBtn: '深度溯源', forceRefreshBtn: '⚡ 强制大盘推演', refreshing: '推演中...',
+    drawerTitle: '领域底层数据透视', kwTitle: '高频特征提取', aiTitle: 'AI 干预处方', tlTitle: '原始浏览行为迹线',
     week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', '昨日', '今日'], sent: ['多巴胺(正向)', '客观(中性)', '焦虑(负向)'],
     noData: '暂无真实趋势数据',
     cats: { global: '全局概览', ent: '娱乐', edu: '学习', news: '新闻', soc: '社交' },
@@ -221,7 +239,8 @@ const i18n = {
     dark: '🌙 Cyber Dark', light: '☀️ Clean Light', color: 'Synapse Highlight Color', font: 'Global Font Family',
     health: 'Eco-Health', report: 'In-Depth Report', domain: 'Domain', hint: '(💡 Click pie chart to drill down)', loading: 'Connecting server to fetch [{cat}] models...',
     c1: 'Intake Structure (Interactive)', c2: 'Information Cluster Graph', c3: 'Deep Repetition Trend', c4: 'Emotional Resonance Freq', mockHint: '(Data-driven Topology)',
-    traceBtn: 'Deep Trace', drawerTitle: 'Raw Data Penetration', kwTitle: 'High-Freq Features', aiTitle: 'AI Intervention Rx', tlTitle: 'Raw Browsing Timeline',
+    traceBtn: 'Deep Trace', forceRefreshBtn: '⚡ Force Analyze', refreshing: 'Running...',
+    drawerTitle: 'Raw Data Penetration', kwTitle: 'High-Freq Features', aiTitle: 'AI Intervention Rx', tlTitle: 'Raw Browsing Timeline',
     week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Yest.', 'Today'], sent: ['Dopamine (Pos)', 'Objective (Neu)', 'Anxiety (Neg)'],
     noData: 'No Real Trend Data',
     cats: { global: 'Global', ent: 'Entertainment', edu: 'Learning', news: 'News', soc: 'Social' },
@@ -257,7 +276,6 @@ const currentDrawerData = reactive({
   timeline: []       
 })
 
-// 👉 核心重构：将获取抽屉数据的逻辑单独抽离，支持静默刷新 (silent)
 const loadDrawerData = async (silent = false) => {
   if (!silent) {
     currentDrawerData.isLoading = true;
@@ -270,17 +288,12 @@ const loadDrawerData = async (silent = false) => {
   try {
     const res = await axios.get(`${API_BASE_URL}/analyze/history?limit=50`)
     
-    // 修复：多层级智能解包与数组扁平化 (Flatten)
     let records = [];
-    
     if (res.data && Array.isArray(res.data.runs)) {
-      // 如果存在 runs 数组，遍历所有的 run，把它们里面的 items 提取出来并“拍平”成一个一维数组
       records = res.data.runs.flatMap(run => run.items || []);
     } else if (res.data && typeof res.data === 'object') {
-      // 兼容其他常规结构
       records = res.data.items || res.data.data || res.data.records || res.data.history || [];
     } else if (Array.isArray(res.data)) {
-      // 兼容最简单的纯数组结构
       records = res.data;
     }
 
@@ -289,7 +302,6 @@ const loadDrawerData = async (silent = false) => {
       records = [];
     }
 
-    // 筛选出属于当前领域的记录
     const catRecords = currentCategoryKey.value === 'global' 
       ? records 
       : records.filter(r => r.category === currentCategoryKey.value || r.alias === currentCategoryKey.value || r.category === t.value.cats[currentCategoryKey.value])
@@ -298,7 +310,6 @@ const loadDrawerData = async (silent = false) => {
       currentDrawerData.hasData = true
       
       currentDrawerData.timeline = catRecords.map(r => {
-        // 重新对接 items 里的真实数据
         const dateObj = new Date(r.ts || r.created_at || Date.now());
         const timeStr = isNaN(dateObj.getTime()) ? '未知' : dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
@@ -311,8 +322,8 @@ const loadDrawerData = async (silent = false) => {
         return {
           id: r.id || null, 
           time: timeStr, 
-          title: r.title || '未知网页',     // 对接 items 里的 title
-          url: r.url || '#',              // 对接 items 里的 url
+          title: r.title || '未知网页', 
+          url: r.url || '#', 
           source: r.source || 'plugin', 
           sentiment: sentimentKey, 
           visits: r.repeat_count || r.visits || 1, 
@@ -321,7 +332,6 @@ const loadDrawerData = async (silent = false) => {
         }
       })
 
-      // 提取关键词标签
       let extractedTags = [];
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
@@ -331,7 +341,6 @@ const loadDrawerData = async (silent = false) => {
       if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
       currentDrawerData.keywords = extractedTags;
 
-      // 动态 AI 处方
       const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
       const negCount = currentDrawerData.timeline.filter(i => i.sentiment === 'neg').length;
       
@@ -359,20 +368,17 @@ const loadDrawerData = async (silent = false) => {
   }
 }
 
-// 触发打开抽屉
 const openDrawer = () => {
   showDrawer.value = true;
-  loadDrawerData(false); // 非静默加载，展示 Loading
+  loadDrawerData(false); 
 }
 
-// 👉 核心重构：强制运行后触发静默大盘刷新
 const triggerForceRun = async (item) => {
   if (item.isForceRunning) return;
-  item.isForceRunning = true; // 触发自身的 loading 动画
+  item.isForceRunning = true; 
   
   try {
     await axios.post(`${API_BASE_URL}/analyze/run/force`, { url: item.url });
-    // 成功后，立刻静默重新拉取抽屉数据和大盘数据！
     await loadDrawerData(true); 
     await fetchAndInjectData(true); 
   } catch (error) {
@@ -444,10 +450,10 @@ let pieChart, graphChart, lineRepChart, lineSentChart;
 
 const getChartUIConfig = () => ({ text: settings.isLightMode ? '#334155' : '#cbd5e1', line: settings.isLightMode ? '#cbd5e1' : '#334155', tooltip: settings.isLightMode ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)', fontFamily: settings.fontFamily })
 
-// 👉 核心重构：支持后台静默刷新的大盘抓取接口
-const fetchAndInjectData = async (silent = false) => {
+// 👉 修改：大盘接口接收 force 标识并挂载到请求中
+const fetchAndInjectData = async (silent = false, force = false) => {
   try {
-    if (!silent) isUpdating.value = true; // 仅在非静默模式显示中央 Logo Loading
+    if (!silent && !force) isUpdating.value = true;
 
     const summaryRes = await axios.get(`${API_BASE_URL}/dashboard/summary`)
     const summary = summaryRes.data
@@ -462,7 +468,12 @@ const fetchAndInjectData = async (silent = false) => {
       { value: getCount(['其他', 'other', 'Other', 'other']), name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
     ]
 
-    const visRes = await axios.get(`${API_BASE_URL}/dashboard/visualization?days=7`)
+    // 根据 force 状态决定是否穿透缓存
+    const visUrl = force 
+      ? `${API_BASE_URL}/dashboard/visualization?days=7&force=1` 
+      : `${API_BASE_URL}/dashboard/visualization?days=7`;
+      
+    const visRes = await axios.get(visUrl)
     const visData = visRes.data
     const hasWarning = !!visData.pipeline_warning
 
@@ -492,7 +503,27 @@ const fetchAndInjectData = async (silent = false) => {
     db['global'].pieData = []
     nextTick(() => { updateAllCharts() })
   } finally {
-    if (!silent) setTimeout(() => { isUpdating.value = false }, 500)
+    if (!silent && !force) setTimeout(() => { isUpdating.value = false }, 500)
+  }
+}
+
+// 👉 新增：触发全局大盘强制刷新的方法
+const triggerGlobalForceRefresh = async () => {
+  if (isForceRefreshing.value) return;
+  isForceRefreshing.value = true;
+  
+  try {
+    // 强制调用接口刷新大盘数据
+    await fetchAndInjectData(true, true); 
+    
+    // 如果抽屉正打开，顺带也刷新一下
+    if (showDrawer.value) {
+      await loadDrawerData(true);
+    }
+  } catch (error) {
+    console.error("大盘强制推演失败:", error);
+  } finally {
+    isForceRefreshing.value = false;
   }
 }
 
@@ -526,10 +557,8 @@ const handleCategorySwitch = (targetKey) => {
   if (currentCategoryKey.value === targetKey) return 
   currentCategoryKey.value = targetKey
   
-  // 开启短暂的 Loading 动画掩护重绘
   isUpdating.value = true 
   
-  // 延迟 400ms 更新图表
   setTimeout(() => { 
     updateAllCharts(); 
     isUpdating.value = false;
@@ -601,21 +630,20 @@ watch(() => [settings.isLightMode, settings.themeColor, settings.fontFamily, set
 const handleResize = () => { pieChart?.resize(); graphChart?.resize(); lineRepChart?.resize(); lineSentChart?.resize() }
 
 onMounted(() => { 
-  fetchAndInjectData(); // 初始拉取
+  fetchAndInjectData(); 
   window.addEventListener('resize', handleResize);
   
-  // 👉 增加静默轮询引擎 (30秒拉取一次最新数据)
   pollingTimer = setInterval(() => {
-    fetchAndInjectData(true); // true 代表静默刷新大盘
+    fetchAndInjectData(true); 
     if (showDrawer.value) {
-      loadDrawerData(true); // 如果抽屉开着，也静默刷新抽屉里的数据
+      loadDrawerData(true); 
     }
   }, 30000);
 })
 
 onUnmounted(() => { 
   window.removeEventListener('resize', handleResize); 
-  if (pollingTimer) clearInterval(pollingTimer); // 清理定时器
+  if (pollingTimer) clearInterval(pollingTimer); 
   pieChart?.dispose(); graphChart?.dispose(); lineRepChart?.dispose(); lineSentChart?.dispose();
 })
 </script>
@@ -651,8 +679,13 @@ h1, h2, h3, h4, p, span, div, button, input, select, a { font-family: inherit; }
 
 .card-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .card-title-row h2 { margin: 0; font-size: 1.3rem; color: var(--text-main); }
-.trace-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid; padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
-.trace-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+
+/* 👉 新增：操作组与按钮样式 */
+.card-actions { display: flex; gap: 12px; align-items: center; }
+.force-refresh-btn, .trace-btn { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid; padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+.force-refresh-btn:hover:not(:disabled), .trace-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+.force-refresh-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.spin-anim { animation: spin 1s linear infinite; }
 
 .summary-text { margin: 0; font-size: 1.1rem; line-height: 1.6; color: var(--text-muted); }
 .hint-text { font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px; animation: blink 2s infinite; }
