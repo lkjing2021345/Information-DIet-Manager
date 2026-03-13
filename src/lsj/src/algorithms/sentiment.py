@@ -419,7 +419,7 @@ class SentimentAnalyzer:
                  diction: str = 'zh_common_DUTIR.yaml',
                  custom_dict_path: Optional[str] = None,
                  model_path: Optional[str] = None,
-                 stopwords_path: Optional[str] = './rules/hit_stopwords.txt',
+                 stopwords_path: Optional[str] = None,
                  bert_model_name: str = 'hfl/chinese-roberta-wwm-ext',
                  use_bert: bool = False):
         if not CNTEXT_AVAILABLE:
@@ -427,7 +427,8 @@ class SentimentAnalyzer:
             raise ImportError("cntext is required but not installed")
         self.diction = diction  # 保存当前使用的词典配置名或词典对象
         self._cntext_dict_cache: Optional[Dict[str, Any]] = None  # 缓存解析后的词典，避免重复读取
-        self.stopwords_path = stopwords_path  # 停用词文件路径
+        default_stopwords_path = Path(__file__).resolve().parent / "rules" / "hit_stopwords.txt"
+        self.stopwords_path = str(default_stopwords_path if stopwords_path is None else stopwords_path)  # 停用词文件路径
         self._stopwords_cache: set[str] | None = None  # 停用词缓存，避免重复读取文件
         # ===== 加载词典 =====
         if isinstance(self.diction, dict):

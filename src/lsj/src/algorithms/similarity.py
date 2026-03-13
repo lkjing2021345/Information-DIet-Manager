@@ -42,7 +42,7 @@ class SimilarityAnalyzer:
 
     def __init__(
         self,
-        stopwords_path: Optional[str] = "./rules/hit_stopwords.txt",
+        stopwords_path: Optional[str] = None,
         use_word_vectors: bool = False,
         word_vector_model: Optional[str] = None,
         max_features: int = 5000
@@ -56,7 +56,8 @@ class SimilarityAnalyzer:
             word_vector_model: 词向量模型路径（如 Word2Vec）
             max_features: TF-IDF 最大特征数
         """
-        self.stopwords_path = stopwords_path
+        default_stopwords_path = Path(__file__).resolve().parent / "rules" / "hit_stopwords.txt"
+        self.stopwords_path = str(default_stopwords_path if stopwords_path is None else stopwords_path)
         self.stopwords = self._load_stopwords()
 
         # TF-IDF 向量化器：统一负责中文分词后的特征抽取。
