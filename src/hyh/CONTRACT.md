@@ -66,6 +66,34 @@ Backend normalization:
 - `GET /dashboard/summary`
   - latest daily aggregate snapshot
 
+- `GET /dashboard/visualization?days=7&from_ts=&to_ts=&limit_rows=5000`
+  - on-demand visualization payload for frontend charts
+  - loads raw items in the requested time window, runs `lsj` classify/sentiment/similarity/evaluator pipeline,
+    and returns chart-ready global + category time series
+  - `from_ts` / `to_ts` are optional Unix epoch milliseconds; if omitted, backend uses `days`
+  - response shape:
+    - `window`
+      - `from_ts`, `to_ts`, `limit_rows`, `input_count`
+    - `global`
+      - `time_series`: `[{date, count, avg_polarity, avg_similarity, repeat_ratio, negative_ratio, positive_ratio, neutral_ratio}]`
+      - `category_distribution`, `sentiment_distribution`, `similarity_histogram`, `hourly_distribution`
+    - `categories`
+      - keyed by normalized category name such as `entertainment`, `learning`, `news`, `social`
+      - each item: `{alias, label, time_series}`
+      - alias mapping is stable for frontend drill-down:
+        - `entertainment -> ent`
+        - `learning -> edu`
+        - `news -> news`
+        - `social -> soc`
+        - `shopping -> shopping`
+        - `tools -> tools`
+        - `other -> other`
+    - `category_aliases`
+      - same mapping table for client-side lookup
+    - `pipeline_warning`
+      - present when `lsj` dependencies are unavailable and payload is degraded
+    - `generated_at`
+
 - `GET /analyze/history?limit=20`
   - latest run history records
 

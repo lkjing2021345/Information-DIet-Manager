@@ -34,6 +34,32 @@ JOB_QUEUED = "queued"
 JOB_RUNNING = "running"
 JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
+DEFAULT_VIS_DAYS = 7
+DEFAULT_REPEAT_THRESHOLD = 0.85
+CATEGORY_ALIAS_MAP = {
+    "entertainment": "ent",
+    "learning": "edu",
+    "news": "news",
+    "social": "soc",
+    "shopping": "shopping",
+    "tools": "tools",
+    "other": "other",
+}
+CHANNEL_CANONICAL_KEYS = ("ent", "edu", "news", "soc", "other")
+CHANNEL_ALIAS_MAP = {
+    "ent": "ent",
+    "edu": "edu",
+    "news": "news",
+    "soc": "soc",
+    "other": "other",
+    "entertainment": "ent",
+    "learning": "edu",
+    "social": "soc",
+    "娱乐": "ent",
+    "学习": "edu",
+    "新闻": "news",
+    "社交": "soc",
+}
 
 
 def _now_ms() -> int:
@@ -239,7 +265,7 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
     channel_counts = None
     if row["channel_counts"]:
         try:
-            channel_counts = json.loads(row["channel_counts"])
+            channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
         except json.JSONDecodeError:
             channel_counts = None
     return {
@@ -269,6 +295,242 @@ def _ensure_lsj_import_path() -> None:
     path = str(alg_dir)
     if path not in sys.path:
         sys.path.insert(0, path)
+
+
+def _normalize_category_key(value: Any) -> str:
+    return str(value or "other").strip().lower() or "other"
+
+
+def _canonicalize_channel_key(value: Any) -> str:
+    key = _clean_optional_str(value) or "other"
+    return CHANNEL_ALIAS_MAP.get(key.lower(), "other")
+
+
+def _normalize_channel_counts(counts: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]]:
+    if counts is None:
+        return None
+
+    normalized: Dict[str, int] = {}
+    for raw_key, raw_count in counts.items():
+        canonical_key = _canonicalize_channel_key(raw_key)
+        try:
+            count = int(raw_count or 0)
+        except (TypeError, ValueError):
+            continue
+        normalized[canonical_key] = normalized.get(canonical_key, 0) + count
+
+    return {key: normalized.get(key, 0) for key in CHANNEL_CANONICAL_KEYS}
+
+
+def _round_metric(value: Any) -> float:
+    return round(float(value or 0.0), 6)
+
+
+def _default_visualization_payload() -> Dict[str, Any]:
+    return {
+        "time_series": [],
+        "category_distribution": {},
+        "sentiment_distribution": {},
+        "similarity_histogram": {},
+        "hourly_distribution": {},
+    }
+
+
+def _default_visualization_result(
+    *,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+    input_count: int = 0,
+    generated_at: Optional[int] = None,
+    pipeline_warning: Optional[str] = None,
+) -> Dict[str, Any]:
+    aliases = {
+        key: alias for key, alias in sorted(CATEGORY_ALIAS_MAP.items(), key=lambda item: item[0])
+    }
+    return {
+        "window": {
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "limit_rows": limit_rows,
+            "input_count": input_count,
+        },
+        "global": _default_visualization_payload(),
+        "categories": {},
+        "category_aliases": aliases,
+        "pipeline_warning": pipeline_warning,
+        "generated_at": generated_at if generated_at is not None else _now_ms(),
+    }
+
+
+def _prepare_analysis_dataframe(rows: List[Dict[str, Any]]) -> Any:
+    import pandas as pd  # type: ignore
+
+    df = pd.DataFrame(rows)
+    df["title"] = df["title"].fillna("").astype(str)
+    df["text"] = df["text"].fillna(df["title"]).astype(str)
+    df["analysis_text"] = df["text"].where(
+        df["text"].str.strip() != "", df["title"]
+    )
+    df["url"] = df["url"].fillna("").astype(str)
+    df["channel"] = df["channel"].fillna("unknown").astype(str)
+    return df
+
+
+def _execute_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {"ok": True, "input_count": 0}
+
+    try:
+        _ensure_lsj_import_path()
+        from classifier import ContentClassifier  # type: ignore
+        from evaluator import InformationQualityEvaluator  # type: ignore
+        from sentiment import SentimentAnalyzer  # type: ignore
+        from similarity import SimilarityAnalyzer  # type: ignore
+
+        df = _prepare_analysis_dataframe(rows)
+
+        classifier = ContentClassifier()
+        sentiment = SentimentAnalyzer()
+        similarity = SimilarityAnalyzer()
+        evaluator = InformationQualityEvaluator(
+            sentiment_analyzer=sentiment,
+            content_classifier=classifier,
+            similarity_analyzer=similarity,
+        )
+
+        df1 = classifier.batch_predict(
+            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
+        )
+        df2 = sentiment.batch_predict(
+            df1, text_column="analysis_text", include_emotions=False, batch_size=500
+        )
+        df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
+        if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
+            df3["similarity"] = df3["similarity_to_previous"]
+
+        return {
+            "ok": True,
+            "input_count": int(len(df3)),
+            "evaluator": evaluator,
+            "df3": df3,
+        }
+    except Exception as exc:
+        normalized = [
+            normalize_text(
+                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
+            )
+            for r in rows
+        ]
+        total = len(normalized)
+        distinct = len(set(normalized))
+        repeat_ratio = float(
+            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
+        )
+        return {
+            "ok": False,
+            "input_count": total,
+            "repeat_ratio": repeat_ratio,
+            "warning": f"lsj pipeline unavailable: {exc}",
+        }
+
+
+def _build_daily_metric_rows(df: Any) -> List[Dict[str, Any]]:
+    if df.empty or "timestamp" not in df.columns:
+        return []
+
+    work = df.dropna(subset=["timestamp"]).copy()
+    if work.empty:
+        return []
+
+    work["date"] = work["timestamp"].dt.date.astype(str)
+    work["is_negative"] = (work["sentiment"] == "negative").astype(float)
+    work["is_positive"] = (work["sentiment"] == "positive").astype(float)
+    work["is_neutral"] = (work["sentiment"] == "neutral").astype(float)
+    work["is_repeat"] = (
+        work["similarity"].astype(float) >= DEFAULT_REPEAT_THRESHOLD
+    ).astype(float)
+
+    daily = (
+        work.groupby("date")
+        .agg(
+            count=("title", "count"),
+            avg_polarity=("polarity", "mean"),
+            avg_similarity=("similarity", "mean"),
+            repeat_ratio=("is_repeat", "mean"),
+            negative_ratio=("is_negative", "mean"),
+            positive_ratio=("is_positive", "mean"),
+            neutral_ratio=("is_neutral", "mean"),
+        )
+        .reset_index()
+        .sort_values(by="date")
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for item in daily.to_dict("records"):
+        rows.append(
+            {
+                "date": str(item["date"]),
+                "count": int(item["count"]),
+                "avg_polarity": _round_metric(item["avg_polarity"]),
+                "avg_similarity": _round_metric(item["avg_similarity"]),
+                "repeat_ratio": _round_metric(item["repeat_ratio"]),
+                "negative_ratio": _round_metric(item["negative_ratio"]),
+                "positive_ratio": _round_metric(item["positive_ratio"]),
+                "neutral_ratio": _round_metric(item["neutral_ratio"]),
+            }
+        )
+    return rows
+
+
+def _build_category_visualization(df: Any) -> Dict[str, Any]:
+    if df.empty or "category" not in df.columns:
+        return {}
+
+    categories: Dict[str, Any] = {}
+    for category, group in df.groupby("category"):
+        key = _normalize_category_key(category)
+        categories[key] = {
+            "alias": CATEGORY_ALIAS_MAP.get(key, key),
+            "label": str(category),
+            "time_series": _build_daily_metric_rows(group),
+        }
+
+    return dict(sorted(categories.items(), key=lambda item: item[0]))
+
+
+def _build_visualization_result(
+    rows: List[Dict[str, Any]],
+    *,
+    from_ts: Optional[int],
+    to_ts: Optional[int],
+    limit_rows: int,
+) -> Dict[str, Any]:
+    base = _default_visualization_result(
+        from_ts=from_ts,
+        to_ts=to_ts,
+        limit_rows=limit_rows,
+        input_count=len(rows),
+    )
+    execution = _execute_lsj_pipeline(rows)
+
+    if not execution.get("ok"):
+        base["pipeline_warning"] = execution.get("warning")
+        return base
+
+    if int(execution.get("input_count") or 0) == 0:
+        return base
+
+    evaluator = execution["evaluator"]
+    df3 = execution["df3"]
+    processed = evaluator._preprocess_data(df3)
+    global_payload = evaluator.get_visualization_data(df3)
+    global_payload["time_series"] = _build_daily_metric_rows(processed)
+
+    base["window"]["input_count"] = int(execution["input_count"])
+    base["global"] = global_payload
+    base["categories"] = _build_category_visualization(processed)
+    return base
 
 
 def _load_items_for_analysis(
@@ -389,96 +651,57 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "full_report": None,
         }
 
-    try:
-        _ensure_lsj_import_path()
-        import pandas as pd  # type: ignore
-        from classifier import ContentClassifier  # type: ignore
-        from evaluator import InformationQualityEvaluator  # type: ignore
-        from sentiment import SentimentAnalyzer  # type: ignore
-        from similarity import SimilarityAnalyzer  # type: ignore
-
-        df = pd.DataFrame(rows)
-        df["title"] = df["title"].fillna("").astype(str)
-        df["text"] = df["text"].fillna(df["title"]).astype(str)
-        df["analysis_text"] = df["text"].where(
-            df["text"].str.strip() != "", df["title"]
-        )
-        df["url"] = df["url"].fillna("").astype(str)
-        df["channel"] = df["channel"].fillna("unknown").astype(str)
-
-        classifier = ContentClassifier()
-        sentiment = SentimentAnalyzer()
-        similarity = SimilarityAnalyzer()
-        evaluator = InformationQualityEvaluator(
-            sentiment_analyzer=sentiment,
-            content_classifier=classifier,
-            similarity_analyzer=similarity,
-        )
-
-        df1 = classifier.batch_predict(
-            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
-        )
-        df2 = sentiment.batch_predict(
-            df1, text_column="analysis_text", include_emotions=False, batch_size=500
-        )
-        df3 = similarity.batch_calculate_similarity(df2, text_column="analysis_text")
-        if "similarity" not in df3.columns and "similarity_to_previous" in df3.columns:
-            df3["similarity"] = df3["similarity_to_previous"]
-        quick = evaluator.quick_evaluate(df3)
-        report = evaluator.evaluate(df3, detailed=False).to_dict()
-
-        sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
-        category_norm = df3["category"].fillna("other").astype(str)
-        polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
-        similarity_num = (
-            pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
-        )
-
-        negative_ratio = float((sentiment_norm == "negative").mean())
-        avg_sentiment = float(polarity_num.mean())
-        repeat_ratio = float((similarity_num >= 0.85).mean())
-
-        category_counts = {
-            str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
-        }
-        sentiment_counts = {
-            str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
-        }
-
-        return {
-            "input_count": int(len(df3)),
-            "category_counts": category_counts,
-            "sentiment_counts": sentiment_counts,
-            "negative_ratio": negative_ratio,
-            "avg_sentiment": avg_sentiment,
-            "repeat_ratio": repeat_ratio,
-            "quick_evaluation": quick,
-            "full_report": report,
-            "pipeline_warning": None,
-        }
-    except Exception as exc:
-        normalized = [
-            normalize_text(
-                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
-            )
-            for r in rows
-        ]
-        total = len(normalized)
-        distinct = len(set(normalized))
-        repeat_ratio = float(
-            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
-        )
+    execution = _execute_lsj_pipeline(rows)
+    if not execution.get("ok"):
+        total = int(execution.get("input_count") or 0)
         return {
             "input_count": total,
             "category_counts": {"unknown": total},
             "sentiment_counts": {"Neutral": total},
             "negative_ratio": 0.0,
             "avg_sentiment": 0.0,
-            "repeat_ratio": repeat_ratio,
+            "repeat_ratio": float(execution.get("repeat_ratio") or 0.0),
             "quick_evaluation": None,
             "full_report": None,
-            "pipeline_warning": f"lsj pipeline unavailable: {exc}",
+            "pipeline_warning": execution.get("warning"),
         }
+
+    import pandas as pd  # type: ignore
+
+    evaluator = execution["evaluator"]
+    df3 = execution["df3"]
+    quick = evaluator.quick_evaluate(df3)
+    report = evaluator.evaluate(df3, detailed=False).to_dict()
+
+    sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
+    category_norm = df3["category"].fillna("other").astype(str)
+    polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
+    similarity_num = (
+        pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    )
+
+    negative_ratio = float((sentiment_norm == "negative").mean())
+    avg_sentiment = float(polarity_num.mean())
+    repeat_ratio = float((similarity_num >= DEFAULT_REPEAT_THRESHOLD).mean())
+
+    category_counts = {
+        str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
+    }
+    sentiment_counts = {
+        str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
+    }
+
+    return {
+        "input_count": int(execution["input_count"]),
+        "category_counts": category_counts,
+        "sentiment_counts": sentiment_counts,
+        "negative_ratio": negative_ratio,
+        "avg_sentiment": avg_sentiment,
+        "repeat_ratio": repeat_ratio,
+        "quick_evaluation": quick,
+        "full_report": report,
+        "pipeline_warning": None,
+    }
 
 
 def _get_job_row(conn: Any, job_id: int) -> Optional[Dict[str, Any]]:
@@ -950,9 +1173,9 @@ def run_analysis(
         repeat_ratio = 0.0
         if total:
             repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = {
-            row["channel"] or "unknown": row["cnt"] for row in channel_rows
-        }
+        channel_counts = _normalize_channel_counts(
+            {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
+        ) or {key: 0 for key in CHANNEL_CANONICAL_KEYS}
         now_ms = _now_ms()
         conn.execute(
             """
@@ -1146,8 +1369,11 @@ def run_full_analysis(
 
             channel_counts: Dict[str, int] = {}
             for r in rows:
-                key = _clean_optional_str(r.get("channel")) or "unknown"
+                key = _canonicalize_channel_key(r.get("channel"))
                 channel_counts[key] = channel_counts.get(key, 0) + 1
+            channel_counts = _normalize_channel_counts(channel_counts) or {
+                key: 0 for key in CHANNEL_CANONICAL_KEYS
+            }
 
             conn.execute(
                 """
@@ -1288,10 +1514,46 @@ def dashboard_summary() -> Dict[str, Any]:
         ).fetchone()
     if row:
         return _payload_from_stats_row(row)
-    return run_analysis()
+    return run_analysis(force=False, backfill_limit=2000)
 
 
 # 以下路由用于“后端->逻辑”的接口
+@app.get("/dashboard/visualization")
+def dashboard_visualization(
+    days: int = Query(DEFAULT_VIS_DAYS, ge=1, le=90),
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(5000, ge=1, le=50000),
+) -> Dict[str, Any]:
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    now_ms = _now_ms()
+    resolved_to_ts = to_ts if to_ts is not None else now_ms
+    resolved_from_ts = (
+        from_ts
+        if from_ts is not None
+        else max(0, resolved_to_ts - days * 24 * 60 * 60 * 1000)
+    )
+
+    with get_conn() as conn:
+        rows = _load_items_for_analysis(
+            conn,
+            from_ts=resolved_from_ts,
+            to_ts=resolved_to_ts,
+            limit_rows=limit_rows,
+        )
+
+    return _build_visualization_result(
+        rows,
+        from_ts=resolved_from_ts,
+        to_ts=resolved_to_ts,
+        limit_rows=limit_rows,
+    )
+
+
 @app.get("/export/lsj")
 def export_lsj(
     from_ts: Optional[int] = Query(None),
