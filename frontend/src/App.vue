@@ -331,7 +331,7 @@ const currentDrawerData = reactive({
   timeline: []       
 })
 
-const loadDrawerData = async (silent = false) => {
+const loadDrawerData = async (silent = false, force = false) => {
   if (!silent) {
     currentDrawerData.isLoading = true;
     currentDrawerData.hasData = false;
@@ -341,17 +341,13 @@ const loadDrawerData = async (silent = false) => {
   }
 
   try {
-    const res = await axios.get(`${API_BASE_URL}/items?limit=50`)
-    
-    let records = [];
-    if (Array.isArray(res.data)) {
-      records = res.data;
-    } else if (res.data && typeof res.data === 'object') {
-      records = res.data.items || res.data.data || res.data.records || [];
-    }
+    const query = force ? '?days=7&limit_rows=50&force=1' : '?days=7&limit_rows=50'
+    const res = await axios.get(`${API_BASE_URL}/items/analyzed${query}`)
+    const payload = res.data && typeof res.data === 'object' ? res.data : {}
+    let records = Array.isArray(payload.items) ? payload.items : []
 
     if (!Array.isArray(records) || records.length === 0) {
-      console.warn("⚠️ /items 接口返回为空，或者格式无法识别:", res.data);
+      console.warn("⚠️ /items/analyzed 接口返回为空，或者格式无法识别:", res.data);
       records = [];
     }
 
@@ -369,9 +365,10 @@ const loadDrawerData = async (silent = false) => {
         const dateObj = new Date(r.ts || r.created_at || Date.now());
         const timeStr = isNaN(dateObj.getTime()) ? '未知' : dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
+        const rawSentiment = String(r.sentiment || '').toLowerCase()
         let sentimentKey = 'neu';
-        if (r.sentiment > 0.1 || r.avg_sentiment > 0) sentimentKey = 'pos';
-        if (r.sentiment < -0.1 || r.negative_ratio > 0) sentimentKey = 'neg';
+        if (rawSentiment === 'positive' || rawSentiment === 'pos' || Number(r.polarity || 0) > 0.1) sentimentKey = 'pos';
+        if (rawSentiment === 'negative' || rawSentiment === 'neg' || Number(r.polarity || 0) < -0.1) sentimentKey = 'neg';
 
         const cachedFlag = r.is_cached !== undefined ? r.is_cached : (r.cached || false);
 
@@ -392,6 +389,7 @@ const loadDrawerData = async (silent = false) => {
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
         if (Array.isArray(r.keywords)) extractedTags.push(...r.keywords);
+        if (typeof r.category === 'string' && r.category.trim()) extractedTags.push(r.category.trim());
       });
       extractedTags = [...new Set(extractedTags)].filter(Boolean).slice(0, 8);
       if (extractedTags.length === 0) extractedTags = [getCategoryLabel(currentCategoryKey.value) || '探索中', '近期浏览'];
@@ -426,7 +424,7 @@ const loadDrawerData = async (silent = false) => {
 
 const openDrawer = () => {
   showDrawer.value = true;
-  loadDrawerData(false); 
+  loadDrawerData(false, false);
 }
 
 const triggerForceRun = async (item) => {
@@ -435,7 +433,7 @@ const triggerForceRun = async (item) => {
   
   try {
     await axios.post(`${API_BASE_URL}/analyze/run?force=true`);
-    await loadDrawerData(true);
+    await loadDrawerData(true, true);
     await fetchAndInjectData(true, true);
   } catch (error) {
     console.error("Force run failed:", error);
@@ -565,7 +563,7 @@ const triggerGlobalForceRefresh = async () => {
   try {
     await fetchAndInjectData(true, true); 
     if (showDrawer.value) {
-      await loadDrawerData(true);
+      await loadDrawerData(true, true);
     }
   } catch (error) {
     console.error("大盘强制推演失败:", error);
@@ -685,7 +683,7 @@ onMounted(() => {
   pollingTimer = setInterval(() => {
     fetchAndInjectData(true); 
     if (showDrawer.value) {
-      loadDrawerData(true); 
+      loadDrawerData(true, false);
     }
   }, 30000);
 })
