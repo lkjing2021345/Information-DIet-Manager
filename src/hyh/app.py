@@ -41,8 +41,8 @@ CATEGORY_ALIAS_MAP = {
     "learning": "edu",
     "news": "news",
     "social": "soc",
-    "shopping": "shopping",
-    "tools": "tools",
+    "shopping": "other",
+    "tools": "edu",
     "other": "other",
 }
 CHANNEL_CANONICAL_KEYS = ("ent", "edu", "news", "soc", "other")
@@ -55,10 +55,17 @@ CHANNEL_ALIAS_MAP = {
     "entertainment": "ent",
     "learning": "edu",
     "social": "soc",
+    "shopping": "other",
+    "tools": "edu",
+    "tool": "edu",
+    "video": "ent",
+    "web": "other",
+    "unknown": "other",
     "娱乐": "ent",
     "学习": "edu",
     "新闻": "news",
     "社交": "soc",
+    "其他": "other",
 }
 
 
@@ -268,10 +275,22 @@ def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
             channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
         except json.JSONDecodeError:
             channel_counts = None
+
+    category_counts = None
+    payload_raw = row["payload"] if "payload" in row.keys() else None
+    if payload_raw:
+        try:
+            payload = json.loads(payload_raw)
+            if isinstance(payload, dict):
+                category_counts = payload.get("category_counts")
+        except json.JSONDecodeError:
+            category_counts = None
+
     return {
         "day": row["day"],
         "total_count": row["total_count"],
         "channel_counts": channel_counts,
+        "category_counts": category_counts,
         "repeat_ratio": row["repeat_ratio"],
         "negative_ratio": row["negative_ratio"],
         "avg_sentiment": row["avg_sentiment"],
@@ -499,6 +518,40 @@ def _build_category_visualization(df: Any) -> Dict[str, Any]:
     return dict(sorted(categories.items(), key=lambda item: item[0]))
 
 
+def _build_analyzed_items(df: Any) -> List[Dict[str, Any]]:
+    if df.empty:
+        return []
+
+    records: List[Dict[str, Any]] = []
+    work = df.copy()
+    if "timestamp" in work.columns:
+        work = work.sort_values(by="timestamp", ascending=False)
+
+    for row in work.to_dict("records"):
+        category_key = _normalize_category_key(row.get("category"))
+        records.append(
+            {
+                "id": row.get("id"),
+                "url": row.get("url"),
+                "title": row.get("title"),
+                "text": row.get("text") or row.get("analysis_text"),
+                "ts": row.get("ts"),
+                "source": row.get("source"),
+                "channel": row.get("channel"),
+                "category": row.get("category"),
+                "alias": CATEGORY_ALIAS_MAP.get(category_key, category_key),
+                "sentiment": row.get("sentiment"),
+                "polarity": _round_metric(row.get("polarity")),
+                "similarity": _round_metric(row.get("similarity")),
+                "repeat_count": 2 if float(row.get("similarity") or 0.0) >= DEFAULT_REPEAT_THRESHOLD else 1,
+                "is_cached": False,
+                "keywords": [],
+                "tags": row.get("tags") if isinstance(row.get("tags"), list) else [],
+            }
+        )
+    return records
+
+
 def _build_visualization_result(
     rows: List[Dict[str, Any]],
     *,
@@ -530,6 +583,7 @@ def _build_visualization_result(
     base["window"]["input_count"] = int(execution["input_count"])
     base["global"] = global_payload
     base["categories"] = _build_category_visualization(processed)
+    base["items"] = _build_analyzed_items(processed)
     return base
 
 
@@ -1507,6 +1561,175 @@ def get_analyze_result(job_id: int) -> Dict[str, Any]:
         "metrics": row.get("metrics_json"),
         "cache_hit": row.get("cache_hit"),
     }
+
+
+@app.get("/items/analyzed")
+def list_analyzed_items(
+    days: int = Query(DEFAULT_VIS_DAYS, ge=1, le=90),
+    from_ts: Optional[int] = Query(None),
+    to_ts: Optional[int] = Query(None),
+    limit_rows: int = Query(200, ge=1, le=5000),
+    force: bool = Query(False),
+) -> Dict[str, Any]:
+    if from_ts is not None and to_ts is not None and from_ts > to_ts:
+        raise HTTPException(
+            status_code=400, detail="from_ts cannot be greater than to_ts"
+        )
+
+    now_ms = _now_ms()
+    resolved_to_ts = to_ts if to_ts is not None else now_ms
+    resolved_from_ts = (
+        from_ts
+        if from_ts is not None
+        else max(0, resolved_to_ts - days * 24 * 60 * 60 * 1000)
+    )
+
+    day = datetime.now(timezone.utc).date().isoformat()
+    with get_conn() as conn:
+        item_state = conn.execute(
+            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
+        ).fetchone()
+        max_created_at = int(item_state["max_created_at"] or 0)
+        rows = _load_items_for_analysis(
+            conn,
+            from_ts=resolved_from_ts,
+            to_ts=resolved_to_ts,
+            limit_rows=limit_rows,
+        )
+        input_count = len(rows)
+        job_key = {
+            "days": days,
+            "from_ts": from_ts,
+            "to_ts": to_ts,
+            "limit_rows": limit_rows,
+            "mode": "items_analyzed",
+        }
+        input_hash = _stable_hash_payload(job_key)
+
+        if not force:
+            cached = conn.execute(
+                """
+                SELECT id, result_payload FROM analysis_jobs
+                WHERE input_hash = ? AND item_max_created_at = ? AND status = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (input_hash, max_created_at, JOB_COMPLETED),
+            ).fetchone()
+            if cached:
+                cached_payload: Dict[str, Any] = {}
+                if cached["result_payload"]:
+                    try:
+                        cached_payload = json.loads(cached["result_payload"])
+                    except json.JSONDecodeError:
+                        cached_payload = {}
+                if cached_payload:
+                    job_id = _insert_analysis_job(
+                        conn,
+                        status=JOB_COMPLETED,
+                        input_hash=input_hash,
+                        day=day,
+                        from_ts=resolved_from_ts,
+                        to_ts=resolved_to_ts,
+                        limit_rows=limit_rows,
+                        item_max_created_at=max_created_at,
+                        input_count=input_count,
+                        cache_hit=True,
+                    )
+                    _update_analysis_job(
+                        conn,
+                        job_id,
+                        status=JOB_COMPLETED,
+                        result_payload=cached_payload,
+                        metrics_json={
+                            "cache_reuse_from_job_id": int(cached["id"]),
+                            "input_count": input_count,
+                            "cache_hit": True,
+                            "mode": "items_analyzed",
+                        },
+                        duration_ms=0,
+                        started_at=_now_ms(),
+                        finished_at=_now_ms(),
+                    )
+                    cached_payload["cached"] = True
+                    cached_payload["reused_from_job_id"] = int(cached["id"])
+                    return cached_payload
+
+        job_id = _insert_analysis_job(
+            conn,
+            status=JOB_RUNNING,
+            input_hash=input_hash,
+            day=day,
+            from_ts=resolved_from_ts,
+            to_ts=resolved_to_ts,
+            limit_rows=limit_rows,
+            item_max_created_at=max_created_at,
+            input_count=input_count,
+            cache_hit=False,
+        )
+        started_at = _now_ms()
+
+        execution = _execute_lsj_pipeline(rows)
+        if not execution.get("ok"):
+            payload = {
+                "items": [],
+                "total": 0,
+                "pipeline_warning": execution.get("warning"),
+                "cached": False,
+                "window": {
+                    "from_ts": resolved_from_ts,
+                    "to_ts": resolved_to_ts,
+                    "limit_rows": limit_rows,
+                    "input_count": len(rows),
+                },
+            }
+            _update_analysis_job(
+                conn,
+                job_id,
+                status=JOB_COMPLETED,
+                result_payload=payload,
+                metrics_json={
+                    "input_count": input_count,
+                    "cache_hit": False,
+                    "mode": "items_analyzed",
+                    "pipeline_warning": payload.get("pipeline_warning"),
+                },
+                duration_ms=_now_ms() - started_at,
+                started_at=started_at,
+                finished_at=_now_ms(),
+            )
+            return payload
+
+        evaluator = execution["evaluator"]
+        processed = evaluator._preprocess_data(execution["df3"])
+        items = _build_analyzed_items(processed)
+        payload = {
+            "items": items,
+            "total": len(items),
+            "pipeline_warning": None,
+            "cached": False,
+            "window": {
+                "from_ts": resolved_from_ts,
+                "to_ts": resolved_to_ts,
+                "limit_rows": limit_rows,
+                "input_count": len(rows),
+            },
+        }
+        _update_analysis_job(
+            conn,
+            job_id,
+            status=JOB_COMPLETED,
+            result_payload=payload,
+            metrics_json={
+                "input_count": input_count,
+                "cache_hit": False,
+                "mode": "items_analyzed",
+            },
+            duration_ms=_now_ms() - started_at,
+            started_at=started_at,
+            finished_at=_now_ms(),
+        )
+        return payload
 
 
 @app.get("/dashboard/summary")

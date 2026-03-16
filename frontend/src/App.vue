@@ -4,7 +4,7 @@
     <div class="global-loading" v-if="isUpdating">
       <div class="cyber-spinner"></div>
       <div class="loading-text" :style="{ fontFamily: settings.fontFamily }">
-        {{ t.loading.replace('{cat}', t.cats[currentCategoryKey]) }}
+        {{ t.loading.replace('{cat}', getCategoryLabel(currentCategoryKey)) }}
       </div>
     </div>
 
@@ -60,8 +60,8 @@
       <div class="summary-content" style="flex: 1;">
         
         <div class="card-title-row">
-          <h2>{{ t.report }}: {{ t.cats[currentCategoryKey] }} {{ t.domain }} <span class="hint-text">{{ t.hint }}</span></h2>
-          
+          <h2>{{ t.report }}: {{ getCategoryLabel(currentCategoryKey) }} {{ t.domain }} <span class="hint-text">{{ t.hint }}</span></h2>
+
           <div class="card-actions">
             <button class="force-refresh-btn" 
                     :class="{ 'is-spinning': isForceRefreshing }" 
@@ -92,16 +92,16 @@
       <div class="tech-card">
         <div class="card-header">
           <span class="dot"></span>
-          <h2>{{ t.cats[currentCategoryKey] }} - {{ t.c2 }} <span class="mock-hint">{{ t.mockHint }}</span></h2>
+          <h2>{{ getCategoryLabel(currentCategoryKey) }} - {{ t.c2 }} <span class="mock-hint">{{ t.mockHint }}</span></h2>
         </div>
         <div ref="graphChartRef" class="chart-container"></div>
       </div>
       <div class="tech-card">
-        <div class="card-header"><span class="dot"></span><h2>{{ t.cats[currentCategoryKey] }} - {{ t.c3 }}</h2></div>
+        <div class="card-header"><span class="dot"></span><h2>{{ getCategoryLabel(currentCategoryKey) }} - {{ t.c3 }}</h2></div>
         <div ref="lineRepetitionRef" class="chart-container"></div>
       </div>
       <div class="tech-card">
-        <div class="card-header"><span class="dot"></span><h2>{{ t.cats[currentCategoryKey] }} - {{ t.c4 }}</h2></div>
+        <div class="card-header"><span class="dot"></span><h2>{{ getCategoryLabel(currentCategoryKey) }} - {{ t.c4 }}</h2></div>
         <div ref="lineSentimentRef" class="chart-container"></div>
       </div>
     </main>
@@ -114,7 +114,7 @@
       <aside class="drawer-panel tech-card" v-if="showDrawer" :style="{ borderLeftColor: healthStatus.color, boxShadow: `-10px 0 40px ${healthStatus.color}30` }">
         
         <div class="drawer-header">
-          <h3 :style="{ color: healthStatus.color }">{{ t.cats[currentCategoryKey] }} {{ t.drawerTitle }}</h3>
+          <h3 :style="{ color: healthStatus.color }">{{ getCategoryLabel(currentCategoryKey) }} {{ t.drawerTitle }}</h3>
           <button class="icon-btn close-btn" @click="showDrawer = false" title="关闭">✕</button>
         </div>
 
@@ -212,6 +212,35 @@ const settings = reactive({
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
+const CATEGORY_COLOR_MAP = {
+  ent: '#ff00ea',
+  edu: '#00ffaa',
+  news: '#ffd700',
+  soc: '#ff4d4f',
+  other: '#94a3b8'
+}
+
+const CATEGORY_ALIAS_FALLBACK_MAP = {
+  ent: 'ent',
+  entertainment: 'ent',
+  video: 'ent',
+  edu: 'edu',
+  learning: 'edu',
+  tools: 'edu',
+  news: 'news',
+  soc: 'soc',
+  social: 'soc',
+  other: 'other',
+  shopping: 'other',
+  web: 'other',
+  unknown: 'other',
+  '娱乐': 'ent',
+  '学习': 'edu',
+  '新闻': 'news',
+  '社交': 'soc',
+  '其他': 'other'
+}
+
 const i18n = {
   zh: {
     sysUi: '系统级 UI 定制', langLabel: '🌐 界面语言 (Language)', visMode: '视觉引擎模式',
@@ -262,9 +291,36 @@ i18n.en.cats.other = 'Other'
 i18n.en.eval.otherScore = 'B Mixed Bucket'
 i18n.en.eval.otherMsg = 'This bucket is not mapped to a core domain yet. Review those <b>unknown/custom channels</b> and classify them if they keep growing.'
 
+const getCategoryLabel = (key) => t.value.cats[key] || t.value.cats.other || 'Other'
+
 const getSentimentLabel = (sent) => {
   if (settings.lang === 'en') return sent === 'pos' ? '😍 Dopamine' : sent === 'neg' ? '😰 Anxiety' : '😐 Neutral';
   return sent === 'pos' ? '😍 多巴胺' : sent === 'neg' ? '😰 焦虑感' : '😐 客观纪实';
+}
+
+const normalizeCategoryAlias = (value) => {
+  const key = String(value || '').trim().toLowerCase()
+  return CATEGORY_ALIAS_FALLBACK_MAP[key] || 'other'
+}
+
+const buildPieDataFromVisualization = (visData) => {
+  const totals = { ent: 0, edu: 0, news: 0, soc: 0, other: 0 }
+  const categories = visData?.categories || {}
+
+  Object.values(categories).forEach((cat) => {
+    const alias = normalizeCategoryAlias(cat?.alias || cat?.label)
+    const series = Array.isArray(cat?.time_series) ? cat.time_series : []
+    const count = series.reduce((sum, item) => sum + Number(item?.count || 0), 0)
+    totals[alias] = (totals[alias] || 0) + count
+  })
+
+  return [
+    { value: totals.ent, name: t.value.cats.ent, id: 'ent', itemStyle: { color: CATEGORY_COLOR_MAP.ent } },
+    { value: totals.edu, name: t.value.cats.edu, id: 'edu', itemStyle: { color: CATEGORY_COLOR_MAP.edu } },
+    { value: totals.news, name: t.value.cats.news, id: 'news', itemStyle: { color: CATEGORY_COLOR_MAP.news } },
+    { value: totals.soc, name: t.value.cats.soc, id: 'soc', itemStyle: { color: CATEGORY_COLOR_MAP.soc } },
+    { value: totals.other, name: t.value.cats.other, id: 'other', itemStyle: { color: CATEGORY_COLOR_MAP.other } }
+  ]
 }
 
 const currentDrawerData = reactive({
@@ -275,7 +331,7 @@ const currentDrawerData = reactive({
   timeline: []       
 })
 
-const loadDrawerData = async (silent = false) => {
+const loadDrawerData = async (silent = false, force = false) => {
   if (!silent) {
     currentDrawerData.isLoading = true;
     currentDrawerData.hasData = false;
@@ -285,34 +341,21 @@ const loadDrawerData = async (silent = false) => {
   }
 
   try {
-    const res = await axios.get(`${API_BASE_URL}/items?limit=50`)
-    
-    let records = [];
-    if (Array.isArray(res.data)) {
-      records = res.data;
-    } else if (res.data && typeof res.data === 'object') {
-      records = res.data.items || res.data.data || res.data.records || [];
-    }
+    const query = force ? '?days=7&limit_rows=50&force=1' : '?days=7&limit_rows=50'
+    const res = await axios.get(`${API_BASE_URL}/items/analyzed${query}`)
+    const payload = res.data && typeof res.data === 'object' ? res.data : {}
+    let records = Array.isArray(payload.items) ? payload.items : []
 
     if (!Array.isArray(records) || records.length === 0) {
-      console.warn("⚠️ /items 接口返回为空，或者格式无法识别:", res.data);
+      console.warn("⚠️ /items/analyzed 接口返回为空，或者格式无法识别:", res.data);
       records = [];
     }
 
-    // 修复：抽屉分类过滤严格对齐后端本地词典
-    const categoryMap = {
-      'ent': ['Entertainment', 'entertainment', '娱乐', 'ent', 'video'],
-      'edu': ['Learning', 'learning', 'Tools', 'tools', '学习', 'edu'],
-      'news': ['News', 'news', '新闻'],
-      'soc': ['Social', 'social', '社交', 'soc'],
-      'other': ['Shopping', 'shopping', 'Other', 'other', '其他']
-    };
-
-    const catRecords = currentCategoryKey.value === 'global' 
+    const catRecords = currentCategoryKey.value === 'global'
       ? records 
       : records.filter(r => {
-          const matchKeys = categoryMap[currentCategoryKey.value] || [];
-          return matchKeys.includes(r.category) || matchKeys.includes(r.alias) || r.category === t.value.cats[currentCategoryKey.value];
+          const derivedAlias = normalizeCategoryAlias(r.alias || r.category || r.channel)
+          return derivedAlias === currentCategoryKey.value
         });
 
     if (catRecords && catRecords.length > 0) {
@@ -322,9 +365,10 @@ const loadDrawerData = async (silent = false) => {
         const dateObj = new Date(r.ts || r.created_at || Date.now());
         const timeStr = isNaN(dateObj.getTime()) ? '未知' : dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
+        const rawSentiment = String(r.sentiment || '').toLowerCase()
         let sentimentKey = 'neu';
-        if (r.sentiment > 0.1 || r.avg_sentiment > 0) sentimentKey = 'pos';
-        if (r.sentiment < -0.1 || r.negative_ratio > 0) sentimentKey = 'neg';
+        if (rawSentiment === 'positive' || rawSentiment === 'pos' || Number(r.polarity || 0) > 0.1) sentimentKey = 'pos';
+        if (rawSentiment === 'negative' || rawSentiment === 'neg' || Number(r.polarity || 0) < -0.1) sentimentKey = 'neg';
 
         const cachedFlag = r.is_cached !== undefined ? r.is_cached : (r.cached || false);
 
@@ -345,9 +389,10 @@ const loadDrawerData = async (silent = false) => {
       catRecords.forEach(r => {
         if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
         if (Array.isArray(r.keywords)) extractedTags.push(...r.keywords);
+        if (typeof r.category === 'string' && r.category.trim()) extractedTags.push(r.category.trim());
       });
       extractedTags = [...new Set(extractedTags)].filter(Boolean).slice(0, 8);
-      if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
+      if (extractedTags.length === 0) extractedTags = [getCategoryLabel(currentCategoryKey.value) || '探索中', '近期浏览'];
       currentDrawerData.keywords = extractedTags;
 
       const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
@@ -379,7 +424,7 @@ const loadDrawerData = async (silent = false) => {
 
 const openDrawer = () => {
   showDrawer.value = true;
-  loadDrawerData(false); 
+  loadDrawerData(false, false);
 }
 
 const triggerForceRun = async (item) => {
@@ -387,9 +432,9 @@ const triggerForceRun = async (item) => {
   item.isForceRunning = true; 
   
   try {
-    await axios.post(`${API_BASE_URL}/analyze/run/force`, { url: item.url });
-    await loadDrawerData(true); 
-    await fetchAndInjectData(true); 
+    await axios.post(`${API_BASE_URL}/analyze/run?force=true`);
+    await loadDrawerData(true, true);
+    await fetchAndInjectData(true, true);
   } catch (error) {
     console.error("Force run failed:", error);
     alert(settings.lang === 'zh' ? '❌ 强制运行失败，请检查后端服务。' : '❌ Force run failed.');
@@ -463,34 +508,7 @@ const fetchAndInjectData = async (silent = false, force = false) => {
   try {
     if (!silent && !force) isUpdating.value = true;
 
-    const summaryRes = await axios.get(`${API_BASE_URL}/dashboard/summary`)
-    const summary = summaryRes.data
-    
-    // 修改：从读取 channel_counts 改为读取 category_counts
-    const counts = summary.category_counts || summary.channel_counts || {} 
-    
-    const totalCount = Object.values(counts).reduce((sum, val) => sum + val, 0);
-    const getCount = (keys) => keys.reduce((sum, k) => sum + (counts[k] || 0), 0)
-    
-    // 按照后端词典，精准对齐 Category 字段名
-    const entCount = getCount(['Entertainment', 'entertainment', '娱乐']);
-    const eduCount = getCount(['Learning', 'learning', 'Tools', '学习', '教育']);
-    const newsCount = getCount(['News', 'news', '新闻']);
-    const socCount = getCount(['Social', 'social', '社交']);
-
-    // 计算真实的“其他”
-    const knownCount = entCount + eduCount + newsCount + socCount;
-    const otherCount = Math.max(0, totalCount - knownCount);
-
-    db['global'].pieData = [
-      { value: entCount, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
-      { value: eduCount, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
-      { value: newsCount, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: socCount, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
-      { value: otherCount, name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
-    ]
-
-    const visUrl = force 
+    const visUrl = force
       ? `${API_BASE_URL}/dashboard/visualization?days=7&force=1` 
       : `${API_BASE_URL}/dashboard/visualization?days=7`;
       
@@ -498,13 +516,23 @@ const fetchAndInjectData = async (silent = false, force = false) => {
     const visData = visRes.data
     const hasWarning = !!visData.pipeline_warning
 
+    db['global'].pieData = buildPieDataFromVisualization(visData)
+
+    ;['global', 'ent', 'edu', 'news', 'soc', 'other'].forEach((key) => {
+      db[key].repData = []
+      db[key].sentPos = []
+      db[key].sentNeu = []
+      db[key].sentNeg = []
+      db[key].hasData = false
+    })
+
     const processTimeSeries = (ts) => {
       if (hasWarning || !ts || ts.length === 0) return { repData: [], sentPos: [], sentNeu: [], sentNeg: [], hasData: false }
       return {
         repData: ts.map(h => (h.repeat_ratio || 0) * 100),
         sentPos: ts.map(h => (h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20)),
         sentNeg: ts.map(h => ((h.negative_ratio || 0) * 100 || 20)),
-        sentNeu: ts.map(h => { const pos = h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20; const neg = (h.negative_ratio || 0) * 100 || 20; return 100 - pos - neg; }),
+        sentNeu: ts.map(h => { const pos = h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20; const neg = (h.negative_ratio || 0) * 100 || 20; return Math.max(0, 100 - pos - neg); }),
         hasData: true
       }
     }
@@ -513,14 +541,14 @@ const fetchAndInjectData = async (silent = false, force = false) => {
 
     const categories = visData.categories || {}
     Object.values(categories).forEach(cat => {
-      const alias = cat.alias || (visData.category_aliases && visData.category_aliases[cat.name])
+      const alias = normalizeCategoryAlias(cat.alias || cat.label || cat.name)
       if (alias && db[alias]) Object.assign(db[alias], processTimeSeries(cat.time_series))
     })
 
     nextTick(() => { updateAllCharts() })
   } catch (error) {
     console.error("API 数据拉取失败:", error)
-    ['global', 'ent', 'edu', 'news', 'soc'].forEach(key => { db[key].hasData = false })
+    ['global', 'ent', 'edu', 'news', 'soc', 'other'].forEach(key => { db[key].hasData = false })
     db['global'].pieData = []
     nextTick(() => { updateAllCharts() })
   } finally {
@@ -535,7 +563,7 @@ const triggerGlobalForceRefresh = async () => {
   try {
     await fetchAndInjectData(true, true); 
     if (showDrawer.value) {
-      await loadDrawerData(true);
+      await loadDrawerData(true, true);
     }
   } catch (error) {
     console.error("大盘强制推演失败:", error);
@@ -558,7 +586,7 @@ const generateGraphData = (key) => {
     });
   } else {
     const baseColor = db['global'].pieData.find(p => p.id === key)?.itemStyle.color || settings.themeColor;
-    nodes.push({ id: 'cat_root', name: t.value.cats[key], symbolSize: 50, itemStyle: { color: baseColor, shadowBlur: 20, shadowColor: baseColor } });
+    nodes.push({ id: 'cat_root', name: getCategoryLabel(key), symbolSize: 50, itemStyle: { color: baseColor, shadowBlur: 20, shadowColor: baseColor } });
     data.repData.forEach((val, idx) => {
       if (val > 0) { 
         const nodeId = `trend_${idx}`;
@@ -587,7 +615,9 @@ const updateAllCharts = () => {
   if (!pieChart) {
     pieChart = echarts.init(pieChartRef.value); graphChart = echarts.init(graphChartRef.value);
     lineRepChart = echarts.init(lineRepetitionRef.value); lineSentChart = echarts.init(lineSentimentRef.value);
-    pieChart.on('click', (params) => { if (params.componentType === 'series') handleCategorySwitch(params.data.id) })
+    pieChart.on('click', (params) => {
+      if (params.componentType === 'series' && params?.data?.id) handleCategorySwitch(params.data.id)
+    })
   }
 
   const ui = getChartUIConfig(); const isNotGlobal = currentCategoryKey.value !== 'global' 
@@ -653,7 +683,7 @@ onMounted(() => {
   pollingTimer = setInterval(() => {
     fetchAndInjectData(true); 
     if (showDrawer.value) {
-      loadDrawerData(true); 
+      loadDrawerData(true, false);
     }
   }, 30000);
 })
