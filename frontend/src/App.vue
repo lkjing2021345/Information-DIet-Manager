@@ -465,21 +465,22 @@ const fetchAndInjectData = async (silent = false, force = false) => {
 
     const summaryRes = await axios.get(`${API_BASE_URL}/dashboard/summary`)
     const summary = summaryRes.data
-    const counts = summary.channel_counts || {} 
     
-    //  1. 计算总浏览量
+    // 修改：从读取 channel_counts 改为读取 category_counts
+    const counts = summary.category_counts || summary.channel_counts || {} 
+    
     const totalCount = Object.values(counts).reduce((sum, val) => sum + val, 0);
-
     const getCount = (keys) => keys.reduce((sum, k) => sum + (counts[k] || 0), 0)
     
-    //  2. 扩充词库：完美对齐后端词典
-    const entCount = getCount(['Entertainment', 'entertainment', '娱乐', 'ent', 'video']);
-    const eduCount = getCount(['Learning', 'learning', 'Tools', 'tools', '学习', 'edu']);
+    // 按照后端词典，精准对齐 Category 字段名
+    const entCount = getCount(['Entertainment', 'entertainment', '娱乐']);
+    const eduCount = getCount(['Learning', 'learning', 'Tools', '学习', '教育']);
     const newsCount = getCount(['News', 'news', '新闻']);
-    const socCount = getCount(['Social', 'social', '社交', 'soc']);
+    const socCount = getCount(['Social', 'social', '社交']);
 
-    //  3. 兜底：扣除四大类后，剩下的全进其他
-    const otherCount = Math.max(0, totalCount - entCount - eduCount - newsCount - socCount);
+    // 计算真实的“其他”
+    const knownCount = entCount + eduCount + newsCount + socCount;
+    const otherCount = Math.max(0, totalCount - knownCount);
 
     db['global'].pieData = [
       { value: entCount, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
