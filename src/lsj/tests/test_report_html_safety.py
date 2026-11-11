@@ -73,6 +73,35 @@ def generate_report(module, category="learning"):
     return evaluator, evaluator.evaluate(frame)
 
 
+def test_compare_users_failure_output_redacts_identifiers_and_errors(report_module, caplog, monkeypatch):
+    evaluator = report_module.InformationQualityEvaluator(
+        sentiment_analyzer=object(), content_classifier=object(), similarity_analyzer=object()
+    )
+    private_marker = "SYNTHETIC_PRIVATE_USER_AND_ERROR"
+
+    def fail(_frame):
+        raise RuntimeError(private_marker)
+
+    monkeypatch.setattr(evaluator, "quick_evaluate", fail)
+    with caplog.at_level(logging.ERROR, logger=report_module.logger.name):
+        result = evaluator.compare_users({private_marker: pd.DataFrame()})
+
+    failure = result["failed_users"][0]
+    assert failure["user_id"] != private_marker
+    assert failure["user_id"].startswith("<redacted sha256=")
+    assert failure["error"] == "evaluation failed (RuntimeError)"
+    assert private_marker not in json.dumps(result, ensure_ascii=False)
+    assert private_marker not in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+
+    evaluator.config.min_records = 1
+    caplog.clear()
+    trend = evaluator.batch_evaluate(pd.DataFrame({"segment": [private_marker]}), group_by="segment")
+    assert trend.empty
+    assert private_marker not in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+
+
 class ReportHTML(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
