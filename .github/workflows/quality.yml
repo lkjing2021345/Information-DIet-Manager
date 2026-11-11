@@ -105,6 +105,34 @@ jobs:
       - name: Run API and algorithm contract tests
         run: python -m pytest src/hyh/tests src/lsj/tests scripts/tests -q
 
+      - name: Verify the minimal runtime environment for browser acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONNOUSERSITE = '1'
+          $env:PIP_CONFIG_FILE = 'NUL'
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          $pythonRuntimeEnv = Join-Path $env:RUNNER_TEMP 'idm-python-runtime'
+          if (Test-Path -LiteralPath $pythonRuntimeEnv) { throw 'Runtime environment must be new.' }
+          python -I -m venv $pythonRuntimeEnv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonRuntime = Join-Path $pythonRuntimeEnv 'Scripts/python.exe'
+          & $pythonRuntime -I -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/installer.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/runtime-windows-py312.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I -m pip --isolated check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonAudit = Join-Path $env:RUNNER_TEMP 'idm-python-audit/Scripts/python.exe'
+          $runtimeAudit = Join-Path $env:RUNNER_TEMP 'idm-runtime-audit.json'
+          $installerAudit = Join-Path $env:RUNNER_TEMP 'idm-installer-audit.json'
+          $auditCache = Join-Path $env:RUNNER_TEMP 'idm-python-audit-cache'
+          & $pythonAudit -I -m pip_audit --strict --disable-pip --require-hashes -r requirements/locks/runtime-windows-py312.txt --vulnerability-service pypi --cache-dir $auditCache --progress-spinner off --format json --output $runtimeAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I scripts/verify_python_dependencies.py --lock requirements/locks/runtime-windows-py312.txt --installer-lock requirements/locks/installer.txt --input requirements-runtime.txt --audit $runtimeAudit --installer-audit $installerAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "IDM_TEST_PYTHON=$pythonRuntime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Run extension tests
         run: node --test chrome-extension/tests/*.test.cjs
 
@@ -122,6 +150,9 @@ jobs:
 
       - name: Verify extension and API with synthetic pages
         working-directory: chrome-extension
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONPATH: ''
         run: npm run test:e2e
 
       - name: Install frontend dependencies
@@ -142,6 +173,9 @@ jobs:
 
       - name: Verify authenticated UI and data recovery
         working-directory: frontend
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONPATH: ''
         run: npm run test:e2e
 
       - name: Generate and reproduce the scoped dependency inventory
