@@ -114,6 +114,44 @@ def test_startup_recovers_only_interrupted_jobs_and_repeated_start_is_idempotent
     assert snapshot() == expected
 
 
+def test_startup_recovery_prunes_old_history_without_dropping_active_jobs(database, monkeypatch):
+    """Startup cleanup applies retention after recovery while preserving active work."""
+    monkeypatch.setattr(api, "MAX_ANALYSIS_JOB_HISTORY", 2)
+    monkeypatch.setattr(api, "MAX_ANALYSIS_RUN_HISTORY", 2)
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM analysis_jobs")
+        for job_id, status in (
+            (1, "completed"),
+            (2, "failed"),
+            (3, "completed"),
+            (4, "queued"),
+            (5, "running"),
+            (6, "synthetic-active"),
+        ):
+            insert_job(conn, job_id, status)
+        conn.execute("DELETE FROM analysis_runs")
+        for index in range(4):
+            conn.execute(
+                "INSERT INTO analysis_runs(day,total_count,payload,created_at) VALUES (?,?,?,?)",
+                (f"2026-09-{index + 20:02d}", index + 1, '{"synthetic":true}', 100 + index),
+            )
+
+    with client() as http:
+        assert http.get("/health").status_code == 200
+
+    with db.get_conn() as conn:
+        jobs = [dict(row) for row in conn.execute(
+            "SELECT id,status,error FROM analysis_jobs ORDER BY id"
+        )]
+        runs = [dict(row) for row in conn.execute(
+            "SELECT id,created_at FROM analysis_runs ORDER BY id"
+        )]
+    assert [job["id"] for job in jobs] == [4, 5, 6]
+    assert all(job["status"] == "failed" and job["error"] == INTERRUPTED for job in jobs[:2])
+    assert jobs[2] == {"id": 6, "status": "synthetic-active", "error": PRIVATE_MARKER}
+    assert len(runs) == 2 and [run["created_at"] for run in runs] == [102, 103]
+
+
 @pytest.mark.parametrize("failure", ["update", "commit"])
 def test_recovery_failure_rolls_back_all_changes_and_prevents_readiness(database, monkeypatch, failure):
     before = snapshot()
