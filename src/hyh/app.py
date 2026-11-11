@@ -47,6 +47,9 @@ JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
 MAX_ANALYSIS_JOB_HISTORY = 500
 MAX_ANALYSIS_RUN_HISTORY = 365
+EXPERIMENTAL_ANALYSIS_NOTICE = (
+    "Experimental legacy analysis only; not a health, psychological, personality, or diagnostic assessment."
+)
 DEFAULT_VIS_DAYS = 7
 MIN_VIS_RECORDS = 5
 DEFAULT_REPEAT_THRESHOLD = 0.85
@@ -1518,7 +1521,11 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                     conn,
                     job_id,
                     status=JOB_COMPLETED,
-                    result_payload=cached_payload,
+                    result_payload={
+                        **cached_payload,
+                        "experimental": True,
+                        "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
+                    },
                     metrics_json={
                         "cache_reuse_from_job_id": int(cached["id"]),
                         "input_count": input_count,
@@ -1533,7 +1540,11 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                     "status": JOB_COMPLETED,
                     "cached": True,
                     "reused_from_job_id": int(cached["id"]),
-                    "result": cached_payload,
+                    "result": {
+                        **cached_payload,
+                        "experimental": True,
+                        "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
+                    },
                 }
         # not cached的情况也自然下落到这里
         job_id = _insert_analysis_job(
@@ -1577,6 +1588,8 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
             "day": day,
             "statistics_scope": "analysis_window",
             "statistics_version": 2,
+            "experimental": True,
+            "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
             "analysis_status": "ready" if input_count else "empty",
             "repeat_metric": "legacy_adjacent_text_similarity_threshold_fraction",
             "window": {"from_ts": from_ts, "to_ts": to_ts, "limit_rows": limit_rows,

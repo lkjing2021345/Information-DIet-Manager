@@ -170,6 +170,7 @@ Both pagination modes preserve legitimate stored `tags`/`meta` JSON values, incl
     - `analysis_runs` (history)
     - `analysis_jobs` (job lifecycle)
   - returns `statistics_scope: "analysis_window"`, `statistics_version: 2`, `analysis_status: "ready" | "empty"` and the requested `window`; it never overwrites whole-library statistics
+  - returns `experimental: true` and an `experimental_notice`; embedded legacy score/health-like fields are informational research output only and must not be presented as a health, psychological, personality, or diagnostic assessment
   - top-level `comparison_count`, `sentiment_count` and `polarity_count` expose each metric's valid denominator; the first page has no predecessor, invalid/out-of-range measurements and invalid flags are excluded, and empty denominators produce null
   - top-level `repeat_metric: "legacy_adjacent_text_similarity_threshold_fraction"` uses valid original adjacent comparisons; the embedded quick/full scoring reports remain experimental legacy outputs with their own preprocessing, not independently validated measurements
   - unavailable dependencies/pipeline return 503, incomplete samples return 422, and unexpected failures return 500; each has a safe fixed message, failed status and `job_id`, without fabricated neutral measurements or raw exception details

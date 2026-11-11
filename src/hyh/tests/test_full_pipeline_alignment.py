@@ -119,6 +119,7 @@ def test_full_accepts_aligned_frames_without_requiring_a_default_index(client, m
     assert result["sentiment_count"] == result["polarity_count"] == 6
     assert result["comparison_count"] == 5
     assert result["full_report"] == {"synthetic_report": True}
+    assert result["experimental"] is True and "diagnostic" in result["experimental_notice"]
 
 
 def test_empty_full_analysis_keeps_its_existing_no_inference_path(client, monkeypatch):
@@ -127,4 +128,5 @@ def test_empty_full_analysis_keeps_its_existing_no_inference_path(client, monkey
     assert response.status_code == 200
     result = response.json()["result"]
     assert result["analysis_status"] == "empty" and result["total_count"] == 0
+    assert result["experimental"] is True
     assert result["quick_evaluation"] is result["full_report"] is None
