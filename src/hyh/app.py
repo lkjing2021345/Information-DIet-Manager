@@ -649,6 +649,7 @@ def _recover_interrupted_analysis_jobs() -> None:
             (JOB_FAILED, "Analysis was interrupted before this service start; run it again.",
              recovered_at, recovered_at, JOB_QUEUED, JOB_RUNNING),
         )
+        _prune_analysis_history(conn)
 
 
 class AnalysisUnavailableError(RuntimeError):
