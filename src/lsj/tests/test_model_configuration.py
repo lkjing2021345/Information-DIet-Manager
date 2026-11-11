@@ -5,6 +5,7 @@ to pytest temporary directories; the production logger is stubbed on import.
 """
 
 import importlib.util
+import io
 import logging
 import os
 from pathlib import Path
@@ -162,6 +163,33 @@ def test_classifier_training_log_reference_redacts_source_text(import_model_modu
     reference = module._safe_text_reference(private_text)
     assert private_text not in reference
     assert "redacted" in reference and "len=" in reference and "sha256=" in reference
+
+
+def test_classifier_training_checks_do_not_log_source_text(import_model_module):
+    module = import_model_module("classifier_train")
+    private_text = "SYNTHETIC_PRIVATE_PAGE_CONTENT"
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    module.logger.handlers.clear()
+    module.logger.addHandler(handler)
+    module.logger.setLevel(logging.INFO)
+    module.logger.propagate = False
+    data = [
+        {"input": private_text, "label": "news"},
+        {"input": private_text, "label": "other"},
+        {"input": "x", "label": "other"},
+    ]
+
+    module.step2_check_text_length(data)
+    module.step3_check_duplicates(data)
+    module.step5_check_label_consistency(data)
+    module.step6_remove_short_texts(data)
+
+    output = stream.getvalue()
+    assert private_text not in output
+    assert output.count("redacted") >= 3
+    module.logger.removeHandler(handler)
+    handler.close()
 
 
 @pytest.mark.parametrize("name", TRAIN_MODULES)
