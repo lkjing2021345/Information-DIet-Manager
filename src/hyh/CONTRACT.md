@@ -156,7 +156,7 @@ Both pagination modes preserve legitimate stored `tags`/`meta` JSON values, incl
     - `coverage`: `record_count`, `timestamp_count`, `category_count`, `comparison_count`, `sentiment_count`; independent valid quantities, not a model-accuracy claim
 
 - `GET /analyze/history?limit=20`
-  - latest run history records, up to the requested limit (maximum 200); history is bounded by the 365-row retention policy above
+  - latest run history records, up to the requested limit (maximum 200); `total` is the number of retained rows and `returned` is the number in this response; history is bounded by the 365-row retention policy above
 
 ### 3.3 Full analysis orchestration (`hyh` -> `lsj`)
 - `POST /analyze/run_full?force=false&from_ts=&to_ts=&limit_rows=5000`

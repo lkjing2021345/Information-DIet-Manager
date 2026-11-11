@@ -156,6 +156,14 @@ def test_model_import_preserves_hf_environment_and_does_not_create_cache(import_
         assert module.HF_HUB_CACHE_DIR == cache
 
 
+def test_classifier_training_log_reference_redacts_source_text(import_model_module):
+    module = import_model_module("classifier_train")
+    private_text = "SYNTHETIC_PRIVATE_PAGE_CONTENT"
+    reference = module._safe_text_reference(private_text)
+    assert private_text not in reference
+    assert "redacted" in reference and "len=" in reference and "sha256=" in reference
+
+
 @pytest.mark.parametrize("name", TRAIN_MODULES)
 def test_explicit_prepare_creates_selected_cache_only(import_model_module, monkeypatch, tmp_path, name):
     selected = tmp_path / "指定 缓存 🚀"

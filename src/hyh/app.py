@@ -1416,6 +1416,7 @@ async def run_analysis(
 @app.get("/analyze/history")
 def analyze_history(limit: int = Query(20, ge=1, le=200)) -> Dict[str, Any]:
     with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM analysis_runs").fetchone()["cnt"]
         rows = conn.execute(
             """
             SELECT id, day, total_count, channel_counts, repeat_ratio, negative_ratio, avg_sentiment,
@@ -1433,7 +1434,7 @@ def analyze_history(limit: int = Query(20, ge=1, le=200)) -> Dict[str, Any]:
         run["channel_counts"] = _read_stored_analysis(run.get("channel_counts"))
         run["cached"] = bool(run.get("cached", 0))
         runs.append(run)
-    return {"total": len(runs), "runs": runs}
+    return {"total": int(total), "returned": len(runs), "runs": runs}
 
 
 @app.post("/analyze/run_full")

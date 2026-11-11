@@ -8,6 +8,7 @@
     该文件更偏向离线训练与实验使用，因此保留了较详细的数据质量日志，
     便于在训练前尽早发现标注、分布和样本质量问题。
 """
+import hashlib
 import json
 import random
 import sys
@@ -53,6 +54,18 @@ except Exception:  # pragma: no cover
     snapshot_download = None
 
 logger = setup_logger(__name__, "../../logs/classifier_train.log")
+
+
+def _safe_text_reference(value: object) -> str:
+    """Return a useful diagnostic without writing source text to logs."""
+    if value is None:
+        text = ""
+    elif isinstance(value, bytes):
+        text = value.decode("utf-8", errors="replace")
+    else:
+        text = str(value)
+    digest = hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
+    return f"<redacted len={len(text)} sha256={digest}>"
 
 
 def _sanitize_model_cache_name(model_name: str) -> str:
@@ -528,8 +541,7 @@ def step1_load_and_inspect(data_path):
             logger.info("数据结构示例（第1条）:")
             first_item = data[0]
             if isinstance(first_item, dict):
-                for key, value in first_item.items():
-                    logger.info("  %s: %s", key, value)
+                logger.info("  字段: %s", ", ".join(sorted(str(key) for key in first_item)))
             else:
                 logger.warning("第1条数据不是对象类型: %s", type(first_item))
 
@@ -592,7 +604,7 @@ def step2_check_text_length(data):
         if short_texts:
             logger.warning("发现 %d 条过短文本（<3字符）", len(short_texts))
             for index, text in short_texts[:5]:
-                logger.info("  [%d] '%s'", index + 1, text)
+                logger.info("  [%d] %s", index + 1, _safe_text_reference(text))
             if len(short_texts) > 5:
                 logger.info("  ... 还有 %d 条", len(short_texts) - 5)
         else:
@@ -646,7 +658,7 @@ def step3_check_duplicates(data):
             logger.info("重复最多的文本（前5个）:")
             sorted_duplicates = sorted(duplicates.items(), key=lambda item: item[1], reverse=True)
             for text, count in sorted_duplicates[:5]:
-                logger.info("  出现%d次: '%s...'", count, text[:50])
+                logger.info("  出现%d次: %s", count, _safe_text_reference(text))
         else:
             logger.info("没有发现重复数据")
 
@@ -726,7 +738,7 @@ def step5_check_label_consistency(data):
         if conflicts:
             logger.warning("发现 %d 条文本标签不一致", len(conflicts))
             for index, conflict in enumerate(conflicts[:5], start=1):
-                logger.warning("  [%d] 文本: '%s...'", index, conflict["text"][:50])
+                logger.warning("  [%d] 文本: %s", index, _safe_text_reference(conflict["text"]))
                 logger.warning("      标签: %s", conflict["labels"])
                 logger.warning("      分布: %s", dict(conflict["counts"]))
 
@@ -770,7 +782,7 @@ def step6_remove_short_texts(data, min_length=3):
         if removed_texts:
             logger.info("移除的文本示例（前5个）:")
             for text in removed_texts[:5]:
-                logger.info("  '%s'", text)
+                logger.info("  %s", _safe_text_reference(text))
 
         return filtered_data
 
@@ -1172,7 +1184,7 @@ def evaluate_on_test_set(
         if errors:
             logger.info("前10个错误样本:")
             for index, err in enumerate(errors[:10], start=1):
-                logger.info("  [%d] 文本: %s...", index, err["text"][:60])
+                logger.info("  [%d] 文本: %s", index, _safe_text_reference(err["text"]))
                 logger.info(
                     "      真实: %s | 预测: %s | 置信度: %.4f",
                     err["true"],

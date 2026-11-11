@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 from typing import Optional, Union
 
 DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 FILE_LOG_UNAVAILABLE = "File logging is unavailable; using console logging."
+FILE_LOG_MAX_BYTES = 5 * 1024 * 1024
+FILE_LOG_BACKUP_COUNT = 3
 
 
 def _resolve_log_path(log_file: str) -> Path:
@@ -53,7 +56,12 @@ def setup_logger(
         try:
             log_path = _resolve_log_path(log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(log_path, encoding="utf-8")
+            file_handler = RotatingFileHandler(
+                log_path,
+                maxBytes=FILE_LOG_MAX_BYTES,
+                backupCount=FILE_LOG_BACKUP_COUNT,
+                encoding="utf-8",
+            )
             file_handler.setFormatter(formatter)
             logger_obj.addHandler(file_handler)
         except OSError:

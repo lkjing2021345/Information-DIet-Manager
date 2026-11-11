@@ -56,6 +56,14 @@ def test_relative_legacy_path_is_independent_of_working_directory(logging_utilit
     assert expected.read_text(encoding="utf-8").splitlines() == ["Synthetic message 0", "Synthetic message 1"]
 
 
+def test_file_logging_has_a_bounded_rotation_policy(logging_utility):
+    _module, configure, _root = logging_utility
+    logger = configure("bounded.log", console=False)
+    handler = file_handler(logger)
+    assert handler.maxBytes == 5 * 1024 * 1024
+    assert handler.backupCount == 3
+
+
 def test_unicode_path_and_utf8_log_content_are_preserved(logging_utility):
     _module, configure, root = logging_utility
     logger = configure("nested/../../logs/合成日志.log", console=False, fmt="%(message)s")
@@ -105,7 +113,7 @@ def test_file_permission_failures_do_not_escape_or_expose_details(logging_utilit
     if phase == "directory":
         monkeypatch.setattr(module.Path, "mkdir", denied)
     else:
-        monkeypatch.setattr(module.logging, "FileHandler", denied)
+        monkeypatch.setattr(module, "RotatingFileHandler", denied)
     logger = configure("../../logs/" + PRIVATE_MARKER + ".log", console=console, fmt="%(levelname)s|%(message)s")
     captured = capsys.readouterr()
     assert not logger.propagate and len(logger.handlers) == 1

@@ -17,7 +17,7 @@ def test_terminal_history_pruning_keeps_recent_rows_and_active_jobs(tmp_path, mo
         client=("127.0.0.1", 50000),
         headers={"Authorization": "Bearer " + "a" * 43},
         raise_server_exceptions=False,
-    ):
+    ) as client:
         with db.get_conn() as conn:
             now = 1_800_000_000_000
             for index, status in enumerate((api.JOB_COMPLETED, api.JOB_FAILED, api.JOB_COMPLETED, api.JOB_FAILED), 1):
@@ -61,3 +61,9 @@ def test_terminal_history_pruning_keeps_recent_rows_and_active_jobs(tmp_path, mo
         assert [row["status"] for row in terminal] == [api.JOB_COMPLETED, api.JOB_FAILED]
         assert [row["status"] for row in active] == [api.JOB_RUNNING]
         assert [json.loads(row["payload"])["index"] for row in runs] == [2, 3]
+
+        history = client.get("/analyze/history?limit=1")
+        assert history.status_code == 200
+        assert history.json()["total"] == 2
+        assert history.json()["returned"] == 1
+        assert len(history.json()["runs"]) == 1
