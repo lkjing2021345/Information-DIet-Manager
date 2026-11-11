@@ -344,7 +344,11 @@ class ContentClassifier:
             df.loc[need_model, 'confidence'] = confidences
 
         df['category'] = df['category'].fillna(self.CATEGORY_OTHER)
-        df['confidence'] = df['confidence'].fillna(0.0)
+        # The rule path starts with an object-dtype column because it mixes
+        # missing values and model outputs.  Normalize explicitly so future
+        # pandas versions cannot silently change the dtype or leak a string
+        # confidence into downstream metrics.
+        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce').fillna(0.0)
 
         elapsed = time.time() - start_time
         logger.info(f"处理完成，耗时: {elapsed:.2f}秒")

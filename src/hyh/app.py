@@ -45,6 +45,8 @@ JOB_QUEUED = "queued"
 JOB_RUNNING = "running"
 JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
+MAX_ANALYSIS_JOB_HISTORY = 500
+MAX_ANALYSIS_RUN_HISTORY = 365
 DEFAULT_VIS_DAYS = 7
 MIN_VIS_RECORDS = 5
 DEFAULT_REPEAT_THRESHOLD = 0.85
@@ -553,6 +555,44 @@ def _insert_analysis_job(
     return int(cur.lastrowid)
 
 
+def _prune_analysis_history(conn: Any) -> None:
+    """Keep terminal analysis history bounded without touching active work.
+
+    Jobs are also used as a best-effort cache.  Retaining the newest terminal
+    rows keeps recent cache reuse intact while allowing older keys to be
+    recomputed instead of letting payloads grow the per-user database forever.
+    The latest run rows are retained for the history endpoint; destructive
+    data operations still clear all derived state through ``clear_derived``.
+    """
+    conn.execute(
+        """
+        DELETE FROM analysis_jobs
+        WHERE status IN (?, ?)
+          AND id NOT IN (
+              SELECT id
+              FROM analysis_jobs
+              WHERE status IN (?, ?)
+              ORDER BY id DESC
+              LIMIT ?
+          )
+        """,
+        (JOB_COMPLETED, JOB_FAILED, JOB_COMPLETED, JOB_FAILED,
+         max(1, int(MAX_ANALYSIS_JOB_HISTORY))),
+    )
+    conn.execute(
+        """
+        DELETE FROM analysis_runs
+        WHERE id NOT IN (
+            SELECT id
+            FROM analysis_runs
+            ORDER BY id DESC
+            LIMIT ?
+        )
+        """,
+        (max(1, int(MAX_ANALYSIS_RUN_HISTORY)),),
+    )
+
+
 def _update_analysis_job(
     conn: Any,
     job_id: int,
@@ -591,6 +631,8 @@ def _update_analysis_job(
             job_id,
         ),
     )
+    if status in {JOB_COMPLETED, JOB_FAILED}:
+        _prune_analysis_history(conn)
 
 
 def _recover_interrupted_analysis_jobs() -> None:
@@ -1358,6 +1400,7 @@ def _global_statistics(*, force: bool, backfill_limit: int, record_run: bool) ->
                 (day, payload["total_count"], _as_json(payload["channel_counts"]), payload["repeat_ratio"],
                  None, None, _as_json(payload), int(payload["cached"]), max_created_at, _now_ms()),
             )
+        _prune_analysis_history(conn)
         return payload
 
 
