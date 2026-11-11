@@ -42,13 +42,14 @@ Backend normalization:
   - `avg_sentiment`
 
 ### 2.4 `analysis_runs`
-- append-only analysis history for each run
+- append-only analysis history within the retention window; the newest 365 rows are retained and older rows are pruned at startup and after terminal analysis writes
 - stores full API payload + cached flag
 
 ### 2.5 `analysis_jobs`
 - orchestration state machine for API jobs
 - statuses: `queued | running | completed | failed`
 - stores input window, cache hit, duration, error, result payload
+- queued/running jobs are never pruned; at most the newest 500 completed/failed jobs are retained, so an old cache key may be recomputed and an old job ID may return `404`
 
 ## 3. API Surface
 ### 3.0 Local access boundary
@@ -155,7 +156,7 @@ Both pagination modes preserve legitimate stored `tags`/`meta` JSON values, incl
     - `coverage`: `record_count`, `timestamp_count`, `category_count`, `comparison_count`, `sentiment_count`; independent valid quantities, not a model-accuracy claim
 
 - `GET /analyze/history?limit=20`
-  - latest run history records
+  - latest run history records, up to the requested limit (maximum 200); history is bounded by the 365-row retention policy above
 
 ### 3.3 Full analysis orchestration (`hyh` -> `lsj`)
 - `POST /analyze/run_full?force=false&from_ts=&to_ts=&limit_rows=5000`
