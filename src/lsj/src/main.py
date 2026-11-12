@@ -192,14 +192,21 @@ def run_full_pipeline(
     content_classifier = ContentClassifier(model_path=classifier_model_path)
     similarity_analyzer = SimilarityAnalyzer()
 
-    classified_df = content_classifier.batch_predict(df, batch_size=batch_size)
+    analysis_df = df.copy()
+    source_text = analysis_df["text"] if "text" in analysis_df.columns else analysis_df["title"]
+    source_text = source_text.fillna("").astype(str)
+    analysis_df["analysis_text"] = source_text.where(
+        source_text.str.strip() != "", analysis_df["title"].astype(str)
+    )
+
+    classified_df = content_classifier.batch_predict(analysis_df, batch_size=batch_size)
     sentiment_df = sentiment_analyzer.batch_predict(
         classified_df,
-        text_column="title",
+        text_column="analysis_text",
         include_emotions=include_emotions,
         batch_size=batch_size,
     )
-    similarity_df = similarity_analyzer.batch_calculate_similarity(sentiment_df, text_column="title")
+    similarity_df = similarity_analyzer.batch_calculate_similarity(sentiment_df, text_column="analysis_text")
 
     if "similarity" not in similarity_df.columns:
         if "similarity_to_previous" in similarity_df.columns:

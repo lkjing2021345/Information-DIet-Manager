@@ -229,12 +229,33 @@ def test_modes_preserve_argument_input_and_output_wiring_with_synthetic_models(c
     if mode == "analyze":
         assert ("classifier_init", "synthetic-classifier") in calls
         assert ("sentiment_model", "synthetic-sentiment") in calls
-        assert ("classifier", 7) in calls and ("sentiment", "title", True, 7) in calls
-        assert ("similarity", "title") in calls
+        assert ("classifier", 7) in calls and ("sentiment", "analysis_text", True, 7) in calls
+        assert ("similarity", "analysis_text") in calls
         assert ("evaluator_init", ["content_classifier", "sentiment_analyzer", "similarity_analyzer"]) in calls
     else:
         assert ("evaluator_init", []) in calls
         assert all(not event[0].startswith(("classifier", "sentiment", "similarity")) for event in calls)
+
+
+def test_analyze_prefers_body_text_and_falls_back_to_title(cli, synthetic_algorithms, monkeypatch):
+    calls = synthetic_algorithms
+    import pandas as pd
+
+    cli.run_full_pipeline(
+        pd.DataFrame({
+            "title": ["Synthetic title", "Fallback title"],
+            "text": ["Synthetic body", ""],
+            "url": ["https://example.invalid/1", "https://example.invalid/2"],
+        }),
+        sentiment_model_path=None,
+        classifier_model_path=None,
+        include_emotions=False,
+        batch_size=4,
+        detailed=False,
+    )
+
+    evaluated = next(event for event in calls if event[0] == "evaluate")
+    assert [row["analysis_text"] for row in evaluated[2]] == ["Synthetic body", "Fallback title"]
 
 
 def test_analyze_rejects_missing_similarity_measurement_without_constructing_evaluator(
@@ -259,7 +280,7 @@ def test_analyze_rejects_missing_similarity_measurement_without_constructing_eva
             detailed=False,
         )
 
-    assert ("similarity_missing", "title") in calls
+    assert ("similarity_missing", "analysis_text") in calls
     assert not any(event[0] == "evaluator_init" for event in calls)
 
 
