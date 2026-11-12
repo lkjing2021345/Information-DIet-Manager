@@ -2670,7 +2670,9 @@ if __name__ == "__main__":
             if "similarity_to_previous" in df3.columns:
                 df3["similarity"] = df3["similarity_to_previous"]
             else:
-                df3["similarity"] = 0.0
+                raise ValueError(
+                    "相似度分析未生成 similarity 或 similarity_to_previous 列，不能伪造相似度测量"
+                )
 
         # ===== 保存构造后的 result.csv =====
         Path(result_csv_path).parent.mkdir(parents=True, exist_ok=True)

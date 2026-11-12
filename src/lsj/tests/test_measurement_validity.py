@@ -125,6 +125,19 @@ def test_similarity_statistics_preserve_missing_values_and_measured_zero(modules
     assert single == {"mean": 0.0, "std": None, "min": 0.0, "max": 0.0, "median": 0.0}
 
 
+def test_sentiment_trend_preserves_undefined_single_sample_deviation(modules):
+    analyzer = sentiment_analyzer(modules["sentiment"])
+    result = analyzer.analyze_sentiment_trend(pd.DataFrame({
+        "visit_time": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-02"]),
+        "sentiment": ["Neutral", "Positive", "Positive"],
+        "polarity": [0.0, 0.5, 0.5],
+    }))
+    first_day = result.loc[result["visit_time"].dt.strftime("%Y-%m-%d") == "2026-01-01", "polarity_std"]
+    second_day = result.loc[result["visit_time"].dt.strftime("%Y-%m-%d") == "2026-01-02", "polarity_std"]
+    assert len(first_day) == len(second_day) == 1
+    assert pd.isna(first_day.iloc[0]) and second_day.iloc[0] == 0.0
+
+
 def test_reference_mode_also_preserves_missing_and_actual_zero(modules):
     analyzer = similarity_analyzer(modules["similarity"])
     result = analyzer.batch_calculate_similarity(pd.DataFrame({"title": ["A", "", "B"], "ref": ["B", "A", "B"]}), reference_column="ref")

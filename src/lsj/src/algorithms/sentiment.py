@@ -1316,8 +1316,8 @@ class SentimentAnalyzer:
                 'count'
             ]
 
-            # 标准差在仅一个样本的分组中会是 NaN，这里统一补 0。
-            trend_data['polarity_std'] = trend_data['polarity_std'].fillna(0)
+            # 单样本分组的标准差未定义，保留 NaN 以区分缺失测量和真实的 0 波动。
+            trend_data['polarity_std'] = trend_data['polarity_std'].where(trend_data['count'] > 1)
 
             # 计算移动平均，帮助观察趋势而非单点波动。
             if len(trend_data) >= 3:
