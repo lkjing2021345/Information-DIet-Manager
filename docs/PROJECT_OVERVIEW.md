@@ -48,7 +48,7 @@ scripts/             后端、分析和依赖/仓库检查脚本
 docs/               契约、质量状态、架构和路线图
 ```
 
-详细数据流见 [架构说明](ARCHITECTURE.md)，当前验证和风险见 [质量状态](quality-status-2026-10-03.md)。
+详细数据流见 [架构说明](ARCHITECTURE.md)，长期路线见 [路线图](ROADMAP.md)，最近验证和风险见 [2026-11-12 质量状态](quality-status-2026-11-12.md)。
 
 ## 本地运行与验证
 
