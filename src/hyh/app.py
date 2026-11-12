@@ -795,7 +795,9 @@ def _read_upload(file: UploadFile) -> str:
 
 
 def _load_items_from_csv(text: str) -> List[Dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(text))
+    # Excel and several Windows export tools prefix UTF-8 files with a BOM.
+    # It is metadata, not part of the first column name.
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     rows: List[Dict[str, Any]] = []
     for row in reader:
         cleaned = {k: (v if v != "" else None) for k, v in row.items()}
@@ -804,7 +806,7 @@ def _load_items_from_csv(text: str) -> List[Dict[str, Any]]:
 
 
 def _load_items_from_json(text: str) -> List[Dict[str, Any]]:
-    stripped = text.strip()
+    stripped = text.lstrip("\ufeff").strip()
     if not stripped:
         return []
     if stripped.startswith("["):
@@ -824,7 +826,7 @@ def _load_items_from_json(text: str) -> List[Dict[str, Any]]:
 
 
 def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
-    stripped = text.strip()
+    stripped = text.lstrip("\ufeff").strip()
     if not stripped:
         return []
     items: List[Dict[str, Any]] = []

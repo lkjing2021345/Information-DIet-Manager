@@ -35,9 +35,9 @@ def _ensure_algorithm_import_path() -> None:
 def load_json_payload(input_file: Optional[str]) -> Dict[str, Any]:
     """支持从文件或标准输入读取 JSON。"""
     if input_file:
-        return json.loads(Path(input_file).read_text(encoding="utf-8"))
+        return json.loads(Path(input_file).read_text(encoding="utf-8-sig"))
 
-    raw = sys.stdin.read().strip()
+    raw = sys.stdin.read().lstrip("\ufeff").strip()
     if not raw:
         raise ValueError("未读取到输入数据。请通过 --input_file 传入 JSON 文件，或通过 stdin 传入 JSON。")
     return json.loads(raw)
@@ -84,7 +84,7 @@ def load_input_data(input_file: Optional[str], input_format: str) -> Union[Dict[
             raise ValueError("CSV 输入必须通过 --input_file 指定文件路径。")
         import pandas as pd
 
-        return pd.read_csv(input_file)
+        return pd.read_csv(input_file, encoding="utf-8-sig")
 
     return load_json_payload(input_file)
 

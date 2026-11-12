@@ -113,3 +113,15 @@ def test_parser_exception_details_are_not_disclosed(client, monkeypatch, caplog,
     assert response.json() == {"detail": "Invalid file contents."}
     assert PRIVATE_MARKER not in response.text + caplog.text
     assert snapshot() == before
+
+
+@pytest.mark.parametrize("filename,body", [
+    ("synthetic.json", lambda: "\ufeff" + json.dumps([item("bom-json")])),
+    ("synthetic.jsonl", lambda: "\ufeff" + json.dumps(item("bom-jsonl")) + "\n"),
+    ("synthetic.csv", lambda: "\ufeff" + csv_payload([item("bom-csv")])),
+])
+def test_utf8_bom_is_treated_as_file_metadata(client, filename, body):
+    response = client.post("/import", files=upload(filename, body()))
+
+    assert response.status_code == 200
+    assert response.json() == {"inserted": 1, "duplicates": 0, "failed": 0}
