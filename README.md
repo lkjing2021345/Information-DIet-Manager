@@ -184,4 +184,4 @@ Windows CI 会执行上述 Python、扩展与前端单元/浏览器测试及构�
 
 每完成一轮独立修复，运行相应验证、检查待提交差异，然后提交并推送到 `origin`。推送前同步远端更新并保留已有工作；不提交真实浏览数据、密钥或临时诊断产物。具体协作约定见 [AGENTS.md](AGENTS.md)。
 
-统一入口也可通过 `python scripts/run_backend.py` 和 `python scripts/run_analysis.py --help` 使用；历史 `src.hyh` / `src.lsj` 入口为兼容保留。
+统一入口也可通过 `python scripts/run_backend.py` 和 `python scripts/run_analysis.py --help` 使用；离线分析 CLI 同时接受前端 `records` 与后端导出/备份 `items` JSON，输出使用严格 JSON，缺失或非有限测量不会伪造成 `0`；历史 `src.hyh` / `src.lsj` 入口为兼容保留。

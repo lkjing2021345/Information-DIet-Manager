@@ -90,12 +90,12 @@ def load_input_data(input_file: Optional[str], input_format: str) -> Union[Dict[
 
 
 def normalize_payload(payload: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """兼容两种 JSON 输入：直接传数组，或传 {records, options} 对象。"""
+    """兼容数组、前端 ``records`` 和后端导出/备份 ``items`` 输入。"""
     if isinstance(payload, list):
         records = payload
         options: Dict[str, Any] = {}
     elif isinstance(payload, dict):
-        records = payload.get("records", [])
+        records = payload.get("records", payload.get("items", []))
         options = payload.get("options", {}) or {}
     else:
         raise ValueError("输入 JSON 必须是数组，或包含 records 的对象。")

@@ -128,6 +128,19 @@ def test_json_and_csv_helpers_remain_directly_callable(cli, tmp_path):
         cli.normalize_dataframe_input([])
 
 
+def test_json_helpers_accept_backend_export_items_envelope(cli):
+    frame, options = cli.normalize_input_data({
+        "format": "idm-page-records",
+        "version": 1,
+        "items": [{"title": "Exported title", "url": "https://example.invalid/exported"}],
+        "sha256": "0" * 64,
+    })
+    assert frame.to_dict(orient="records") == [{
+        "title": "Exported title", "url": "https://example.invalid/exported"
+    }]
+    assert options == {}
+
+
 def test_algorithm_search_path_resolves_project_modules_from_an_unrelated_cwd(cli, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     before = list(sys.path)
