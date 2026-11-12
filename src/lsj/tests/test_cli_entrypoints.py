@@ -141,6 +141,22 @@ def test_json_helpers_accept_backend_export_items_envelope(cli):
     assert options == {}
 
 
+def test_cli_input_helpers_accept_utf8_bom_files(cli, tmp_path):
+    json_source = tmp_path / "synthetic-bom.json"
+    json_source.write_bytes(("\ufeff" + json.dumps({
+        "records": [{"title": "BOM title", "url": "https://example.invalid/bom"}],
+    }, ensure_ascii=False)).encode("utf-8"))
+    frame, options = cli.normalize_input_data(cli.load_input_data(str(json_source), "auto"))
+    assert frame.iloc[0]["title"] == "BOM title" and options == {}
+
+    csv_source = tmp_path / "synthetic-bom.csv"
+    csv_source.write_bytes("\ufefftitle,url\nBOM CSV,https://example.invalid/csv\n".encode("utf-8"))
+    frame, options = cli.normalize_input_data(cli.load_input_data(str(csv_source), "auto"))
+    assert frame.to_dict(orient="records") == [{
+        "title": "BOM CSV", "url": "https://example.invalid/csv",
+    }] and options == {}
+
+
 def test_json_helpers_reject_non_object_options(cli):
     with pytest.raises(ValueError, match="options 必须是对象"):
         cli.normalize_input_data({"records": [{"title": "Synthetic"}], "options": []})
