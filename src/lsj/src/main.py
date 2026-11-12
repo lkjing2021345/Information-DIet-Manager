@@ -96,9 +96,14 @@ def normalize_payload(payload: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any
         options: Dict[str, Any] = {}
     elif isinstance(payload, dict):
         records = payload.get("records", payload.get("items", []))
-        options = payload.get("options", {}) or {}
+        options = payload.get("options", {})
+        if options is None:
+            options = {}
     else:
-        raise ValueError("输入 JSON 必须是数组，或包含 records 的对象。")
+        raise ValueError("输入 JSON 必须是数组，或包含 records/items 的对象。")
+
+    if not isinstance(options, dict):
+        raise ValueError("options 必须是对象。")
 
     if not isinstance(records, list) or not records:
         raise ValueError("records 必须是非空数组。")

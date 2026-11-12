@@ -141,6 +141,11 @@ def test_json_helpers_accept_backend_export_items_envelope(cli):
     assert options == {}
 
 
+def test_json_helpers_reject_non_object_options(cli):
+    with pytest.raises(ValueError, match="options 必须是对象"):
+        cli.normalize_input_data({"records": [{"title": "Synthetic"}], "options": []})
+
+
 def test_algorithm_search_path_resolves_project_modules_from_an_unrelated_cwd(cli, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     before = list(sys.path)
