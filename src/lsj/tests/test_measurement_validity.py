@@ -107,6 +107,24 @@ def test_empty_batch_content_and_empty_vocabulary_have_no_measurements(modules):
         assert not result["similarity_valid"].any()
 
 
+def test_similarity_statistics_preserve_missing_values_and_measured_zero(modules):
+    analyzer = modules["similarity"].SimilarityAnalyzer.__new__(modules["similarity"].SimilarityAnalyzer)
+    missing = analyzer.get_similarity_statistics(
+        pd.DataFrame({"similarity_to_previous": [np.nan, np.inf, -np.inf]})
+    )["similarity_to_previous"]
+    assert missing == {"mean": None, "std": None, "min": None, "max": None, "median": None}
+
+    measured = analyzer.get_similarity_statistics(
+        pd.DataFrame({"similarity": [0.0, 0.0, 0.0]})
+    )["similarity"]
+    assert measured == {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "median": 0.0}
+
+    single = analyzer.get_similarity_statistics(
+        pd.DataFrame({"similarity": [0.0]})
+    )["similarity"]
+    assert single == {"mean": 0.0, "std": None, "min": 0.0, "max": 0.0, "median": 0.0}
+
+
 def test_reference_mode_also_preserves_missing_and_actual_zero(modules):
     analyzer = similarity_analyzer(modules["similarity"])
     result = analyzer.batch_calculate_similarity(pd.DataFrame({"title": ["A", "", "B"], "ref": ["B", "A", "B"]}), reference_column="ref")

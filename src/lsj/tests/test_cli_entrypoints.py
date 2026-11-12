@@ -222,3 +222,53 @@ def test_modes_preserve_argument_input_and_output_wiring_with_synthetic_models(c
     else:
         assert ("evaluator_init", []) in calls
         assert all(not event[0].startswith(("classifier", "sentiment", "similarity")) for event in calls)
+
+
+def test_analyze_rejects_missing_similarity_measurement_without_constructing_evaluator(
+        cli, synthetic_algorithms, monkeypatch):
+    calls = synthetic_algorithms
+
+    class MissingSimilarity:
+        def batch_calculate_similarity(self, frame, *, text_column):
+            calls.append(("similarity_missing", text_column))
+            return frame.copy()
+
+    monkeypatch.setattr(sys.modules["similarity"], "SimilarityAnalyzer", MissingSimilarity)
+    import pandas as pd
+
+    with pytest.raises(ValueError, match="相似度分析未生成"):
+        cli.run_full_pipeline(
+            pd.DataFrame({"title": ["Synthetic title"], "url": ["https://example.invalid"]}),
+            sentiment_model_path=None,
+            classifier_model_path=None,
+            include_emotions=False,
+            batch_size=4,
+            detailed=False,
+        )
+
+    assert ("similarity_missing", "title") in calls
+    assert not any(event[0] == "evaluator_init" for event in calls)
+
+
+@pytest.mark.parametrize("invalid", [0, -1])
+def test_run_full_pipeline_rejects_non_positive_batch_size(cli, synthetic_algorithms, invalid):
+    import pandas as pd
+
+    with pytest.raises(ValueError, match="batch_size 必须是正整数"):
+        cli.run_full_pipeline(
+            pd.DataFrame({"title": ["Synthetic title"], "url": ["https://example.invalid"]}),
+            sentiment_model_path=None,
+            classifier_model_path=None,
+            include_emotions=False,
+            batch_size=invalid,
+            detailed=False,
+        )
+
+
+def test_dump_output_converts_non_finite_numbers_to_null(cli, capsys):
+    cli.dump_output({"nan": float("nan"), "nested": [float("inf"), -float("inf")]}, None)
+    output = capsys.readouterr().out
+    import json
+
+    parsed = json.loads(output, parse_constant=lambda value: pytest.fail(f"non-standard JSON constant: {value}"))
+    assert parsed == {"nan": None, "nested": [None, None]}

@@ -649,14 +649,21 @@ class SimilarityAnalyzer:
         for col in similarity_cols:
             # 强制转成数值，非法值记为 NaN，避免 describe 统计时报错。
             series = pd.to_numeric(df[col], errors="coerce")
-            col_stats = series.describe().to_dict()
+            valid = series.replace([np.inf, -np.inf], np.nan).dropna()
+
+            def rounded_or_none(value: Any) -> Optional[float]:
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    return None
+                return round(numeric, 4) if np.isfinite(numeric) else None
 
             stats[col] = {
-                "mean": round(float(col_stats.get("mean", 0) or 0), 4),
-                "std": round(float(col_stats.get("std", 0) or 0), 4),
-                "min": round(float(col_stats.get("min", 0) or 0), 4),
-                "max": round(float(col_stats.get("max", 0) or 0), 4),
-                "median": round(float(series.median() if not series.empty else 0), 4)
+                "mean": rounded_or_none(valid.mean()) if not valid.empty else None,
+                "std": rounded_or_none(valid.std()) if len(valid) > 1 else None,
+                "min": rounded_or_none(valid.min()) if not valid.empty else None,
+                "max": rounded_or_none(valid.max()) if not valid.empty else None,
+                "median": rounded_or_none(valid.median()) if not valid.empty else None,
             }
 
         logger.info("相似度统计完成")

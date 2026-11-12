@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING, Union
@@ -176,6 +177,8 @@ def run_full_pipeline(
     detailed: bool,
 ) -> Tuple[Dict[str, Any], Any, InformationQualityEvaluator]:
     """原始数据全流程：分类 -> 情感 -> 相似度 -> 评估。"""
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+        raise ValueError("batch_size 必须是正整数")
     _ensure_algorithm_import_path()
     from classifier import ContentClassifier
     from evaluator import InformationQualityEvaluator
@@ -202,7 +205,9 @@ def run_full_pipeline(
         if "similarity_to_previous" in similarity_df.columns:
             similarity_df["similarity"] = similarity_df["similarity_to_previous"]
         else:
-            similarity_df["similarity"] = 0.0
+            raise ValueError(
+                "相似度分析未生成 similarity 或 similarity_to_previous 列，不能伪造相似度测量"
+            )
 
     evaluator = InformationQualityEvaluator(
         sentiment_analyzer=sentiment_analyzer,
@@ -247,6 +252,29 @@ def validate_evaluate_input(df: pd.DataFrame) -> None:
         )
 
 
+def _coerce_positive_int(value: Any) -> int:
+    """Validate a positive integer from CLI or JSON options."""
+    if isinstance(value, bool):
+        raise ValueError("batch_size 必须是正整数")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("batch_size 必须是正整数")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("batch_size 必须是正整数") from exc
+    if parsed <= 0:
+        raise ValueError("batch_size 必须是正整数")
+    return parsed
+
+
+def positive_int(value: str) -> int:
+    """argparse converter for strictly positive integer options."""
+    try:
+        return _coerce_positive_int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Information Diet Manager main entry")
     parser.add_argument(
@@ -272,13 +300,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sentiment_model_path", type=str, default=None, help="情感模型目录，可选")
     parser.add_argument("--classifier_model_path", type=str, default=None, help="分类模型目录，可选")
     parser.add_argument("--include_emotions", action="store_true", help="是否输出情绪分析结果")
-    parser.add_argument("--batch_size", type=int, default=128, help="批处理大小")
+    parser.add_argument("--batch_size", type=positive_int, default=128, help="批处理大小")
     parser.add_argument("--detailed", action="store_true", help="是否生成详细评估报告")
     return parser
 
 
+def _json_safe(value: Any) -> Any:
+    """Convert common numeric scalars to strict-JSON-compatible values."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    # pandas/numpy scalar values expose item() without requiring an optional
+    # import in the CLI module. Keep ordinary application objects untouched.
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            converted = item()
+        except (TypeError, ValueError):
+            converted = value
+        if converted is not value:
+            return _json_safe(converted)
+    return value
+
+
 def dump_output(result: Dict[str, Any], output_file: Optional[str]) -> None:
-    content = json.dumps(result, ensure_ascii=False, indent=2)
+    content = json.dumps(_json_safe(result), ensure_ascii=False, indent=2, allow_nan=False)
     if output_file:
         Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         Path(output_file).write_text(content, encoding="utf-8")
@@ -322,7 +371,8 @@ def main() -> None:
     df, options = normalize_input_data(payload)
 
     include_emotions = bool(options.get("include_emotions", args.include_emotions))
-    batch_size = int(options.get("batch_size", args.batch_size))
+    raw_batch_size = options.get("batch_size", args.batch_size)
+    batch_size = _coerce_positive_int(raw_batch_size)
     detailed = bool(options.get("detailed", args.detailed))
 
     if args.mode == "analyze":
