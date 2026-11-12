@@ -358,7 +358,7 @@ def export_result(
         return
 
     if actual_format == "json":
-        evaluator.export_report(report, output_file, format="json")
+        dump_output(result, output_file)
         print(f"结果已写入: {output_file}")
         return
 
