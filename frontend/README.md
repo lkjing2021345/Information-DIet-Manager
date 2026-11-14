@@ -1,5 +1,42 @@
-# Vue 3 + Vite
+# Information Diet Manager 前端
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Vue 3 + Vite + ECharts。界面区分实时保存记录与手动运行的实验分析，并通过管理密钥访问本机服务。
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## 启动
+
+先启动项目根目录 README 中的本地后端，再在本目录运行：
+
+```powershell
+npm ci
+npm run dev -- --host 127.0.0.1 --strictPort
+```
+
+默认 API 地址为 `http://127.0.0.1:8000`，只允许回环地址。需要修改时，将 `.env.example` 复制为 `.env.local` 并修改 `VITE_API_BASE_URL`，然后重启 Vite。该地址会进入前端构建结果，不应包含密钥。后端默认只允许界面的 HTTP 5173/4173 来源；更改前端端口须同步配置 `IDM_FRONTEND_ORIGINS`。
+
+点击右上角齿轮，在原设置面板的“连接本机服务”中填入后端启动时提示的私有文件里的 `admin_token` 并连接；采集密钥不能解锁管理界面。管理密钥只在页面内存中保存，刷新需重连。断开或服务拒绝认证时清空界面，丢弃在途旧响应。请求不发送 Cookie、不跟随重定向，客户端超时为 30 秒；超时并不意味着服务端操作已撤销。
+
+## 行为
+
+- 外观以 `4d0bcd9` 为基线，保留科技风渐变、玻璃卡片、动效、四图布局和右侧抽屉。接口完善不得变成页面重设计。
+- 保存记录来自 `/items`，每页 50 条；设置和右侧抽屉均关闭时每 30 秒刷新首页，抽屉中显式加载更多。后台旧响应不会覆盖正在操作的列表。
+- 分析仅在点击按钮时请求 `/dashboard/visualization?days=7&force=true`，绕过后端缓存；开始新请求立即清空旧图表。
+- 显示尚未运行、进行中、空数据、样本不足、不可用、失败、请求错误、成功快照等不同状态。
+- 日期按响应中的 UTC 窗口对齐；缺失指标保留空值；合法的 0% 不用默认比例替换。
+- 分类来自同一次分析，工具和购物分别显示。分类筛选只作用于实验趋势，不筛选原始记录。
+- 原始记录没有逐条情感、访问次数和缓存状态，界面不会补造。
+- 环形分类、力导向统计结构、相似比例趋势和情感标签趋势保持原来的位置与风格。结构图使用本次分类计数或实际日期比例，不代表语义关系、浏览路径或诊断。
+- 原设置保留中英文、深浅主题、高亮色和四种字体；右侧抽屉支持 Escape、关闭按钮、遮罩关闭、键盘焦点约束和返回入口。
+- 密钥连接、刷新记录、页面记录备份、逐条/全部删除、替换恢复全部位于原设置面板；首页与抽屉不新增管理卡片或删除按钮。逐条删除从已加载的真实记录中选择；更多记录需先在抽屉加载。破坏性操作需要界面确认。请先暂停扩展、清空待同步队列，并妥善保管明文备份。备份范围和恢复约束见根 README。
+
+## 验证
+
+```powershell
+npm test
+npm run build
+# 先完成根 README 中扩展测试依赖和浏览器安装，并设置 IDM_TEST_PYTHON
+npm run test:e2e
+```
+
+`tests/dashboard-data.test.js` 验证比例、日期缺口、状态替换、分类、分页和链接协议；`tests/local-api.test.js` 验证密钥范围、会话失效、跨域和请求边界；`tests/cyber-charts.test.js` 验证四图真实数据映射；`tests/visual-contract.test.js` 保护原外观结构和关键样式。
+
+`tests/lifecycle.e2e.cjs` 连接真实临时 FastAPI、SQLite 与前端生产构建，验证设置入口、主题、右侧抽屉、真实分页、配对、备份、删除、恢复和会话失效。所有测试使用合成记录和独立浏览器，不是模型推理或跨设备像素一致性验收。外观恢复与本轮结果见 [恢复说明](../docs/ui-restoration-2026-09-26.md)，第三轮权限与恢复说明见 [历史报告](../docs/round-3-improvements.md)。

@@ -1,190 +1,118 @@
 <template>
   <div class="dashboard-container" :style="customStyles" :class="{'light-mode': settings.isLightMode}">
-    
-    <div class="global-loading" v-if="isUpdating">
-      <div class="cyber-spinner"></div>
-      <div class="loading-text" :style="{ fontFamily: settings.fontFamily }">
-        {{ t.loading.replace('{cat}', t.cats[currentCategoryKey]) }}
-      </div>
+    <div class="global-loading" v-if="analysis.status === 'loading'" role="status">
+      <div class="cyber-spinner"></div><div class="loading-text">{{ t.running }}</div>
     </div>
-
-    <header class="tech-header">
+    <header class="tech-header" :inert="drawerOpen">
       <h1 class="glow-text">Information Diet Manager <span class="version-tag">v2.0 PRO</span></h1>
       <div class="header-actions">
-        <div class="settings-wrapper">
-          <button class="icon-btn" @click="toggleSettings" title="设置 / Settings">
+        <div class="settings-wrapper" @keydown.esc.stop="closeSettings">
+          <button ref="settingsButton" class="icon-btn" @click="showSettings = !showSettings" title="设置 / Settings" aria-label="设置 / Settings" :aria-expanded="showSettings" aria-controls="ui-settings" data-testid="settings-toggle">
             <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
-          
-          <div class="settings-panel tech-card" v-show="showSettings">
+          <div id="ui-settings" class="settings-panel tech-card" v-show="showSettings">
             <h3>{{ t.sysUi }}</h3>
-            <div class="setting-item">
-              <label>{{ t.langLabel }}</label>
-              <select v-model="settings.lang">
-                <option value="zh">🇨🇳 简体中文 (Chinese)</option>
-                <option value="en">🇺🇸 English (英文)</option>
-              </select>
+            <div class="setting-item"><label for="ui-language">{{ t.langLabel }}</label>
+              <select id="ui-language" v-model="settings.lang"><option value="zh">🇨🇳 简体中文 (Chinese)</option><option value="en">🇺🇸 English (英文)</option></select>
             </div>
-            <div class="setting-item">
-              <label>{{ t.visMode }}</label>
-              <div class="theme-switch" @click="settings.isLightMode = !settings.isLightMode">
+            <div class="setting-item"><label id="ui-mode-label">{{ t.visMode }}</label>
+              <div class="theme-switch" role="switch" tabindex="0" aria-labelledby="ui-mode-label" :aria-checked="settings.isLightMode" data-testid="theme-toggle" @click="toggleTheme" @keydown.space.prevent="toggleTheme" @keydown.enter.prevent="toggleTheme">
                 <div class="switch-bg" :class="{ 'is-light': settings.isLightMode }"></div>
-                <span class="switch-label" :class="{ active: !settings.isLightMode }">{{ t.dark }}</span>
-                <span class="switch-label" :class="{ active: settings.isLightMode }">{{ t.light }}</span>
+                <span class="switch-label" :class="{ active: !settings.isLightMode }">{{ t.dark }}</span><span class="switch-label" :class="{ active: settings.isLightMode }">{{ t.light }}</span>
               </div>
             </div>
-            <div class="setting-item">
-              <label>{{ t.color }}</label>
-              <input type="color" v-model="settings.themeColor">
-            </div>
-            <div class="setting-item">
-              <label>{{ t.font }}</label>
-              <select v-model="settings.fontFamily">
+            <div class="setting-item"><label for="ui-color">{{ t.color }}</label><input id="ui-color" type="color" v-model="settings.themeColor"></div>
+            <div class="setting-item"><label for="ui-font">{{ t.font }}</label>
+              <select id="ui-font" v-model="settings.fontFamily">
                 <option value="'Segoe UI', 'Microsoft YaHei', sans-serif">UI Sans-serif (现代无衬线)</option>
                 <option value="Helvetica, Arial, sans-serif">Helvetica (经典纯净)</option>
                 <option value="'Times New Roman', Times, serif">Times New Roman (衬线阅读)</option>
                 <option value="'Courier New', Courier, monospace">Courier Code (极客等宽)</option>
               </select>
             </div>
+            <section class="api-settings" :aria-label="t.connection">
+              <h3>{{ t.connection }}</h3><p class="interface-hint">{{ t.keyHint }}</p>
+              <form class="setting-item" @submit.prevent="connect">
+                <input v-if="!connected" v-model="keyDraft" type="password" autocomplete="off" :aria-label="t.adminKey" :placeholder="t.adminKey" data-testid="admin-key">
+                <button v-if="!connected" class="interface-btn" :disabled="pairing || !keyDraft.trim()" data-testid="connect">{{ pairing ? t.loading : t.connect }}</button>
+                <button v-else type="button" class="interface-btn" @click="disconnect" data-testid="disconnect">{{ t.disconnect }}</button>
+                <span class="interface-hint">{{ connected ? t.connected : t.disconnected }}</span>
+              </form><p v-if="connectionMessage" class="interface-hint" role="status">{{ connectionMessage }}</p>
+            </section>
+            <section v-if="connected" class="api-settings" :aria-label="t.dataManagement">
+              <h3>{{ t.dataManagement }}</h3><p class="interface-hint">{{ t.backupHint }}</p><p class="interface-hint">{{ t.deletionHint }}</p>
+              <div class="setting-item">
+                <button class="interface-btn" @click="fetchRecords()" :disabled="maintenance || recordsLoading" data-testid="refresh-records">{{ recordsLoading ? t.loading : t.refresh }}</button>
+                <button class="interface-btn" @click="downloadBackup" :disabled="maintenance" data-testid="backup">{{ t.backup }}</button>
+                <label for="restore-file">{{ t.restoreFile }}</label><input id="restore-file" type="file" accept=".json,application/json" @change="selectBackup" :disabled="maintenance" data-testid="restore-file">
+                <button class="interface-btn" @click="restoreBackup" :disabled="maintenance || !restoreFile" data-testid="restore">{{ t.restore }}</button>
+                <label for="delete-record-id">{{ t.chooseRecord }}</label>
+                <select id="delete-record-id" v-model="deleteRecordId" :disabled="maintenance" data-testid="delete-record-id">
+                  <option value="">{{ t.chooseRecord }}</option><option v-for="item in records.items" :key="item.id" :value="String(item.id)">{{ item.id }} · {{ item.title || t.untitled }}</option>
+                </select>
+                <p class="interface-hint">{{ t.selectionHint }}</p>
+                <button class="interface-btn" @click="deleteRecord(deleteRecordId)" :disabled="maintenance || !deleteRecordId" data-testid="delete-record">{{ t.deleteRecord }}</button>
+                <button class="interface-btn" @click="deleteAll" :disabled="maintenance" data-testid="delete-all">{{ t.deleteAll }}</button>
+              </div><p v-if="maintenanceMessage" class="interface-hint" role="status" data-testid="data-result">{{ maintenanceMessage }}</p>
+            </section>
           </div>
         </div>
-
-        <div class="status-badge" :class="healthStatus.class">
-          {{ t.health }}: <span class="score">{{ healthStatus.score }}</span>
-        </div>
+        <div class="status-badge status-normal">{{ t.experimental }}: <span class="score">{{ connected ? t.connected : t.disconnected }}</span></div>
       </div>
     </header>
-
-    <div class="summary-card tech-card" :class="healthStatus.borderClass">
-      <div class="icon-pulse" :style="{ backgroundColor: healthStatus.color, boxShadow: `0 0 0 0 ${healthStatus.color}80` }"></div>
+    <div class="summary-card tech-card" :inert="drawerOpen" :style="{ borderLeftColor: settings.themeColor }">
+      <div class="icon-pulse" :style="{ backgroundColor: settings.themeColor, boxShadow: `0 0 0 0 ${settings.themeColor}80` }"></div>
       <div class="summary-content" style="flex: 1;">
-        
         <div class="card-title-row">
-          <h2>{{ t.report }}: {{ t.cats[currentCategoryKey] }} {{ t.domain }} <span class="hint-text">{{ t.hint }}</span></h2>
-          
+          <h2>{{ t.report }}: {{ categoryLabel(category) }} <span class="hint-text">{{ t.hint }}</span></h2>
           <div class="card-actions">
-            <button class="force-refresh-btn" 
-                    :class="{ 'is-spinning': isForceRefreshing }" 
-                    :style="{ color: healthStatus.color, borderColor: healthStatus.color }" 
-                    @click="triggerGlobalForceRefresh" 
-                    :disabled="isForceRefreshing"
-                    title="跳过后端缓存，强制重新跑一遍模型推演">
-              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" :class="{ 'spin-anim': isForceRefreshing }"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-              {{ isForceRefreshing ? t.refreshing : t.forceRefreshBtn }}
+            <button class="force-refresh-btn" :style="accentStyle" @click="runAnalysis" :disabled="!connected || maintenance || analysis.status === 'loading'" :title="t.analysisLimit" data-testid="run-analysis">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" :class="{ 'spin-anim': analysis.status === 'loading' }"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              {{ analysis.status === 'loading' ? t.running : t.run }}
             </button>
-            
-            <button class="trace-btn" :style="{ color: healthStatus.color, borderColor: healthStatus.color, backgroundColor: `${healthStatus.color}15` }" @click="openDrawer">
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-              {{ t.traceBtn }}
+            <button ref="recordsButton" class="trace-btn" :style="{ ...accentStyle, backgroundColor: `${settings.themeColor}15` }" @click="openRecords" :disabled="!connected || maintenance" data-testid="records-toggle">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>{{ t.traceBtn }}
             </button>
           </div>
         </div>
-
-        <p class="summary-text" v-html="healthStatus.message"></p>
+        <p class="summary-text"><strong data-testid="saved-total">{{ records.total ?? '—' }}</strong> {{ t.savedPages }} · {{ t.recordLimit }}<br>
+          <span v-if="!connected">{{ t.connectHint }} </span><span role="status" aria-live="polite" data-testid="analysis-status">{{ analysisMessage }}</span>
+        </p>
+        <p v-if="recordsError" class="interface-hint" role="alert">{{ t.recordsError }}</p>
+        <p v-if="recordsUpdatedAt" class="interface-hint" data-testid="records-status">{{ t.updated }} {{ formatTime(records.snapshotAt) }} · {{ recordsRefreshed ? t.recordsRefreshed : t.snapshotHint }}<span v-if="recordsError"> · {{ t.stale }}</span></p>
+        <p v-if="analysis.generatedAt" class="interface-hint">{{ t.snapshot }} {{ formatTime(analysis.generatedAt) }}</p>
+        <p v-if="analysis.window.from_ts != null" class="interface-hint">{{ t.window }} {{ formatUtc(analysis.window.from_ts) }} — {{ formatUtc(analysis.window.to_ts) }} (UTC)</p>
+        <p v-if="analysis.window.truncated" role="alert" class="interface-hint">{{ t.truncated.replace('{n}', analysis.window.input_count).replace('{total}', analysis.window.available_count) }}</p>
+        <p v-if="analysis.status === 'ready'" class="interface-hint">{{ t.coverage.replace('{n}', analysis.window.processed_count).replace('{total}', analysis.window.available_count) }}</p>
       </div>
     </div>
-
-    <main class="dashboard-grid">
-      <div class="tech-card interactive-card">
-        <div class="card-header"><span class="dot"></span><h2>{{ t.c1 }}</h2></div>
-        <div ref="pieChartRef" class="chart-container"></div>
-      </div>
-      <div class="tech-card">
-        <div class="card-header">
-          <span class="dot"></span>
-          <h2>{{ t.cats[currentCategoryKey] }} - {{ t.c2 }} <span class="mock-hint">{{ t.mockHint }}</span></h2>
-        </div>
-        <div ref="graphChartRef" class="chart-container"></div>
-      </div>
-      <div class="tech-card">
-        <div class="card-header"><span class="dot"></span><h2>{{ t.cats[currentCategoryKey] }} - {{ t.c3 }}</h2></div>
-        <div ref="lineRepetitionRef" class="chart-container"></div>
-      </div>
-      <div class="tech-card">
-        <div class="card-header"><span class="dot"></span><h2>{{ t.cats[currentCategoryKey] }} - {{ t.c4 }}</h2></div>
-        <div ref="lineSentimentRef" class="chart-container"></div>
-      </div>
+    <main class="dashboard-grid" :inert="drawerOpen" :aria-label="t.charts">
+      <div class="tech-card interactive-card"><div class="card-header"><span class="dot"></span><h2 :title="t.categoriesHint">{{ t.categories }}</h2></div><div ref="pieRef" class="chart-container" role="img" :aria-label="t.categories"></div></div>
+      <div class="tech-card"><div class="card-header"><span class="dot"></span><h2 :title="t.graphHint">{{ categoryLabel(category) }} - {{ t.graph }} <span class="mock-hint">{{ t.structureHint }}</span></h2></div><div ref="graphRef" class="chart-container" role="img" :aria-label="t.graphHint"></div></div>
+      <div class="tech-card"><div class="card-header"><span class="dot"></span><h2 :title="t.repetitionHint">{{ categoryLabel(category) }} - {{ t.repetition }}</h2></div><div ref="repeatRef" class="chart-container" role="img" :aria-label="t.repetitionHint"></div></div>
+      <div class="tech-card"><div class="card-header"><span class="dot"></span><h2 :title="t.sentimentHint">{{ categoryLabel(category) }} - {{ t.sentiment }}</h2></div><div ref="sentimentRef" class="chart-container" role="img" :aria-label="t.sentimentHint"></div></div>
     </main>
-
-    <transition name="fade">
-      <div class="drawer-overlay" v-if="showDrawer" @click="showDrawer = false"></div>
-    </transition>
-    
+    <transition name="fade"><div class="drawer-overlay" v-if="drawerOpen" @click="closeRecords"></div></transition>
     <transition name="slide">
-      <aside class="drawer-panel tech-card" v-if="showDrawer" :style="{ borderLeftColor: healthStatus.color, boxShadow: `-10px 0 40px ${healthStatus.color}30` }">
-        
-        <div class="drawer-header">
-          <h3 :style="{ color: healthStatus.color }">{{ t.cats[currentCategoryKey] }} {{ t.drawerTitle }}</h3>
-          <button class="icon-btn close-btn" @click="showDrawer = false" title="关闭">✕</button>
-        </div>
-
-        <div class="drawer-loading" v-if="currentDrawerData.isLoading">
-          <div class="cyber-spinner small-spinner"></div>
-          <p>正在穿透获取底层真实迹线...</p>
-        </div>
-
-        <div class="drawer-content" v-else-if="currentDrawerData.hasData">
-          <div class="drawer-section">
-            <h4 class="section-title">🧬 {{ t.kwTitle }}</h4>
-            <div class="tags-container">
-              <span class="cyber-tag" v-for="(tag, idx) in currentDrawerData.keywords" :key="idx" :style="{ color: healthStatus.color, borderColor: healthStatus.color, backgroundColor: `${healthStatus.color}15` }">
-                # {{ tag }}
-              </span>
-            </div>
-          </div>
-
-          <div class="drawer-section">
-            <h4 class="section-title">💊 {{ t.aiTitle }}</h4>
-            <div class="rx-box" :style="{ borderLeftColor: healthStatus.color, backgroundColor: `${healthStatus.color}0A` }">
-              {{ currentDrawerData.prescription }}
-            </div>
-          </div>
-
-          <div class="drawer-section timeline-section">
-            <h4 class="section-title">⏱️ {{ t.tlTitle }}</h4>
-            <ul class="cyber-timeline">
-              <li v-for="(item, idx) in currentDrawerData.timeline" :key="idx">
-                <div class="timeline-dot" :class="`dot-${item.sentiment}`"></div>
-                <div class="timeline-content">
-                  
-                  <div class="timeline-meta">
-                    <span class="time">{{ item.time }}</span>
-                    
-                    <span class="repeat-badge" v-if="item.visits > 1" title="算法茧房循环重复标记">
-                      <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-                      {{ settings.lang === 'zh' ? `第 ${item.visits} 次重复` : `${item.visits}x Reps` }}
-                    </span>
-
-                    <span class="cached-status" :class="item.isCached ? 'cached-yes' : 'cached-no'">
-                      Cached: {{ item.isCached ? '是' : '否' }}
-                    </span>
-
-                    <button class="force-btn" v-if="item.isCached" @click.stop="triggerForceRun(item)" :disabled="item.isForceRunning" title="跳过缓存，强制重新抓取分析">
-                      <span v-if="!item.isForceRunning">⚡ 强制分析</span>
-                      <span v-else>↻ 运行中...</span>
-                    </button>
-                  </div>
-                  
-                  <a :href="item.url" target="_blank" class="title">{{ item.title }}</a>
-                  
-                  <div class="timeline-tags-row">
-                    <span class="source-tag">{{ item.source }}</span>
-                    <span class="sentiment-pill" :class="`bg-${item.sentiment}`">
-                      {{ getSentimentLabel(item.sentiment) }}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            </ul>
+      <aside ref="recordsDialog" class="drawer-panel tech-card" v-if="drawerOpen" :style="{ borderLeftColor: settings.themeColor, boxShadow: `-10px 0 40px ${settings.themeColor}30` }" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1" @keydown="onDrawerKeydown">
+        <div class="drawer-header"><h3 id="drawer-title" :style="{ color: settings.themeColor }">{{ t.records }}</h3><button class="icon-btn close-btn" @click="closeRecords" :title="t.close" :aria-label="t.close" data-testid="drawer-close">✕</button></div>
+        <p v-if="recordsError" class="interface-hint" role="alert">{{ t.recordsError }}</p>
+        <div class="drawer-loading" v-if="recordsLoading && !records.items.length"><div class="cyber-spinner small-spinner"></div><p>{{ t.loading }}</p></div>
+        <div class="drawer-content" v-else-if="records.items.length">
+          <div class="drawer-section" v-if="recordTags.length"><h4 class="section-title">🧬 {{ t.kwTitle }}</h4><div class="tags-container"><span class="cyber-tag" v-for="tag in recordTags" :key="tag" :style="{ ...accentStyle, backgroundColor: `${settings.themeColor}15` }"># {{ tag }}</span></div></div>
+          <div class="drawer-section"><h4 class="section-title">💊 {{ t.recordExplanation }}</h4><div class="rx-box" :style="{ borderLeftColor: settings.themeColor, backgroundColor: `${settings.themeColor}0A` }">{{ t.rawHint }}</div></div>
+          <div class="drawer-section timeline-section"><h4 class="section-title">⏱️ {{ t.tlTitle }}</h4>
+            <ul class="cyber-timeline"><li v-for="item in records.items" :key="item.id" data-testid="record-row">
+              <div class="timeline-dot" :style="{ borderColor: settings.themeColor }"></div>
+              <div class="timeline-content"><div class="timeline-meta"><time class="time">{{ formatTime(item.ts) }}</time></div>
+                <a v-if="safeHttpUrl(item.url)" :href="safeHttpUrl(item.url)" target="_blank" rel="noopener noreferrer" class="title">{{ item.title || t.untitled }}</a><span v-else class="title">{{ item.title || t.untitled }}</span>
+                <div class="timeline-tags-row"><span class="source-tag">{{ t.source }}: {{ sourceLabel(item.source) }}</span><span v-if="item.channel" class="source-tag">{{ t.channel }}: {{ item.channel }}</span></div>
+              </div>
+            </li></ul>
           </div>
         </div>
-
-        <div class="drawer-empty" v-else>
-          <svg viewBox="0 0 24 24" width="64" height="64" stroke="var(--text-muted)" stroke-width="1" fill="none"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
-          <p>当前领域暂无底层浏览迹线</p>
-          <span class="empty-hint">请确保插件已上报数据且 Pipeline 已处理完毕。</span>
-        </div>
-
+        <div class="drawer-empty" v-else-if="!recordsError"><svg viewBox="0 0 24 24" width="64" height="64" stroke="var(--text-muted)" stroke-width="1" fill="none"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg><p>{{ t.noRecords }}</p><span class="empty-hint">{{ t.rawHint }}</span></div>
+        <div class="pagination" v-if="records.total !== null"><p class="interface-hint">{{ t.loaded.replace('{n}', records.items.length).replace('{total}', records.total) }}</p><button v-if="records.hasMore" class="interface-btn" @click="fetchRecords(true)" :disabled="recordsLoading" data-testid="load-more">{{ recordsLoading ? t.loading : t.loadMore }}</button></div>
       </aside>
     </transition>
   </div>
@@ -192,476 +120,277 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import * as echarts from 'echarts'
-import axios from 'axios'
+import { createCyberCharts } from './cyber-charts.js'
+import { createLocalApi } from './local-api.js'
+import { analysisSnapshot, emptyAnalysis, recordsPage, mergeRecordsPage, safeHttpUrl } from './dashboard-data.js'
 
-const showSettings = ref(false)
-const toggleSettings = () => showSettings.value = !showSettings.value
-const isUpdating = ref(true)
-const currentCategoryKey = ref('global')
-const showDrawer = ref(false)
-const isForceRefreshing = ref(false)
-let pollingTimer = null; 
-
-const settings = reactive({
-  lang: 'zh',
-  themeColor: '#00f3ff',
-  fontFamily: "'Segoe UI', 'Microsoft YaHei', sans-serif",
-  isLightMode: false
-})
-
-const API_BASE_URL = 'http://127.0.0.1:8000'
-
-const i18n = {
+// Appearance is the owner's original 4d0bcd9 design; API lifecycle stays isolated.
+const settings = reactive({ lang: 'zh', isLightMode: false, themeColor: '#00f3ff', fontFamily: "'Segoe UI', 'Microsoft YaHei', sans-serif" })
+const lang = computed(() => settings.lang), showSettings = ref(false)
+const copy = {
   zh: {
-    sysUi: '系统级 UI 定制', langLabel: '🌐 界面语言 (Language)', visMode: '视觉引擎模式',
-    dark: '🌙 极客暗黑', light: '☀️ 护眼明亮', color: '神经突触高亮色', font: '全局渲染字体族',
-    health: '生态健康度', report: '深度剖析报告', domain: '领域', hint: '(💡 点击左侧饼图交互)', loading: '正在通过神经网络链接服务器获取 [{cat}] 数据...',
-    c1: '摄入结构特征 (点击切片下钻)', c2: '信息群落知识图谱', c3: '深度复读率走势', c4: '情感共振频段分析', mockHint: '(基于真实特征数据动态拓扑渲染)',
-    traceBtn: '深度溯源', forceRefreshBtn: '⚡ 强制大盘推演', refreshing: '推演中...',
-    drawerTitle: '领域底层数据透视', kwTitle: '高频特征提取', aiTitle: 'AI 干预处方', tlTitle: '原始浏览行为迹线',
-    week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', '昨日', '今日'], sent: ['多巴胺(正向)', '客观(中性)', '焦虑(负向)'],
-    noData: '暂无真实趋势数据',
-    cats: { global: '全局概览', ent: '娱乐', edu: '学习', news: '新闻', soc: '社交' },
-    eval: {
-      entScore: 'C- 茧房警报', entMsg: `您在 <b style="color:#ff00ea; font-family:{f}">娱乐</b> 领域的摄入处于<b>高频复读状态</b>。算法正向您投喂同质化多巴胺内容，强烈建议跳出舒适区！`,
-      eduScore: 'A+ 极佳', eduMsg: `您在 <b style="color:#00ffaa; font-family:{f}">学习</b> 领域的信息图谱展现出极高的<b>多样性与低重复度</b>。继续保持这种高质量的脑力体操！`,
-      newsScore: 'B- 情绪波动', newsMsg: `该领域的信息密度正常，但<b>负面情绪指数较高</b>。建议适当控制宏观叙事信息的摄入，关注真实生活。`,
-      socScore: 'B 圈层固化', socMsg: `您在 <b style="color:#ff4d4f; font-family:{f}">社交</b> 领域的信息交互呈现明显的<b>信息同温层效应 (回音室)</b>。建议引入不同视角的观点。`,
-      globScore: 'B+ 亚健康', 
-      globMsg: `当前整体信息流呈现 <b style="color:{color}; font-family:{f}">{maxCat}内容占据主导</b> 倾向。点击左下方饼图的各个切片，深度下钻您的信息群落。`,
-      emptyMsg: `当前系统暂无真实的浏览记录。请先通过后端接口或插件录入您的信息饮食数据。`
-    }
+    connection: '连接本机服务', adminKey: '本机管理密钥（admin_token）', connect: '连接', disconnect: '断开并清除当前页面数据', connected: '已连接', disconnected: '尚未连接',
+    keyHint: '从本机服务启动时提示的密钥文件复制管理密钥。密钥仅在当前页面内存中保存；刷新后需要重新连接。',
+    dataManagement: '数据管理', backup: '下载页面记录备份', restoreFile: '选择备份文件', restore: '替换恢复', deleteAll: '删除全部已保存记录', deleteRecord: '删除此记录',
+    backupHint: '备份是含网页内容的明文 JSON，最多 10,000 条 / 20 MiB。请保存在可信位置；备份不包含密钥、扩展队列或分析缓存。恢复会替换当前记录并重建向量。',
+    deletionHint: '删除或恢复前，请先暂停扩展并清空其待同步队列，避免旧内容重新入库。分析缓存会一并清除；已下载备份需自行删除。',
+    confirmDelete: '删除全部已保存页面记录和分析缓存？此操作不可撤销，请先按需下载备份。', confirmRecord: '删除此页面记录及全部分析缓存？', confirmRestore: '用所选备份替换当前全部页面记录？请先按需备份现有数据。',
+    backupDone: '备份下载已发起。请检查浏览器下载结果并妥善保管。', deleteDone: '删除完成，分析缓存已清除。', restoreDone: '恢复完成，分析缓存已清除。',
+    failedOperation: '操作结果未确认，请检查服务、备份文件并刷新核对数据；不要连续重复提交。', keyError: '连接失败：请使用有效的管理密钥，并检查本机接口和来源配置。', largeBackup: '备份文件超过 20 MiB。',
+    subtitle: '本地页面记录与实验性文本统计', dark: '深色', light: '浅色',
+    records: '已保存记录 · 全部', refresh: '刷新记录', viewRecords: '查看记录', savedPages: '条已保存页面记录',
+    recordLimit: '当前记录按页面去重，不能代表访问次数、阅读时长或完整浏览历史。',
+    loading: '正在读取…', recordsError: '读取记录失败，请检查本地服务后重试。已有显示值来自上次读取。', updated: '记录快照时间：', stale: '数据可能已过时',
+    snapshotHint: '翻页保持同一份记录快照，重新打开抽屉或刷新记录可查看新增记录。', recordsRefreshed: '记录已发生变化，已重新读取第一页；实验图表已清空。',
+    analysis: '近 7 天文本统计', experimental: '实验功能', run: '运行实验分析', running: '分析中…',
+    analysisLimit: '仅在点击后分析最近 7×24 小时的已保存记录。结果不用于判断信息茧房、心理状态或健康程度。',
+    states: { not_requested: '尚未运行实验分析。原始记录可独立查看。', loading: '正在分析，旧图表已清空。', empty: '所选时间范围内没有记录。', insufficient_data: '所选范围样本不足，至少需要 {n} 条记录；未生成分析结论。', unavailable: '实验分析暂不可用，请检查分析依赖和配置。原始记录仍可查看。', failed: '实验分析失败，未生成有效结果。', request_error: '分析请求失败或响应格式不兼容，请检查服务后重试。', ready: '实验统计已生成。图表展示本次快照；新记录不会自动加入，请按需重新运行。' },
+    snapshot: '快照生成时间：', window: '分析范围：', truncated: '范围内共有 {total} 条记录，本次仅读取按时间升序排列的前 {n} 条，不能代表全部记录。', coverage: '本次处理记录 {n} 条；时间范围内已保存记录共 {total} 条。',
+    metricCoverage: '分类有效 {categories}/{n} 条；情感有效 {sentiments}/{n} 条；日期有效 {timestamps}/{n} 条；相邻比较有效 {comparisons}/{pairs} 对。比较按后一条记录的 UTC 日期和分类归属。',
+    charts: '实验统计图表', categories: '实验分类分布', categoriesHint: '同一次分析的有效样本数；点击分类可切换趋势。',
+    readingGuide: '如何理解这些数据', guide1: '“没有数据”和“比例为零”含义不同，缺失日期保留为空白。', guide2: '相似度只比较相邻文本，不代表全部重复访问或全部重复内容。', guide3: '文本的积极、中性、消极标签不代表用户情绪或心理状态。',
+    selectedCategory: '趋势分类', allCategories: '全部分类', repetition: '相邻文本高相似比例', repetitionHint: '实验指标：相邻文本相似度 ≥ 0.85；日期按 UTC。', sentiment: '文本情感标签比例', sentimentHint: '使用实际标签比例；日期按 UTC。',
+    positive: '积极', neutral: '中性', negative: '消极', noData: '暂无可展示的实验数据', missingMetric: '所选分类缺少有效指标',
+    cats: { entertainment: '娱乐', learning: '学习', news: '新闻', social: '社交', shopping: '购物', tools: '工具', other: '其他' },
+    close: '关闭', rawHint: '这里展示全部已保存的原始页面记录，与上方实验分类筛选独立。接口尚未提供逐条情感、访问次数或缓存状态。', noRecords: '尚无已保存记录。', untitled: '未命名页面', unknown: '未知', source: '来源', channel: '采集频道', plugin: '扩展', imported: '导入', loaded: '已显示 {n} / {total} 条记录', loadMore: '加载更多',
   },
   en: {
-    sysUi: 'System UI Engine', langLabel: '🌐 Interface Language', visMode: 'Visual Mode',
-    dark: '🌙 Cyber Dark', light: '☀️ Clean Light', color: 'Synapse Highlight Color', font: 'Global Font Family',
-    health: 'Eco-Health', report: 'In-Depth Report', domain: 'Domain', hint: '(💡 Click pie chart to drill down)', loading: 'Connecting server to fetch [{cat}] models...',
-    c1: 'Intake Structure (Interactive)', c2: 'Information Cluster Graph', c3: 'Deep Repetition Trend', c4: 'Emotional Resonance Freq', mockHint: '(Data-driven Topology)',
-    traceBtn: 'Deep Trace', forceRefreshBtn: '⚡ Force Analyze', refreshing: 'Running...',
-    drawerTitle: 'Raw Data Penetration', kwTitle: 'High-Freq Features', aiTitle: 'AI Intervention Rx', tlTitle: 'Raw Browsing Timeline',
-    week: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Yest.', 'Today'], sent: ['Dopamine (Pos)', 'Objective (Neu)', 'Anxiety (Neg)'],
-    noData: 'No Real Trend Data',
-    cats: { global: 'Global', ent: 'Entertainment', edu: 'Learning', news: 'News', soc: 'Social' },
-    eval: {
-      entScore: 'C- Alert', entMsg: `Your intake in <b style="color:#ff00ea; font-family:{f}">Entertainment</b> is highly repetitive. Algorithms are feeding you homogenized dopamine. Break the loop!`,
-      eduScore: 'A+ Excellent', eduMsg: `Your <b style="color:#00ffaa; font-family:{f}">Learning</b> graph shows high diversity and low repetition. Keep up this high-quality mental workout!`,
-      newsScore: 'B- Mood Swings', newsMsg: `Information density here is normal, but the <b>Negative Emotion Index is high</b>. Consider limiting macro-narrative intake.`,
-      socScore: 'B Echo Chamber', socMsg: `Your <b style="color:#ff4d4f; font-family:{f}">Social</b> interaction shows an obvious <b>echo chamber effect</b>. Introduce diverse perspectives.`,
-      globScore: 'B+ Sub-healthy', 
-      globMsg: `The overall info stream is dominated by <b style="color:{color}; font-family:{f}">{maxCat}</b>. Click slices on the pie chart to drill down.`,
-      emptyMsg: `No actual browsing data found. Please ingest your data first to trigger the analysis pipeline.`
-    }
-  }
-}
-const t = computed(() => i18n[settings.lang])
-i18n.zh.cats.other = '其他'
-i18n.zh.eval.otherScore = 'B 中性观察'
-i18n.zh.eval.otherMsg = '这部分内容暂未归入核心领域，建议结合来源与主题继续细分，避免 <b>未知/自定义渠道</b> 长期堆积。'
-i18n.en.cats.other = 'Other'
-i18n.en.eval.otherScore = 'B Mixed Bucket'
-i18n.en.eval.otherMsg = 'This bucket is not mapped to a core domain yet. Review those <b>unknown/custom channels</b> and classify them if they keep growing.'
-
-const getSentimentLabel = (sent) => {
-  if (settings.lang === 'en') return sent === 'pos' ? '😍 Dopamine' : sent === 'neg' ? '😰 Anxiety' : '😐 Neutral';
-  return sent === 'pos' ? '😍 多巴胺' : sent === 'neg' ? '😰 焦虑感' : '😐 客观纪实';
+    connection: 'Connect to local service', adminKey: 'Local admin key (admin_token)', connect: 'Connect', disconnect: 'Disconnect and clear page data', connected: 'Connected', disconnected: 'Disconnected',
+    keyHint: 'Copy the admin key from the local file reported at service startup. It stays in page memory only; reconnect after refreshing.',
+    dataManagement: 'Data management', backup: 'Download page-record backup', restoreFile: 'Select backup', restore: 'Replace from backup', deleteAll: 'Delete all saved records', deleteRecord: 'Delete this record',
+    backupHint: 'Backups are plaintext JSON containing page content, up to 10,000 records / 20 MiB. Keep them private. Keys, extension queues and analysis caches are excluded. Restore replaces records and rebuilds vectors.',
+    deletionHint: 'Pause the extension and clear its pending queue before deleting or restoring, to prevent old content being uploaded again. Analysis caches are cleared; downloaded backups must be deleted separately.',
+    confirmDelete: 'Delete all saved records and analysis caches? This cannot be undone. Download a backup first if needed.', confirmRecord: 'Delete this page record and all analysis caches?', confirmRestore: 'Replace all current page records with this backup? Back up current data first if needed.',
+    backupDone: 'Backup download started. Check the browser download and store it safely.', deleteDone: 'Deletion complete; analysis caches cleared.', restoreDone: 'Restore complete; analysis caches cleared.',
+    failedOperation: 'Operation not confirmed. Check the service and backup, then refresh to verify the data before retrying.', keyError: 'Connection failed. Use a valid admin key and check the local API and origin configuration.', largeBackup: 'Backup exceeds 20 MiB.',
+    subtitle: 'Local page records and experimental text statistics', dark: 'Dark', light: 'Light',
+    records: 'Saved records · All', refresh: 'Refresh records', viewRecords: 'View records', savedPages: 'saved page records',
+    recordLimit: 'Records are currently deduplicated by page. They do not measure visits, reading time, or complete browsing history.',
+    loading: 'Loading…', recordsError: 'Could not read records. Check the local service and retry. Existing values are from the previous request.', updated: 'Records snapshot:', stale: 'May be outdated',
+    snapshotHint: 'Pages share one snapshot. Reopen the drawer or refresh records to include new arrivals.', recordsRefreshed: 'Records changed. Reloaded the first page and cleared the experimental charts.',
+    analysis: 'Text statistics · Last 7 days', experimental: 'Experimental', run: 'Run experimental analysis', running: 'Analyzing…',
+    analysisLimit: 'Runs only on request, using saved records from the last 7×24 hours. These results do not assess echo chambers, mental state, or health.',
+    states: { not_requested: 'Analysis has not been run. Raw records are available independently.', loading: 'Analyzing. Previous charts have been cleared.', empty: 'No records in this time window.', insufficient_data: 'At least {n} records are required in this window. No analysis was produced.', unavailable: 'Experimental analysis is unavailable. Check its dependencies and configuration. Raw records remain available.', failed: 'Experimental analysis failed. No valid result was produced.', request_error: 'Analysis request failed or the response is incompatible. Check the service and retry.', ready: 'This is an experimental snapshot. Run analysis again to include new records.' },
+    snapshot: 'Snapshot generated:', window: 'Window:', truncated: 'The window contains {total} records. Only the first {n} in ascending timestamp order were read; this does not represent all records.', coverage: '{n} records processed; {total} saved records in the window.',
+    metricCoverage: 'Valid categories: {categories}/{n} records; sentiment: {sentiments}/{n}; dates: {timestamps}/{n}; adjacent comparisons: {comparisons}/{pairs} pairs. Each comparison belongs to the later record’s UTC date and category.',
+    charts: 'Experimental charts', categories: 'Experimental categories', categoriesHint: 'Valid sample counts from this analysis. Click a category to filter trends.',
+    readingGuide: 'Reading these statistics', guide1: 'Missing values are different from zero. Dates without data remain blank.', guide2: 'Similarity compares adjacent texts only; it does not measure all repeated visits or content.', guide3: 'Positive, neutral and negative text labels do not describe your mood or mental state.',
+    selectedCategory: 'Trend category', allCategories: 'All categories', repetition: 'High adjacent-text similarity', repetitionHint: 'Experimental: adjacent-text similarity ≥ 0.85. Dates use UTC.', sentiment: 'Text sentiment proportions', sentimentHint: 'Actual label proportions. Dates use UTC.',
+    positive: 'Positive', neutral: 'Neutral', negative: 'Negative', noData: 'No experimental data to display', missingMetric: 'No valid metric for this category',
+    cats: { entertainment: 'Entertainment', learning: 'Learning', news: 'News', social: 'Social', shopping: 'Shopping', tools: 'Tools', other: 'Other' },
+    close: 'Close', rawHint: 'All saved raw page records, independent of the experimental category filter. Per-record sentiment, visit counts and cache status are not provided.', noRecords: 'No saved records.', untitled: 'Untitled page', unknown: 'Unknown', source: 'Source', channel: 'Captured channel', plugin: 'Extension', imported: 'Import', loaded: 'Showing {n} of {total} records', loadMore: 'Load more',
+  },
 }
 
-const currentDrawerData = reactive({
-  isLoading: false,
-  hasData: false,
-  keywords: [],      
-  prescription: '',  
-  timeline: []       
-})
-
-const loadDrawerData = async (silent = false) => {
-  if (!silent) {
-    currentDrawerData.isLoading = true;
-    currentDrawerData.hasData = false;
-    currentDrawerData.timeline = [];
-    currentDrawerData.keywords = [];
-    currentDrawerData.prescription = '';
-  }
-
-  try {
-    const res = await axios.get(`${API_BASE_URL}/items?limit=50`)
-    
-    let records = [];
-    if (Array.isArray(res.data)) {
-      records = res.data;
-    } else if (res.data && typeof res.data === 'object') {
-      records = res.data.items || res.data.data || res.data.records || [];
-    }
-
-    if (!Array.isArray(records) || records.length === 0) {
-      console.warn("⚠️ /items 接口返回为空，或者格式无法识别:", res.data);
-      records = [];
-    }
-
-    // 修复：抽屉分类过滤严格对齐后端本地词典
-    const categoryMap = {
-      'ent': ['Entertainment', 'entertainment', '娱乐', 'ent', 'video'],
-      'edu': ['Learning', 'learning', 'Tools', 'tools', '学习', 'edu'],
-      'news': ['News', 'news', '新闻'],
-      'soc': ['Social', 'social', '社交', 'soc'],
-      'other': ['Shopping', 'shopping', 'Other', 'other', '其他']
-    };
-
-    const catRecords = currentCategoryKey.value === 'global' 
-      ? records 
-      : records.filter(r => {
-          const matchKeys = categoryMap[currentCategoryKey.value] || [];
-          return matchKeys.includes(r.category) || matchKeys.includes(r.alias) || r.category === t.value.cats[currentCategoryKey.value];
-        });
-
-    if (catRecords && catRecords.length > 0) {
-      currentDrawerData.hasData = true
-      
-      currentDrawerData.timeline = catRecords.map(r => {
-        const dateObj = new Date(r.ts || r.created_at || Date.now());
-        const timeStr = isNaN(dateObj.getTime()) ? '未知' : dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-        let sentimentKey = 'neu';
-        if (r.sentiment > 0.1 || r.avg_sentiment > 0) sentimentKey = 'pos';
-        if (r.sentiment < -0.1 || r.negative_ratio > 0) sentimentKey = 'neg';
-
-        const cachedFlag = r.is_cached !== undefined ? r.is_cached : (r.cached || false);
-
-        return {
-          id: r.id || null, 
-          time: timeStr, 
-          title: r.title || '未知网页', 
-          url: r.url || '#', 
-          source: r.source || 'plugin', 
-          sentiment: sentimentKey, 
-          visits: r.repeat_count || r.visits || 1, 
-          isCached: cachedFlag, 
-          isForceRunning: false 
-        }
-      })
-
-      let extractedTags = [];
-      catRecords.forEach(r => {
-        if (Array.isArray(r.tags)) extractedTags.push(...r.tags);
-        if (Array.isArray(r.keywords)) extractedTags.push(...r.keywords);
-      });
-      extractedTags = [...new Set(extractedTags)].filter(Boolean).slice(0, 8);
-      if (extractedTags.length === 0) extractedTags = [t.value.cats[currentCategoryKey.value] || '探索中', '近期浏览'];
-      currentDrawerData.keywords = extractedTags;
-
-      const repeatCount = currentDrawerData.timeline.filter(i => i.visits > 1).length;
-      const negCount = currentDrawerData.timeline.filter(i => i.sentiment === 'neg').length;
-      
-      if (repeatCount > catRecords.length * 0.4) {
-        currentDrawerData.prescription = settings.lang === 'zh' 
-          ? `⚠️ 极高同质化预警：在最近记录中发现 ${repeatCount} 次重复。建议立刻关闭当前标签页，起立活动。` 
-          : `⚠️ High Repetition: ${repeatCount} repeated visits. Break the loop immediately.`;
-      } else if (negCount > catRecords.length * 0.4) {
-        currentDrawerData.prescription = settings.lang === 'zh' 
-          ? `📰 情绪波动警报：当前信息流负面情绪偏高。请警惕“末日刷屏”现象，保护心理健康。` 
-          : `📰 Mood Alert: High negative sentiment detected. Beware of doomscrolling.`;
-      } else {
-        currentDrawerData.prescription = settings.lang === 'zh' 
-          ? `📊 状态评估：信息摄入结构相对健康，请继续保持良好的数字饮食习惯。` 
-          : `📊 Status: Information diet is currently healthy.`;
-      }
-    } else {
-      if (!silent) currentDrawerData.hasData = false
-    }
-  } catch (error) {
-    console.error("无法获取抽屉数据:", error)
-    if (!silent) currentDrawerData.hasData = false
-  } finally {
-    if (!silent) currentDrawerData.isLoading = false
-  }
+const uiCopy = {
+  zh: { sysUi: '系统 UI 引擎', langLabel: '系统语言 / Language', visMode: '视觉模式', color: '全局高亮色', font: '界面字体', report: '实验统计', hint: '(点击环形图下钻)', traceBtn: '深度溯源', connectHint: '请从右上角设置连接本机服务。', graph: '统计结构', structureHint: '(示意)', graphHint: '全局展示本次样本分类数量；分类视图展示实际日期的相邻文本高相似比例。这是统计结构示意，不是语义关系图。', graphRoot: '本次样本', returnGlobal: '返回全局', chooseRecord: '选择待删除记录', selectionHint: '这里只列出已加载记录；更多记录可在右侧抽屉加载。', kwTitle: '已加载记录标签', recordExplanation: '记录口径说明', tlTitle: '真实页面记录' },
+  en: { sysUi: 'System UI Engine', langLabel: 'System Language', visMode: 'Visual Mode', color: 'Highlight Color', font: 'Interface Font', report: 'Experimental Statistics', hint: '(Click chart to explore)', traceBtn: 'Trace Records', connectHint: 'Connect to your local service in the top-right settings.', graph: 'Statistical Structure', structureHint: '(illustration)', graphHint: 'Global: category sample counts. Category: actual dated adjacent-text similarity proportions. This illustrates statistics, not semantic relationships.', graphRoot: 'Current samples', returnGlobal: 'Back to global', chooseRecord: 'Choose a record to delete', selectionHint: 'Only loaded records are listed. Load more in the right-hand drawer.', kwTitle: 'Loaded Record Tags', recordExplanation: 'About These Records', tlTitle: 'Saved Page Timeline' },
 }
-
-const openDrawer = () => {
-  showDrawer.value = true;
-  loadDrawerData(false); 
-}
-
-const triggerForceRun = async (item) => {
-  if (item.isForceRunning) return;
-  item.isForceRunning = true; 
-  
-  try {
-    await axios.post(`${API_BASE_URL}/analyze/run/force`, { url: item.url });
-    await loadDrawerData(true); 
-    await fetchAndInjectData(true); 
-  } catch (error) {
-    console.error("Force run failed:", error);
-    alert(settings.lang === 'zh' ? '❌ 强制运行失败，请检查后端服务。' : '❌ Force run failed.');
-  } finally {
-    item.isForceRunning = false;
-  }
-}
-
-const db = reactive({
-  'global': { repData: [0,0,0,0,0,0,0], sentPos: [0,0,0,0,0,0,0], sentNeu: [0,0,0,0,0,0,0], sentNeg: [0,0,0,0,0,0,0], nodes: 10, links: 10, focusMode: 'mixed', pieData: [], hasData: false },
-  'ent': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense', hasData: false },
-  'edu': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'sparse', hasData: false },
-  'news': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed', hasData: false },
-  'soc': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'dense', hasData: false },
-  'other': { repData: [], sentPos: [], sentNeu: [], sentNeg: [], nodes: 0, links: 0, focusMode: 'mixed', hasData: false }
-})
-
-const healthStatus = computed(() => {
-  const f = settings.fontFamily; const ev = t.value.eval;
-  const totalPieValue = db['global'].pieData.reduce((sum, item) => sum + item.value, 0);
-
-  if (totalPieValue === 0) return { score: 'N/A 待诊断', color: settings.isLightMode ? '#94a3b8' : '#64748b', class: 'status-normal', borderClass: 'border-normal', message: ev.emptyMsg }
-
-  switch (currentCategoryKey.value) {
-    case 'ent': return { score: ev.entScore, color: '#ff00ea', class: 'status-danger', borderClass: 'border-danger', message: ev.entMsg.replace('{f}', f) }
-    case 'edu': return { score: ev.eduScore, color: '#00ffaa', class: 'status-safe', borderClass: 'border-safe', message: ev.eduMsg.replace('{f}', f) }
-    case 'news': return { score: ev.newsScore, color: '#ffd700', class: 'status-warn', borderClass: 'border-warn', message: ev.newsMsg.replace('{f}', f) }
-    case 'soc': return { score: ev.socScore, color: '#ff4d4f', class: 'status-warn', borderClass: 'border-warn', message: ev.socMsg.replace('{f}', f) }
-    case 'other':
-      return {
-        score: ev.otherScore,
-        color: '#94a3b8',
-        class: 'status-warn',
-        borderClass: 'border-warn',
-        message: ev.otherMsg.replace('{f}', f)
-      }
-
-    default: {
-      const maxItem = db['global'].pieData.reduce(
-        (prev, current) => (prev.value > current.value) ? prev : current,
-        { value: -1 }
-      )
-      return {
-        score: ev.globScore,
-        color: settings.themeColor,
-        class: 'status-normal',
-        borderClass: 'border-normal',
-        message: ev.globMsg
-          .replace('{f}', f)
-          .replace('{color}', maxItem.itemStyle?.color || settings.themeColor)
-          .replace('{maxCat}', maxItem.name)
-      }
-    }
-  }
-})
-
+const t = computed(() => ({ ...copy[lang.value], ...uiCopy[lang.value] }))
+watch(lang, value => { document.documentElement.lang = value === 'zh' ? 'zh-CN' : 'en' }, { immediate: true })
 const customStyles = computed(() => ({
-  '--primary-color': settings.themeColor, '--font-family': settings.fontFamily, 
+  '--primary-color': settings.themeColor, '--font-family': settings.fontFamily,
   '--bg-gradient': settings.isLightMode ? 'linear-gradient(135deg, #f0f2f5 0%, #e2e8f0 100%)' : 'radial-gradient(circle at center, #111827 0%, #030712 100%)',
   '--card-bg': settings.isLightMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(17, 25, 40, 0.65)',
   '--card-border': settings.isLightMode ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.05)',
   '--text-main': settings.isLightMode ? '#1e293b' : '#f8fafc', '--text-muted': settings.isLightMode ? '#64748b' : '#94a3b8',
 }))
-
-const pieChartRef = ref(null); const graphChartRef = ref(null); const lineRepetitionRef = ref(null); const lineSentimentRef = ref(null);
-let pieChart, graphChart, lineRepChart, lineSentChart;
-
-const getChartUIConfig = () => ({ text: settings.isLightMode ? '#334155' : '#cbd5e1', line: settings.isLightMode ? '#cbd5e1' : '#334155', tooltip: settings.isLightMode ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)', fontFamily: settings.fontFamily })
-
-const fetchAndInjectData = async (silent = false, force = false) => {
-  try {
-    if (!silent && !force) isUpdating.value = true;
-
-    const summaryRes = await axios.get(`${API_BASE_URL}/dashboard/summary`)
-    const summary = summaryRes.data
-    
-    // 修改：从读取 channel_counts 改为读取 category_counts
-    const counts = summary.category_counts || summary.channel_counts || {} 
-    
-    const totalCount = Object.values(counts).reduce((sum, val) => sum + val, 0);
-    const getCount = (keys) => keys.reduce((sum, k) => sum + (counts[k] || 0), 0)
-    
-    // 按照后端词典，精准对齐 Category 字段名
-    const entCount = getCount(['Entertainment', 'entertainment', '娱乐']);
-    const eduCount = getCount(['Learning', 'learning', 'Tools', '学习', '教育']);
-    const newsCount = getCount(['News', 'news', '新闻']);
-    const socCount = getCount(['Social', 'social', '社交']);
-
-    // 计算真实的“其他”
-    const knownCount = entCount + eduCount + newsCount + socCount;
-    const otherCount = Math.max(0, totalCount - knownCount);
-
-    db['global'].pieData = [
-      { value: entCount, name: t.value.cats.ent, id: 'ent', itemStyle: {color: '#ff00ea'} },
-      { value: eduCount, name: t.value.cats.edu, id: 'edu', itemStyle: {color: '#00ffaa'} },
-      { value: newsCount, name: t.value.cats.news, id: 'news', itemStyle: {color: '#ffd700'} },
-      { value: socCount, name: t.value.cats.soc, id: 'soc', itemStyle: {color: '#ff4d4f'} },
-      { value: otherCount, name: t.value.cats.other, id: 'other', itemStyle: { color: '#94a3b8' } }
-    ]
-
-    const visUrl = force 
-      ? `${API_BASE_URL}/dashboard/visualization?days=7&force=1` 
-      : `${API_BASE_URL}/dashboard/visualization?days=7`;
-      
-    const visRes = await axios.get(visUrl)
-    const visData = visRes.data
-    const hasWarning = !!visData.pipeline_warning
-
-    const processTimeSeries = (ts) => {
-      if (hasWarning || !ts || ts.length === 0) return { repData: [], sentPos: [], sentNeu: [], sentNeg: [], hasData: false }
-      return {
-        repData: ts.map(h => (h.repeat_ratio || 0) * 100),
-        sentPos: ts.map(h => (h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20)),
-        sentNeg: ts.map(h => ((h.negative_ratio || 0) * 100 || 20)),
-        sentNeu: ts.map(h => { const pos = h.avg_sentiment > 0 ? h.avg_sentiment*100 : 20; const neg = (h.negative_ratio || 0) * 100 || 20; return 100 - pos - neg; }),
-        hasData: true
-      }
-    }
-
-    Object.assign(db['global'], processTimeSeries(visData.global?.time_series))
-
-    const categories = visData.categories || {}
-    Object.values(categories).forEach(cat => {
-      const alias = cat.alias || (visData.category_aliases && visData.category_aliases[cat.name])
-      if (alias && db[alias]) Object.assign(db[alias], processTimeSeries(cat.time_series))
-    })
-
-    nextTick(() => { updateAllCharts() })
-  } catch (error) {
-    console.error("API 数据拉取失败:", error)
-    ['global', 'ent', 'edu', 'news', 'soc'].forEach(key => { db[key].hasData = false })
-    db['global'].pieData = []
-    nextTick(() => { updateAllCharts() })
-  } finally {
-    if (!silent && !force) setTimeout(() => { isUpdating.value = false }, 500)
-  }
-}
-
-const triggerGlobalForceRefresh = async () => {
-  if (isForceRefreshing.value) return;
-  isForceRefreshing.value = true;
-  
-  try {
-    await fetchAndInjectData(true, true); 
-    if (showDrawer.value) {
-      await loadDrawerData(true);
-    }
-  } catch (error) {
-    console.error("大盘强制推演失败:", error);
-  } finally {
-    isForceRefreshing.value = false;
-  }
-}
-
-const generateGraphData = (key) => {
-  const data = db[key] || db['global'];
-  const nodes = []; const links = [];
-  if (!data.hasData) return { nodes, links };
-
-  if (key === 'global') {
-    nodes.push({ id: 'root', name: '我 (User)', symbolSize: 40, itemStyle: { color: settings.themeColor, shadowBlur: 15, shadowColor: settings.themeColor } });
-    db['global'].pieData.filter(p => p.value > 0).forEach(p => {
-      const size = Math.min(Math.max(p.value * 2, 15), 50); 
-      nodes.push({ id: p.id, name: p.name, symbolSize: size, itemStyle: { color: p.itemStyle.color, shadowBlur: 10, shadowColor: p.itemStyle.color } });
-      links.push({ source: 'root', target: p.id, lineStyle: { width: size / 10 } });
-    });
-  } else {
-    const baseColor = db['global'].pieData.find(p => p.id === key)?.itemStyle.color || settings.themeColor;
-    nodes.push({ id: 'cat_root', name: t.value.cats[key], symbolSize: 50, itemStyle: { color: baseColor, shadowBlur: 20, shadowColor: baseColor } });
-    data.repData.forEach((val, idx) => {
-      if (val > 0) { 
-        const nodeId = `trend_${idx}`;
-        nodes.push({ id: nodeId, name: t.value.week[idx], symbolSize: Math.max(10, val / 3), itemStyle: { color: settings.isLightMode ? '#94a3b8' : 'rgba(255,255,255,0.6)' } });
-        links.push({ source: 'cat_root', target: nodeId, lineStyle: { width: 1.5 } });
-      }
-    });
-  }
-  return { nodes, links };
-}
-
-const handleCategorySwitch = (targetKey) => {
-  if (currentCategoryKey.value === targetKey) return 
-  currentCategoryKey.value = targetKey
-  
-  isUpdating.value = true 
-  
-  setTimeout(() => { 
-    updateAllCharts(); 
-    isUpdating.value = false;
-  }, 400)
-}
-
-const updateAllCharts = () => {
-  if (!pieChartRef.value) return
-  if (!pieChart) {
-    pieChart = echarts.init(pieChartRef.value); graphChart = echarts.init(graphChartRef.value);
-    lineRepChart = echarts.init(lineRepetitionRef.value); lineSentChart = echarts.init(lineSentimentRef.value);
-    pieChart.on('click', (params) => { if (params.componentType === 'series') handleCategorySwitch(params.data.id) })
-  }
-
-  const ui = getChartUIConfig(); const isNotGlobal = currentCategoryKey.value !== 'global' 
-  
-  const hasGlobalData = db['global'].pieData.reduce((sum, item) => sum + (item.value || 0), 0) > 0;
-  const noDataGraphic = { type: 'text', left: 'center', top: 'center', style: { text: t.value.noData, fill: ui.text, fontFamily: ui.fontFamily, fontSize: 16, fontWeight: 'bold', opacity: 0.6 } };
-  const backBtnGraphic = isNotGlobal ? { type: 'group', left: 'center', top: '40%', cursor: 'pointer', onclick: () => handleCategorySwitch('global'), children: [ { type: 'rect', left: 'center', top: 'center', shape: { r: 16, width: 90, height: 32 }, style: { fill: settings.isLightMode ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)', stroke: settings.themeColor, lineWidth: 1 } }, { type: 'text', left: 'center', top: 'center', style: { text: settings.lang === 'en' ? '↺ Global' : '↺ 返回全局', fill: settings.themeColor, fontFamily: ui.fontFamily, fontSize: 13, fontWeight: 'bold' } } ] } : null;
-  
-  const finalGraphics = [];
-  if (!hasGlobalData) finalGraphics.push(noDataGraphic);
-  if (backBtnGraphic) finalGraphics.push(backBtnGraphic);
-
-  pieChart.setOption({
-    textStyle: { fontFamily: ui.fontFamily },
-    tooltip: { trigger: 'item', backgroundColor: ui.tooltip, textStyle: { color: ui.text, fontFamily: ui.fontFamily }, borderWidth: 0 },
-    legend: { show: hasGlobalData, bottom: '0%', textStyle: { color: ui.text, fontFamily: ui.fontFamily } },
-    graphic: finalGraphics, 
-    series: hasGlobalData ? [{ type: 'pie', radius: ['45%', '75%'], center: ['50%', '45%'], itemStyle: { borderRadius: 8, borderColor: settings.isLightMode ? '#fff' : '#0f172a', borderWidth: 3 }, label: { show: false }, emphasis: { scaleSize: 10, itemStyle: { shadowBlur: 20, shadowColor: 'rgba(0,0,0,0.5)' } }, data: db['global'].pieData }] : []
-  }, true) 
-
-  updateDynamicCharts(currentCategoryKey.value)
-}
-
-const updateDynamicCharts = (key) => {
-  const ui = getChartUIConfig(); 
-  const data = db[key] || db['global']; 
-  const loc = t.value
-  const graphData = data.hasData ? generateGraphData(key) : { nodes: [], links: [] }
-  const noDataGraphic = { type: 'text', left: 'center', top: 'center', style: { text: loc.noData, fill: ui.text, fontFamily: ui.fontFamily, fontSize: 16, fontWeight: 'bold', opacity: 0.6 } }
-
-  graphChart.setOption({ 
-    textStyle: { fontFamily: ui.fontFamily }, tooltip: { show: false }, 
-    graphic: data.hasData ? [] : [noDataGraphic],
-    series: [{ type: 'graph', layout: 'force', data: graphData.nodes, links: graphData.links, roam: true, draggable: true, label: { fontFamily: ui.fontFamily }, force: { repulsion: 200, edgeLength: 60 }, lineStyle: { color: settings.isLightMode ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)', curveness: 0.3 } }] 
-  }, true)
-
-  lineRepChart.setOption({ 
-    textStyle: { fontFamily: ui.fontFamily }, tooltip: { trigger: 'axis', backgroundColor: ui.tooltip, textStyle: { color: ui.text, fontFamily: ui.fontFamily }, borderWidth: 0 }, grid: { left: '8%', right: '5%', bottom: '15%', top: '15%' }, 
-    xAxis: { show: data.hasData, type: 'category', data: loc.week, axisLine: { lineStyle: { color: ui.line } }, axisLabel: { color: ui.text, fontFamily: ui.fontFamily } }, yAxis: { show: data.hasData, type: 'value', max: 100, splitLine: { lineStyle: { color: ui.line, type: 'dashed' } }, axisLabel: { color: ui.text, fontFamily: ui.fontFamily } }, 
-    graphic: data.hasData ? [] : [noDataGraphic],
-    series: data.hasData ? [{ data: data.repData, type: 'line', smooth: true, lineStyle: { color: settings.themeColor, width: 4, shadowColor: settings.themeColor, shadowBlur: 15 }, itemStyle: { color: settings.themeColor, borderWidth: 2, borderColor: '#fff' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: settings.themeColor + '90' }, { offset: 1, color: 'transparent' }]) } }] : [] 
-  }, true)
-
-  lineSentChart.setOption({ 
-    textStyle: { fontFamily: ui.fontFamily }, tooltip: { trigger: 'axis', backgroundColor: ui.tooltip, textStyle: { color: ui.text, fontFamily: ui.fontFamily }, borderWidth: 0 }, legend: { show: data.hasData, top: '0%', textStyle: { color: ui.text, fontFamily: ui.fontFamily }, icon: 'circle' }, grid: { left: '8%', right: '5%', bottom: '20%', top: '20%' }, 
-    xAxis: { show: data.hasData, type: 'category', data: loc.week, axisLine: { lineStyle: { color: ui.line } }, axisLabel: { color: ui.text, fontFamily: ui.fontFamily } }, yAxis: { show: data.hasData, type: 'value', splitLine: { lineStyle: { color: ui.line, type: 'dashed' } }, axisLabel: { color: ui.text, fontFamily: ui.fontFamily } }, 
-    graphic: data.hasData ? [] : [noDataGraphic],
-    series: data.hasData ? [ 
-      { name: loc.sent[0], type: 'line', smooth: true, data: data.sentPos, itemStyle: { color: '#00ffaa' }, lineStyle: { width: 3 }, showSymbol: false }, 
-      { name: loc.sent[1], type: 'line', smooth: true, data: data.sentNeu, itemStyle: { color: ui.text }, lineStyle: { width: 2, type: 'dotted' }, showSymbol: false }, 
-      { name: loc.sent[2], type: 'line', smooth: true, data: data.sentNeg, itemStyle: { color: '#ff4d4f' }, lineStyle: { width: 3 }, showSymbol: false } 
-    ] : [] 
-  }, true)
-}
-
-watch(() => [settings.isLightMode, settings.themeColor, settings.fontFamily, settings.lang], () => { nextTick(() => updateAllCharts()) }, { deep: true })
-const handleResize = () => { pieChart?.resize(); graphChart?.resize(); lineRepChart?.resize(); lineSentChart?.resize() }
-
-onMounted(() => { 
-  fetchAndInjectData(); 
-  window.addEventListener('resize', handleResize);
-  
-  pollingTimer = setInterval(() => {
-    fetchAndInjectData(true); 
-    if (showDrawer.value) {
-      loadDrawerData(true); 
-    }
-  }, 30000);
+const accentStyle = computed(() => ({ color: settings.themeColor, borderColor: settings.themeColor }))
+const toggleTheme = () => { settings.isLightMode = !settings.isLightMode }
+function closeSettings() { showSettings.value = false; settingsButton.value?.focus() }
+let api
+try { api = createLocalApi(import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000') } catch { /* Show connection failure without sending keys anywhere. */ }
+const connected = ref(false), pairing = ref(false), keyDraft = ref(''), connectionMessage = ref('')
+const maintenance = ref(false), maintenanceMessage = ref(''), restoreFile = ref(null)
+let dataGeneration = 0
+const emptyRecords = () => ({ items: [], total: null, page: 0, pageSize: 50, hasMore: false, nextCursor: null, snapshotAt: null })
+const records = reactive(emptyRecords())
+const recordsLoading = ref(false), recordsError = ref(false), recordsUpdatedAt = ref(null), recordsRefreshed = ref(false)
+const analysis = ref(emptyAnalysis()), category = ref('global'), drawerOpen = ref(false)
+const recordsDialog = ref(null), recordsButton = ref(null), settingsButton = ref(null)
+const deleteRecordId = ref('')
+const pieRef = ref(null), graphRef = ref(null), repeatRef = ref(null), sentimentRef = ref(null)
+let recordController, analysisController, timer, charts
+let recordBackground = false
+let disposed = false
+const analysisMessage = computed(() => {
+  const state = analysis.value
+  const message = (t.value.states[state.status] || t.value.states.request_error).replace('{n}', state.minimumRecords ?? '—')
+  if (state.status !== 'ready' || !state.coverage) return message
+  const coverage = state.coverage
+  const values = { n: coverage.record_count, categories: coverage.category_count, sentiments: coverage.sentiment_count,
+    timestamps: coverage.timestamp_count, comparisons: coverage.comparison_count, pairs: Math.max(0, coverage.record_count - 1) }
+  return message + ' ' + t.value.metricCoverage.replace(/\{(\w+)\}/g, (_, key) => values[key])
 })
+const categoryLabel = key => key === 'global' ? t.value.allCategories : (t.value.cats[key] || key)
+const sourceLabel = source => source === 'plugin' ? t.value.plugin : source === 'import' ? t.value.imported : (source || t.value.unknown)
+const formatTime = value => typeof value === 'number' && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleString(lang.value === 'zh' ? 'zh-CN' : 'en-GB') : t.value.unknown
+const formatUtc = value => typeof value === 'number' && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString().replace('T', ' ').slice(0, 16) : t.value.unknown
 
-onUnmounted(() => { 
-  window.removeEventListener('resize', handleResize); 
-  if (pollingTimer) clearInterval(pollingTimer); 
-  pieChart?.dispose(); graphChart?.dispose(); lineRepChart?.dispose(); lineSentChart?.dispose();
+function resetData() {
+  dataGeneration++; recordController?.abort(); analysisController?.abort()
+  recordController = undefined; recordBackground = false
+  Object.assign(records, emptyRecords())
+  recordsLoading.value = false; recordsError.value = false; recordsUpdatedAt.value = null; recordsRefreshed.value = false
+  analysis.value = emptyAnalysis(); category.value = 'global'; deleteRecordId.value = ''
+}
+function disconnect() {
+  api?.disconnect(); connected.value = false; keyDraft.value = ''; resetData()
+  restoreFile.value = null; maintenanceMessage.value = ''; drawerOpen.value = false; showSettings.value = true
+}
+async function connect() {
+  if (pairing.value || connected.value) return
+  pairing.value = true; connectionMessage.value = ''; resetData()
+  try {
+    if (!api) throw new Error('INVALID_LOCAL_API')
+    await api.pair(keyDraft.value.trim()); connected.value = true; keyDraft.value = ''; await fetchRecords()
+  } catch { connected.value = false; connectionMessage.value = t.value.keyError }
+  finally { pairing.value = false }
+}
+function selectBackup(event) {
+  const file = event.target.files?.[0]
+  restoreFile.value = file && file.size <= 20 * 1024 * 1024 ? file : null
+  maintenanceMessage.value = file && !restoreFile.value ? t.value.largeBackup : ''
+}
+async function dataAction(task, success) {
+  if (!connected.value || maintenance.value) return
+  maintenance.value = true; maintenanceMessage.value = ''; resetData()
+  const epoch = dataGeneration
+  try { await task(); if (epoch === dataGeneration) maintenanceMessage.value = success }
+  catch (error) {
+    if (epoch === dataGeneration) {
+      if (error.message === 'HTTP_401') { disconnect(); connectionMessage.value = t.value.keyError }
+      else maintenanceMessage.value = t.value.failedOperation
+    }
+  }
+  finally { maintenance.value = false; if (connected.value) await fetchRecords() }
+}
+async function downloadBackup() {
+  await dataAction(async () => {
+    const { data } = await api.get('/data/backup', { responseType: 'blob' })
+    const url = URL.createObjectURL(data), link = document.createElement('a')
+    link.href = url; link.download = 'idm-pages-backup.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }, t.value.backupDone)
+}
+async function restoreBackup() {
+  if (!restoreFile.value || !window.confirm(t.value.confirmRestore)) return
+  const file = restoreFile.value
+  await dataAction(() => api.post('/data/restore', file, { headers: { 'X-IDM-Confirm': 'replace-records' } }), t.value.restoreDone)
+}
+async function deleteAll() {
+  if (window.confirm(t.value.confirmDelete)) await dataAction(() => api.delete('/data', { headers: { 'X-IDM-Confirm': 'delete-all' } }), t.value.deleteDone)
+}
+async function deleteRecord(id) {
+  if (!records.items.some(item => String(item.id) === String(id))) return
+  if (window.confirm(t.value.confirmRecord)) await dataAction(() => api.delete('/items/' + id, { headers: { 'X-IDM-Confirm': 'delete-record' } }), t.value.deleteDone)
+}
+
+async function fetchRecords(append = false, background = false) {
+  if (disposed || !connected.value || maintenance.value || (append && !records.hasMore)) return
+  if (recordController) {
+    // Explicit reads take priority over polling. Foreground reads remain
+    // serialized so two page requests cannot append the same cursor.
+    if (background || !recordBackground) return
+    recordController.abort()
+  }
+  recordsLoading.value = !background
+  const controller = new AbortController()
+  let epoch = dataGeneration
+  recordController = controller; recordBackground = background
+  const current = () => !disposed && epoch === dataGeneration && recordController === controller && !controller.signal.aborted
+  try {
+    let response, refreshed = false
+    try {
+      response = await api.get('/items', { params: { pagination: 'cursor', page_size: 50,
+        ...(append ? { cursor: records.nextCursor } : {}) }, signal: controller.signal })
+    } catch (error) {
+      if (!append || error.code !== 'items_snapshot_expired' || !current()) throw error
+      // The old set can contain deleted or replaced records. Clear it before
+      // the single recovery request; never merge across snapshots or retry in a loop.
+      dataGeneration++; epoch = dataGeneration; analysisController?.abort()
+      Object.assign(records, emptyRecords()); recordsUpdatedAt.value = null
+      deleteRecordId.value = ''; analysis.value = emptyAnalysis(); category.value = 'global'
+      recordsRefreshed.value = false; refreshed = true; append = false
+      response = await api.get('/items', { params: { pagination: 'cursor', page_size: 50 }, signal: controller.signal })
+    }
+    // An already-started poll must not replace loaded pages while the user
+    // is choosing a record in settings or reading the drawer.
+    if (!current() || (background && (showSettings.value || drawerOpen.value))) return
+    const page = recordsPage(response.data)
+    if (!append && page.page !== 1) throw new Error('Invalid first records page')
+    Object.assign(records, append ? mergeRecordsPage(records, page) : page)
+    if (!append) recordsRefreshed.value = refreshed
+    if (!records.items.some(item => String(item.id) === deleteRecordId.value)) deleteRecordId.value = ''
+    recordsUpdatedAt.value = Date.now()
+    recordsError.value = false
+  } catch (error) {
+    if (current() && error.message === 'HTTP_401') { disconnect(); connectionMessage.value = t.value.keyError }
+    else if (current() && error.name !== 'AbortError') recordsError.value = true
+  } finally {
+    if (recordController === controller) {
+      recordController = undefined; recordBackground = false; recordsLoading.value = false
+    }
+  }
+}
+async function runAnalysis() {
+  if (!connected.value || maintenance.value || analysis.value.status === 'loading') return
+  analysis.value = emptyAnalysis('loading')
+  category.value = 'global'
+  const epoch = dataGeneration
+  analysisController = new AbortController()
+  try {
+    const response = await api.get('/dashboard/visualization', { params: { days: 7, force: true }, signal: analysisController.signal })
+    if (epoch === dataGeneration) analysis.value = analysisSnapshot(response.data)
+  } catch (error) {
+    if (epoch === dataGeneration && error.message === 'HTTP_401') { disconnect(); connectionMessage.value = t.value.keyError }
+    else if (epoch === dataGeneration && error.name !== 'AbortError') analysis.value = emptyAnalysis('request_error')
+  }
+}
+
+const recordTags = computed(() => [...new Set(records.items.flatMap(item => Array.isArray(item.tags) ? item.tags.filter(tag => typeof tag === 'string' && tag.trim()) : []))].slice(0, 20))
+let restoreBodyScroll
+watch(drawerOpen, open => {
+  if (open) {
+    const body = document.body, overflow = body.style.overflow, padding = body.style.paddingRight
+    const gutter = window.innerWidth - document.documentElement.clientWidth
+    if (gutter > 0) body.style.paddingRight = `${parseFloat(getComputedStyle(body).paddingRight) + gutter}px`
+    body.style.overflow = 'hidden'
+    restoreBodyScroll = () => { body.style.overflow = overflow; body.style.paddingRight = padding }
+  } else { restoreBodyScroll?.(); restoreBodyScroll = undefined }
+})
+async function openRecords() {
+  if (!connected.value || maintenance.value) return
+  showSettings.value = false; drawerOpen.value = true
+  await nextTick(); recordsDialog.value?.focus(); fetchRecords()
+}
+async function closeRecords() { drawerOpen.value = false; await nextTick(); recordsButton.value?.focus() }
+function onDrawerKeydown(event) {
+  if (event.key === 'Escape') { event.preventDefault(); closeRecords(); return }
+  if (event.key !== 'Tab') return
+  const focusable = [...recordsDialog.value.querySelectorAll('button:not(:disabled), a[href], [tabindex="0"]')]
+  const first = focusable[0], last = focusable.at(-1)
+  if (!first) { event.preventDefault(); recordsDialog.value.focus(); return }
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === recordsDialog.value)) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && (document.activeElement === last || document.activeElement === recordsDialog.value)) { event.preventDefault(); first.focus() }
+}
+function updateCharts() {
+  if (disposed || !charts) return
+  charts.render({ analysis: analysis.value, category: category.value, settings, labels: {
+    categoryName: categoryLabel, noData: t.value.noData, missingMetric: t.value.missingMetric,
+    returnGlobal: t.value.returnGlobal, sent: [t.value.positive, t.value.neutral, t.value.negative], graphRoot: t.value.graphRoot,
+  } })
+}
+watch([analysis, category, settings], () => nextTick(updateCharts), { deep: true })
+const resize = () => charts?.resize()
+onMounted(() => {
+  charts = createCyberCharts({ pie: pieRef.value, graph: graphRef.value, repetition: repeatRef.value, sentiment: sentimentRef.value }, key => { category.value = key })
+  updateCharts(); window.addEventListener('resize', resize)
+  timer = setInterval(() => { if (!drawerOpen.value && !showSettings.value) fetchRecords(false, true) }, 30000)
+})
+onUnmounted(() => {
+  disposed = true; api?.disconnect(); clearInterval(timer); recordController?.abort(); analysisController?.abort()
+  restoreBodyScroll?.()
+  window.removeEventListener('resize', resize); charts?.dispose()
 })
 </script>
 
@@ -684,7 +413,7 @@ h1, h2, h3, h4, p, span, div, button, input, select, a { font-family: inherit; }
 .header-actions { display: flex; align-items: center; gap: 1.5rem; }
 
 .tech-card { background: var(--card-bg); backdrop-filter: blur(20px); border: 1px solid var(--card-border); border-radius: 16px; padding: 1.5rem; box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; transition: all 0.3s ease; }
-.tech-card:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.1); }
+.tech-card:not(.drawer-panel):hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.1); }
 .interactive-card { border: 1px dashed var(--primary-color); cursor: pointer; }
 .interactive-card:hover { border: 1px solid var(--primary-color); background: rgba(0, 243, 255, 0.05); }
 
@@ -800,4 +529,22 @@ h1, h2, h3, h4, p, span, div, button, input, select, a { font-family: inherit; }
 .drawer-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 70%; text-align: center; color: var(--text-muted); opacity: 0.8; }
 .drawer-empty p { font-size: 1.1rem; font-weight: bold; margin: 15px 0 5px 0; color: var(--text-main); }
 .drawer-empty .empty-hint { font-size: 0.85rem; }
+
+/* Interface additions stay within the original settings panel. */
+.settings-panel { max-height: calc(100dvh - 160px); overflow-y: auto; overscroll-behavior: contain; }
+.api-settings { border-top: 1px solid var(--card-border); padding-top: 1rem; margin-top: 1rem; }
+.interface-hint { color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.api-settings input { box-sizing: border-box; width: 100%; min-width: 0; color: var(--text-main); background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 0.6rem; }
+.interface-btn { color: var(--primary-color); background: transparent; border: 1px solid var(--primary-color); border-radius: 20px; padding: 6px 16px; cursor: pointer; font: inherit; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [role="switch"]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
+.drawer-panel { max-height: calc(100dvh - 4rem); overscroll-behavior: contain; }
+.drawer-panel:focus { outline: none; }
+.drawer-section { margin-bottom: 2rem; }
+.timeline-content, .summary-content, .dashboard-grid > .tech-card { min-width: 0; }
+.timeline-content { overflow-wrap: anywhere; }
+.cyber-tag { max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.pagination { margin-top: auto; padding-bottom: 1rem; }
+.mock-hint { color: var(--text-muted); font-size: 0.75rem; font-weight: normal; }
+@media (max-width: 900px) { .tech-header, .card-title-row { flex-wrap: wrap; gap: 1rem; } .settings-panel { right: auto; left: 0; max-width: calc(100vw - 7rem); } .dashboard-grid { grid-template-columns: minmax(0, 1fr); } .card-actions { flex-wrap: wrap; } .drawer-panel { max-width: calc(100vw - 4rem - 4px); } }
 </style>

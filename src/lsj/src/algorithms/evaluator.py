@@ -10,7 +10,9 @@
     - 生成结构化评分、风险警报与个性化建议；
     - 支持 JSON / Markdown / HTML 报告导出。
 """
+import hashlib
 import json
+from html import escape
 from pathlib import Path
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import List, Dict, Optional, Any, Tuple
@@ -29,6 +31,16 @@ from similarity import SimilarityAnalyzer
 from markdown_builder import ReportMarkdownGenerator
 
 logger = setup_logger(__name__, "../../logs/evaluator.log")
+
+
+def _safe_identifier_reference(value: Any) -> str:
+    """Return a bounded pseudonymous reference without persisting the input."""
+    try:
+        raw = str(value).encode("utf-8", "replace")
+    except Exception:
+        return "<redacted>"
+    digest = hashlib.sha256(raw).hexdigest()[:16]
+    return f"<redacted sha256={digest}>"
 
 
 # ========= 枚举类定义 =========
@@ -2316,7 +2328,11 @@ class InformationQualityEvaluator:
                 result = self.quick_evaluate(group_df)
                 rows.append(self._build_score_row(result, id_key="period", id_value=key))
             except Exception as e:
-                logger.exception(f"分组 {key} 评估失败: {e}")
+                logger.error(
+                    "分组评估失败: group_ref=%s error_type=%s",
+                    _safe_identifier_reference(key),
+                    type(e).__name__,
+                )
 
         trend_df = pd.DataFrame(rows)
         if trend_df.empty:
@@ -2343,8 +2359,15 @@ class InformationQualityEvaluator:
                 result = self.quick_evaluate(user_df)
                 rankings.append(self._build_score_row(result, id_key="user_id", id_value=user_id))
             except Exception as e:
-                failed_users.append({"user_id": str(user_id), "error": str(e)})
-                logger.exception(f"用户 {user_id} 评估失败: {e}")
+                failed_users.append({
+                    "user_id": _safe_identifier_reference(user_id),
+                    "error": f"evaluation failed ({type(e).__name__})",
+                })
+                logger.error(
+                    "用户评估失败: user_ref=%s error_type=%s",
+                    _safe_identifier_reference(user_id),
+                    type(e).__name__,
+                )
 
         rankings = sorted(rankings, key=lambda x: x["overall_score"], reverse=True)
         for idx, row in enumerate(rankings, start=1):
@@ -2465,9 +2488,9 @@ class InformationQualityEvaluator:
                 "<body>\n"
                 "<h1>信息摄取质量评估报告</h1>\n"
                 "<h2>摘要</h2>\n"
-                f"<pre>{summary}</pre>\n"
+                f"<pre>{escape(summary)}</pre>\n"
                 "<h2>完整数据（JSON）</h2>\n"
-                f"<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre>\n"
+                f"<pre>{escape(json.dumps(data, ensure_ascii=False, indent=2))}</pre>\n"
                 "</body>\n"
                 "</html>\n"
             )
@@ -2647,7 +2670,9 @@ if __name__ == "__main__":
             if "similarity_to_previous" in df3.columns:
                 df3["similarity"] = df3["similarity_to_previous"]
             else:
-                df3["similarity"] = 0.0
+                raise ValueError(
+                    "相似度分析未生成 similarity 或 similarity_to_previous 列，不能伪造相似度测量"
+                )
 
         # ===== 保存构造后的 result.csv =====
         Path(result_csv_path).parent.mkdir(parents=True, exist_ok=True)

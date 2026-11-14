@@ -1,29 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "信息茧房程度分析系统 - 采集插件",
-  "version": "0.2.0",
-  "description": "采集浏览内容并发送到信息茧房程度分析系统后端",
+  "name": "Information Diet Manager - 本地页面采集",
+  "version": "0.4.0",
+  "minimum_chrome_version": "120",
+  "incognito": "not_allowed",
+  "description": "经用户开启后，将页面标题和正文摘要保存到本机服务",
   "permissions": [
     "storage",
-    "alarms",
-    "tabs",
-    "scripting"
+    "alarms"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "http://127.0.0.1:8000/*",
-    "http://localhost:8000/*"
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "信息茧房采集器",
+    "default_title": "本地页面采集",
     "default_popup": "popup.html"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["readability.js", "content.js"],
       "run_at": "document_idle"
     }

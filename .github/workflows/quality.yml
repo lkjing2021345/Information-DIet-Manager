@@ -1,0 +1,208 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-product-checks:
+    name: Windows / Python 3.12 / Node 24
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements/locks/*.txt
+
+      - name: Reject tracked runtime data and local dependencies
+        run: python scripts/check_repository_hygiene.py
+
+      - name: Verify repository gate using temporary Git repositories
+        run: python -m unittest discover -s scripts/tests -p test_repository_hygiene.py -v
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            chrome-extension/package-lock.json
+
+      - name: Install hashed Python dependencies in a clean environment
+        shell: pwsh
+        run: |
+          $pythonTestEnv = Join-Path $env:RUNNER_TEMP 'idm-python-test'
+          python -m venv $pythonTestEnv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonTest = Join-Path $pythonTestEnv 'Scripts/python.exe'
+          & $pythonTest -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/installer.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonTest -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/test-windows-py312.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          (Join-Path $pythonTestEnv 'Scripts') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "IDM_TEST_PYTHON=$pythonTest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Check Python dependency compatibility
+        run: python -m pip check
+
+      - name: Install hashed Python maintainer tools in an isolated environment
+        shell: pwsh
+        run: |
+          $pythonAuditEnv = Join-Path $env:RUNNER_TEMP 'idm-python-audit'
+          python -m venv $pythonAuditEnv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonAudit = Join-Path $pythonAuditEnv 'Scripts/python.exe'
+          & $pythonAudit -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/installer.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/toolchain-windows-py312.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit and verify every tool, installer and application package
+        shell: pwsh
+        run: |
+          $pythonAudit = Join-Path $env:RUNNER_TEMP 'idm-python-audit/Scripts/python.exe'
+          $applicationAudit = Join-Path $env:RUNNER_TEMP 'idm-application-audit.json'
+          $installerAudit = Join-Path $env:RUNNER_TEMP 'idm-installer-audit.json'
+          $toolchainAudit = Join-Path $env:RUNNER_TEMP 'idm-toolchain-audit.json'
+          $auditCache = Join-Path $env:RUNNER_TEMP 'idm-python-audit-cache'
+          & $pythonAudit -m pip_audit --strict --disable-pip --require-hashes -r requirements/locks/toolchain-windows-py312.txt --vulnerability-service pypi --cache-dir $auditCache --progress-spinner off --format json --output $toolchainAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit -m pip_audit --strict --disable-pip --require-hashes -r requirements/locks/installer.txt --vulnerability-service pypi --cache-dir $auditCache --progress-spinner off --format json --output $installerAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit scripts/verify_python_dependencies.py --lock requirements/locks/toolchain-windows-py312.txt --installer-lock requirements/locks/installer.txt --input requirements/locks/toolchain.in --audit $toolchainAudit --installer-audit $installerAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit -c "from scripts.lock_python_dependencies import validate_generator; validate_generator()"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonAudit -m pip_audit --strict --disable-pip --require-hashes -r requirements/locks/test-windows-py312.txt --vulnerability-service pypi --cache-dir $auditCache --progress-spinner off --format json --output $applicationAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/verify_python_dependencies.py --lock requirements/locks/test-windows-py312.txt --installer-lock requirements/locks/installer.txt --runtime-lock requirements/locks/runtime-windows-py312.txt --input requirements-test.txt --audit $applicationAudit --installer-audit $installerAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run API and algorithm contract tests
+        run: python -m pytest src/hyh/tests src/lsj/tests scripts/tests -q
+
+      - name: Verify the minimal runtime environment for browser acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONNOUSERSITE = '1'
+          $env:PIP_CONFIG_FILE = 'NUL'
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          $pythonRuntimeEnv = Join-Path $env:RUNNER_TEMP 'idm-python-runtime'
+          if (Test-Path -LiteralPath $pythonRuntimeEnv) { throw 'Runtime environment must be new.' }
+          python -I -m venv $pythonRuntimeEnv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonRuntime = Join-Path $pythonRuntimeEnv 'Scripts/python.exe'
+          & $pythonRuntime -I -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/installer.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I -m pip --isolated install --disable-pip-version-check --index-url https://pypi.org/simple --only-binary=:all: --require-hashes -r requirements/locks/runtime-windows-py312.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I -m pip --isolated check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythonAudit = Join-Path $env:RUNNER_TEMP 'idm-python-audit/Scripts/python.exe'
+          $runtimeAudit = Join-Path $env:RUNNER_TEMP 'idm-runtime-audit.json'
+          $installerAudit = Join-Path $env:RUNNER_TEMP 'idm-installer-audit.json'
+          $auditCache = Join-Path $env:RUNNER_TEMP 'idm-python-audit-cache'
+          & $pythonAudit -I -m pip_audit --strict --disable-pip --require-hashes -r requirements/locks/runtime-windows-py312.txt --vulnerability-service pypi --cache-dir $auditCache --progress-spinner off --format json --output $runtimeAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $pythonRuntime -I scripts/verify_python_dependencies.py --lock requirements/locks/runtime-windows-py312.txt --installer-lock requirements/locks/installer.txt --input requirements-runtime.txt --audit $runtimeAudit --installer-audit $installerAudit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "IDM_TEST_PYTHON=$pythonRuntime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run extension tests
+        run: node --test chrome-extension/tests/*.test.cjs
+
+      - name: Install extension browser test tools
+        working-directory: chrome-extension
+        run: npm ci
+
+      - name: Audit all extension dependencies against the official registry
+        working-directory: chrome-extension
+        run: npm audit --package-lock-only --include=dev --include=optional --include=peer --audit-level=low --registry=https://registry.npmjs.org
+
+      - name: Install isolated Chromium test browser
+        working-directory: chrome-extension
+        run: npx playwright install chromium --no-shell
+
+      - name: Verify extension and API with synthetic pages
+        working-directory: chrome-extension
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONPATH: ''
+        run: npm run test:e2e
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit all frontend dependencies against the official registry
+        working-directory: frontend
+        run: npm audit --package-lock-only --include=dev --include=optional --include=peer --audit-level=low --registry=https://registry.npmjs.org
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verify authenticated UI and data recovery
+        working-directory: frontend
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONPATH: ''
+        run: npm run test:e2e
+
+      - name: Generate and reproduce the scoped dependency inventory
+        shell: pwsh
+        run: |
+          $inventoryRevision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $inventoryRevision -ne $env:GITHUB_SHA) {
+            throw 'Dependency inventory revision does not match the checked-out commit.'
+          }
+          git diff --quiet HEAD --
+          if ($LASTEXITCODE -ne 0) { throw 'Tracked inputs changed during validation.' }
+          $inventoryPath = Join-Path $env:RUNNER_TEMP 'idm-dependency-inventory.json'
+          $inventoryRepeatPath = Join-Path $env:RUNNER_TEMP 'idm-dependency-inventory-repeat.json'
+          python scripts/generate_dependency_inventory.py --revision $env:GITHUB_SHA --output $inventoryPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/generate_dependency_inventory.py --revision $env:GITHUB_SHA --output $inventoryRepeatPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $inventoryHash = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash
+          if ($inventoryHash -ne (Get-FileHash -LiteralPath $inventoryRepeatPath -Algorithm SHA256).Hash) {
+            throw 'Dependency inventory is not reproducible from the same inputs.'
+          }
+          Write-Output "Dependency inventory SHA256: $inventoryHash"
+
+      - name: Archive the scoped dependency inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-inventory-${{ github.sha }}
+          path: ${{ runner.temp }}/idm-dependency-inventory.json
+          if-no-files-found: error
+          retention-days: 30

@@ -13,28 +13,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING, Union
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
+    from .algorithms.evaluator import InformationQualityEvaluator
 
 CURRENT_DIR = Path(__file__).resolve().parent
 ALGORITHMS_DIR = CURRENT_DIR / "algorithms"
-if str(ALGORITHMS_DIR) not in sys.path:
-    sys.path.insert(0, str(ALGORITHMS_DIR))
 
-from algorithms.evaluator import InformationQualityEvaluator
-from algorithms.sentiment import SentimentAnalyzer
-from algorithms.classifier import ContentClassifier
-from algorithms.similarity import SimilarityAnalyzer
+def _ensure_algorithm_import_path() -> None:
+    # Algorithm modules use sibling imports. Resolve them only when execution
+    # needs optional dependencies, consistently with the API analysis pipeline.
+    if str(ALGORITHMS_DIR) not in sys.path:
+        sys.path.insert(0, str(ALGORITHMS_DIR))
+
 
 def load_json_payload(input_file: Optional[str]) -> Dict[str, Any]:
     """支持从文件或标准输入读取 JSON。"""
     if input_file:
-        return json.loads(Path(input_file).read_text(encoding="utf-8"))
+        return json.loads(Path(input_file).read_text(encoding="utf-8-sig"))
 
-    raw = sys.stdin.read().strip()
+    raw = sys.stdin.read().lstrip("\ufeff").strip()
     if not raw:
         raise ValueError("未读取到输入数据。请通过 --input_file 传入 JSON 文件，或通过 stdin 传入 JSON。")
     return json.loads(raw)
@@ -79,21 +82,28 @@ def load_input_data(input_file: Optional[str], input_format: str) -> Union[Dict[
     if actual_format == "csv":
         if not input_file:
             raise ValueError("CSV 输入必须通过 --input_file 指定文件路径。")
-        return pd.read_csv(input_file)
+        import pandas as pd
+
+        return pd.read_csv(input_file, encoding="utf-8-sig")
 
     return load_json_payload(input_file)
 
 
 def normalize_payload(payload: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """兼容两种 JSON 输入：直接传数组，或传 {records, options} 对象。"""
+    """兼容数组、前端 ``records`` 和后端导出/备份 ``items`` 输入。"""
     if isinstance(payload, list):
         records = payload
         options: Dict[str, Any] = {}
     elif isinstance(payload, dict):
-        records = payload.get("records", [])
-        options = payload.get("options", {}) or {}
+        records = payload.get("records", payload.get("items", []))
+        options = payload.get("options", {})
+        if options is None:
+            options = {}
     else:
-        raise ValueError("输入 JSON 必须是数组，或包含 records 的对象。")
+        raise ValueError("输入 JSON 必须是数组，或包含 records/items 的对象。")
+
+    if not isinstance(options, dict):
+        raise ValueError("options 必须是对象。")
 
     if not isinstance(records, list) or not records:
         raise ValueError("records 必须是非空数组。")
@@ -117,6 +127,8 @@ def normalize_payload(payload: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any
 
 def normalize_dataframe_input(df: pd.DataFrame) -> pd.DataFrame:
     """标准化 CSV / DataFrame 输入。"""
+    import pandas as pd
+
     if not isinstance(df, pd.DataFrame):
         raise TypeError("CSV 输入必须可转换为 DataFrame。")
     if df.empty:
@@ -141,6 +153,8 @@ def normalize_dataframe_input(df: pd.DataFrame) -> pd.DataFrame:
 
 def normalize_input_data(payload: Union[Dict[str, Any], List[Dict[str, Any]], pd.DataFrame]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """统一标准化 JSON / CSV 输入。"""
+    import pandas as pd
+
     if isinstance(payload, pd.DataFrame):
         return normalize_dataframe_input(payload), {}
 
@@ -150,6 +164,8 @@ def normalize_input_data(payload: Union[Dict[str, Any], List[Dict[str, Any]], pd
 
 def build_dataframe(records: List[Dict[str, Any]]) -> pd.DataFrame:
     """前端 records 数组转 DataFrame。"""
+    import pandas as pd
+
     df = pd.DataFrame(records)
     if "url" not in df.columns:
         df["url"] = ""
@@ -166,6 +182,14 @@ def run_full_pipeline(
     detailed: bool,
 ) -> Tuple[Dict[str, Any], Any, InformationQualityEvaluator]:
     """原始数据全流程：分类 -> 情感 -> 相似度 -> 评估。"""
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+        raise ValueError("batch_size 必须是正整数")
+    _ensure_algorithm_import_path()
+    from classifier import ContentClassifier
+    from evaluator import InformationQualityEvaluator
+    from sentiment import SentimentAnalyzer
+    from similarity import SimilarityAnalyzer
+
     sentiment_analyzer = SentimentAnalyzer(use_bert=False)
     if sentiment_model_path:
         sentiment_analyzer.load_model(sentiment_model_path)
@@ -173,20 +197,29 @@ def run_full_pipeline(
     content_classifier = ContentClassifier(model_path=classifier_model_path)
     similarity_analyzer = SimilarityAnalyzer()
 
-    classified_df = content_classifier.batch_predict(df, batch_size=batch_size)
+    analysis_df = df.copy()
+    source_text = analysis_df["text"] if "text" in analysis_df.columns else analysis_df["title"]
+    source_text = source_text.fillna("").astype(str)
+    analysis_df["analysis_text"] = source_text.where(
+        source_text.str.strip() != "", analysis_df["title"].astype(str)
+    )
+
+    classified_df = content_classifier.batch_predict(analysis_df, batch_size=batch_size)
     sentiment_df = sentiment_analyzer.batch_predict(
         classified_df,
-        text_column="title",
+        text_column="analysis_text",
         include_emotions=include_emotions,
         batch_size=batch_size,
     )
-    similarity_df = similarity_analyzer.batch_calculate_similarity(sentiment_df, text_column="title")
+    similarity_df = similarity_analyzer.batch_calculate_similarity(sentiment_df, text_column="analysis_text")
 
     if "similarity" not in similarity_df.columns:
         if "similarity_to_previous" in similarity_df.columns:
             similarity_df["similarity"] = similarity_df["similarity_to_previous"]
         else:
-            similarity_df["similarity"] = 0.0
+            raise ValueError(
+                "相似度分析未生成 similarity 或 similarity_to_previous 列，不能伪造相似度测量"
+            )
 
     evaluator = InformationQualityEvaluator(
         sentiment_analyzer=sentiment_analyzer,
@@ -206,6 +239,9 @@ def run_full_pipeline(
 
 def run_evaluate_only(df: pd.DataFrame, *, detailed: bool) -> Tuple[Dict[str, Any], Any, InformationQualityEvaluator]:
     """已包含 category/sentiment/polarity/similarity 的结果直接评估。"""
+    _ensure_algorithm_import_path()
+    from evaluator import InformationQualityEvaluator
+
     evaluator = InformationQualityEvaluator()
     report = evaluator.evaluate(df, detailed=detailed)
     result = {
@@ -226,6 +262,29 @@ def validate_evaluate_input(df: pd.DataFrame) -> None:
             "evaluate 模式缺少必要字段: "
             f"{missing}。"
         )
+
+
+def _coerce_positive_int(value: Any) -> int:
+    """Validate a positive integer from CLI or JSON options."""
+    if isinstance(value, bool):
+        raise ValueError("batch_size 必须是正整数")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("batch_size 必须是正整数")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("batch_size 必须是正整数") from exc
+    if parsed <= 0:
+        raise ValueError("batch_size 必须是正整数")
+    return parsed
+
+
+def positive_int(value: str) -> int:
+    """argparse converter for strictly positive integer options."""
+    try:
+        return _coerce_positive_int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -253,13 +312,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sentiment_model_path", type=str, default=None, help="情感模型目录，可选")
     parser.add_argument("--classifier_model_path", type=str, default=None, help="分类模型目录，可选")
     parser.add_argument("--include_emotions", action="store_true", help="是否输出情绪分析结果")
-    parser.add_argument("--batch_size", type=int, default=128, help="批处理大小")
+    parser.add_argument("--batch_size", type=positive_int, default=128, help="批处理大小")
     parser.add_argument("--detailed", action="store_true", help="是否生成详细评估报告")
     return parser
 
 
+def _json_safe(value: Any) -> Any:
+    """Convert common numeric scalars to strict-JSON-compatible values."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    # pandas/numpy scalar values expose item() without requiring an optional
+    # import in the CLI module. Keep ordinary application objects untouched.
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            converted = item()
+        except (TypeError, ValueError):
+            converted = value
+        if converted is not value:
+            return _json_safe(converted)
+    return value
+
+
 def dump_output(result: Dict[str, Any], output_file: Optional[str]) -> None:
-    content = json.dumps(result, ensure_ascii=False, indent=2)
+    content = json.dumps(_json_safe(result), ensure_ascii=False, indent=2, allow_nan=False)
     if output_file:
         Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         Path(output_file).write_text(content, encoding="utf-8")
@@ -283,7 +363,7 @@ def export_result(
         return
 
     if actual_format == "json":
-        evaluator.export_report(report, output_file, format="json")
+        dump_output(result, output_file)
         print(f"结果已写入: {output_file}")
         return
 
@@ -303,7 +383,8 @@ def main() -> None:
     df, options = normalize_input_data(payload)
 
     include_emotions = bool(options.get("include_emotions", args.include_emotions))
-    batch_size = int(options.get("batch_size", args.batch_size))
+    raw_batch_size = options.get("batch_size", args.batch_size)
+    batch_size = _coerce_positive_int(raw_batch_size)
     detailed = bool(options.get("detailed", args.detailed))
 
     if args.mode == "analyze":
@@ -328,15 +409,28 @@ def main() -> None:
     )
 
 
-if __name__ == "__main__":
+def cli_main() -> int:
+    """Keep process failures private and consistent across command-line aliases."""
     try:
         main()
-    except KeyboardInterrupt:
-        print("Interrupted by user.")
+    except KeyboardInterrupt as exc:
+        error_payload = {
+            "success": False,
+            "error": "Analysis was interrupted. Run the command again when ready.",
+            "error_type": type(exc).__name__,
+        }
+        print(json.dumps(error_payload, ensure_ascii=False, indent=2), file=sys.stderr)
+        return 130
     except Exception as exc:
         error_payload = {
             "success": False,
-            "error": str(exc),
+            "error": "Analysis failed. Check the input file, options, and model setup, then retry.",
+            "error_type": type(exc).__name__,
         }
-        print(json.dumps(error_payload, ensure_ascii=False, indent=2))
-        sys.exit(1)
+        print(json.dumps(error_payload, ensure_ascii=False, indent=2), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(cli_main())

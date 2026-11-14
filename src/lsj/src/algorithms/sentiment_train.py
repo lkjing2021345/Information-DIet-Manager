@@ -21,6 +21,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.hf_cache import resolve_hub_cache
+
+# Read configuration before model dependencies import their own HF settings.
+HF_HUB_CACHE_DIR = resolve_hub_cache()
+HF_PERSISTENT_MODELS_DIR = HF_HUB_CACHE_DIR / "persistent_models"
+
 import numpy as np
 import pandas as pd
 
@@ -46,26 +52,12 @@ from sklearn.model_selection import train_test_split
 
 from utils.logger import setup_logger
 
-# Windows 固定 Hugging Face 缓存目录，确保模型权重、配置和 tokenizer 文件持久化保存。
-HF_HUB_CACHE_DIR = Path(r"C:\Users\Administrator\.cache\huggingface\hub")
-HF_HOME_DIR = HF_HUB_CACHE_DIR.parent
-HF_PERSISTENT_MODELS_DIR = HF_HUB_CACHE_DIR / "persistent_models"
-
 
 def configure_huggingface_cache() -> Path:
-    """统一设置 Hugging Face/Transformers 缓存目录到固定 Windows 路径。"""
-    HF_HOME_DIR.mkdir(parents=True, exist_ok=True)
-    HF_HUB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    """仅在明确准备模型时创建缓存目录，不改写用户环境配置。"""
     HF_PERSISTENT_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
-    os.environ["HF_HOME"] = str(HF_HOME_DIR)
-    os.environ["HUGGINGFACE_HUB_CACHE"] = str(HF_HUB_CACHE_DIR)
-    os.environ["TRANSFORMERS_CACHE"] = str(HF_HUB_CACHE_DIR)
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
     return HF_HUB_CACHE_DIR
 
-
-configure_huggingface_cache()
 
 try:
     import torch
@@ -110,11 +102,11 @@ def _sanitize_model_cache_name(model_name: str) -> str:
 
 def ensure_model_cached(model_name_or_path: str, token: Optional[str] = None) -> str:
     """
-    确保模型与 tokenizer 文件被持久化到固定 Hugging Face 缓存目录。
+    确保模型与 tokenizer 文件被持久化到用户配置的 Hugging Face 缓存目录。
 
     - 若传入本地目录，则直接返回本地目录；
-    - 若固定缓存目录下已存在完整快照，则优先复用；
-    - 首次不存在时自动下载到固定目录，并保存后续复用所需文件。
+    - 若缓存目录下已存在完整快照，则优先复用；
+    - 首次不存在时自动下载到该目录，并保存后续复用所需文件。
     """
     input_path = Path(model_name_or_path)
     if input_path.exists():

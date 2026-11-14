@@ -38,7 +38,7 @@ label {
     color: #555;
 }
 
-input {
+input, textarea {
     width: 100%;
     box-sizing: border-box;
     padding: 8px;
@@ -74,3 +74,10 @@ button.danger {
     color: #444;
     word-break: break-all;
 }
+
+.notice, .hint { font-size: 12px; line-height: 1.6; color: #465365; }
+.notice { padding: 10px; background: #e8f1ff; border-radius: 6px; }
+.row { gap: 10px; }
+.row strong { font-size: 12px; text-align: right; overflow-wrap: anywhere; }
+button:disabled { cursor: wait; opacity: .6; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #8cbcff; outline-offset: 2px; }

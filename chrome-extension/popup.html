@@ -1,57 +1,40 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Information DIet Manager</title>
-    <link rel="stylesheet" href="popup.css" />
-</head>
-
-<body>
-    <div class="wrap">
-        <h1>Information DIet Manager</h1>
-
-        <div class="card">
-            <div class="row">
-                <span>插件状态</span>
-                <button id="toggleBtn">加载中</button>
-            </div>
-            <div class="row">
-                <span>队列长度</span>
-                <strong id="queueSize">-</strong>
-            </div>
-            <div class="row">
-                <span>最近同步</span>
-                <strong id="lastFlushAt">-</strong>
-            </div>
-            <div class="row">
-                <span>最近成功</span>
-                <strong id="lastSuccessAt">-</strong>
-            </div>
-        </div>
-
-        <div class="card">
-            <label for="endpoint">接口地址</label>
-            <input id="endpoint" type="text" placeholder="http://127.0.0.1:8000/collect" />
-
-            <label for="flushIntervalMinutes">同步间隔（分钟）</label>
-            <input id="flushIntervalMinutes" type="number" min="1" max="30" />
-
-            <label for="minTextLength">最小正文长度</label>
-            <input id="minTextLength" type="number" min="20" max="500" />
-
-            <button id="saveBtn">保存配置</button>
-        </div>
-
-        <div class="card">
-            <button id="flushBtn">立即同步</button>
-            <button id="clearBtn" class="danger">清空队列</button>
-            <div id="result" class="result"></div>
-        </div>
-    </div>
-
-    <script src="popup.js"></script>
-</body>
-
-</html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>本地页面采集</title><link rel="stylesheet" href="popup.css"></head>
+<body><main class="wrap">
+  <h1>本地页面采集</h1>
+  <p class="notice">开启后读取网页地址、标题和最多 1,000 字符正文，暂存于扩展并同步到本机。请先排除邮箱、工作系统等敏感网站。</p>
+  <section class="card" aria-label="采集状态">
+    <div class="row"><span>采集与同步</span><button id="toggleBtn" disabled>加载中</button></div>
+    <div class="row"><span>待确认记录</span><strong id="queueSize">—</strong></div>
+    <div class="row"><span>需要处理</span><strong id="blockedCount">—</strong></div>
+    <div class="row"><span>容量拒收次数</span><strong id="rejectedFull">—</strong></div>
+    <div class="row"><span>最近尝试</span><strong id="lastFlushAt">—</strong></div>
+    <div class="row"><span>最近入库确认</span><strong id="lastSuccessAt">—</strong></div>
+    <p id="queueState" class="hint"></p>
+    <p id="lastError" class="hint"></p>
+  </section>
+  <section class="card" aria-label="采集设置">
+    <label for="apiToken">本机采集密钥（collector_token）</label>
+    <input id="apiToken" type="password" autocomplete="off" spellcheck="false" placeholder="从本机密钥文件复制采集密钥">
+    <p class="hint">只填写采集密钥。它保存在扩展的受限存储中，不授予读取、删除或恢复数据的权限。</p>
+    <label for="endpoint">本机接口地址</label>
+    <input id="endpoint" type="url" placeholder="http://127.0.0.1:8000/collect">
+    <p class="hint">只允许本机 /collect；修改后，现有队列也将发送到新地址。</p>
+    <label for="flushIntervalMinutes">同步间隔（1–30 分钟）</label>
+    <input id="flushIntervalMinutes" type="number" min="1" max="30">
+    <label for="minTextLength">最小正文长度（20–500 字符）</label>
+    <input id="minTextLength" type="number" min="20" max="500">
+    <label for="blockedDomains">排除域名（每行一个，含子域名）</label>
+    <textarea id="blockedDomains" rows="3" placeholder="mail.example.com"></textarea>
+    <p class="hint">回环地址和无痕页面不采集；排除域名不会删除之前的队列或已保存记录。</p>
+    <button id="saveBtn">保存配置</button>
+  </section>
+  <section class="card" aria-label="队列操作">
+    <button id="flushBtn">立即同步</button>
+    <button id="retryBtn">重试需要处理的记录</button>
+    <button id="clearBtn" class="danger">清空待确认队列</button>
+    <p class="hint">按页面地址去重；确认“已存在”不会更新旧正文，也不代表新增一次访问。暂停或清空无法撤回服务器已经收到的请求。</p>
+    <div id="result" class="result" role="status" aria-live="polite"></div>
+  </section>
+</main><script src="popup.js"></script></body></html>

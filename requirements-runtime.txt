@@ -1,0 +1,6 @@
+# Minimal HTTP API runtime for Python 3.12.
+# Optional analysis/model/training dependencies are intentionally excluded.
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.5
+python-multipart==0.0.32

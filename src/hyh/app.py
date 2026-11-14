@@ -1,28 +1,39 @@
 from __future__ import annotations
 
 import csv
+import asyncio
 import hashlib
 import io
+import ipaddress
 import json
 import math
 import re
 import struct
 import sys
 import time
-import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, Response
 
 from .db import get_conn, init_db
-from .models import IngestAck, IngestItem
+from .models import IngestAck, IngestItem, MAX_INGEST_TS
 from .utils import normalize_text, normalize_url, sha256_hex
+from . import db
+from .security import LocalAccessMiddleware, LocalSecurity, process_ownership
+from .data_management import install_data_routes
+from .item_pagination import read_cursor_page
+from .visualization_metrics import finite_metric
+from . import export_io
+from .owned_work import WorkOwner, run_owned_sync
+from .analysis_json import InvalidStoredAnalysis, load_analysis_json, validate_analysis_value
+from .full_analysis_contract import valid_full_analysis_cache
+from .global_statistics_contract import valid_global_statistics_cache
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 
 from urllib.parse import urlparse
 
@@ -34,7 +45,13 @@ JOB_QUEUED = "queued"
 JOB_RUNNING = "running"
 JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
+MAX_ANALYSIS_JOB_HISTORY = 500
+MAX_ANALYSIS_RUN_HISTORY = 365
+EXPERIMENTAL_ANALYSIS_NOTICE = (
+    "Experimental legacy analysis only; not a health, psychological, personality, or diagnostic assessment."
+)
 DEFAULT_VIS_DAYS = 7
+MIN_VIS_RECORDS = 5
 DEFAULT_REPEAT_THRESHOLD = 0.85
 CATEGORY_ALIAS_MAP = {
     "entertainment": "ent",
@@ -94,7 +111,7 @@ def _parse_tags(value: Any) -> Optional[List[str]]:
                 pass
         parts = [p.strip() for p in stripped.split("|") if p.strip()]
         return parts or None
-    return None
+    raise ValueError("tags must be a list, a supported text representation, or null")
 
 
 def _parse_meta(value: Any) -> Optional[Dict[str, Any]]:
@@ -109,10 +126,10 @@ def _parse_meta(value: Any) -> Optional[Dict[str, Any]]:
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError:
-            return None
-        if isinstance(parsed, dict):
+            raise ValueError("meta must contain a JSON object or null") from None
+        if parsed is None or isinstance(parsed, dict):
             return parsed
-    return None
+    raise ValueError("meta must be an object or null")
 
 
 def _coerce_int(value: Any, field: str) -> int:
@@ -155,12 +172,16 @@ def _prepare_item(raw: Dict[str, Any]) -> IngestItem:
     return IngestItem(**data)
 
 
-def _row_from_item(item: IngestItem) -> Dict[str, Any]:
+def _row_from_item(item: IngestItem, *, preserve_text: bool = False) -> Dict[str, Any]:
     title = (item.title or "").strip()
-    text = _clean_optional_str(item.text)
-    if text is None:
-        text = title
-    text = _truncate_text(text)
+    # Versioned backups already passed their schema/checksum checks. Preserve
+    # their text exactly; new collection/import retains its normal text policy.
+    text = item.text
+    if not preserve_text:
+        text = _clean_optional_str(text)
+        if text is None:
+            text = title
+        text = _truncate_text(text)
     url_norm = normalize_url(str(item.url))
     content_norm = normalize_text(title, text)
     return {
@@ -261,22 +282,16 @@ def _backfill_missing_embeddings(conn: Any, limit: int = 2000) -> int:
     return count
 
 
-def _payload_from_stats_row(row: Any) -> Dict[str, Any]:
-    channel_counts = None
-    if row["channel_counts"]:
-        try:
-            channel_counts = _normalize_channel_counts(json.loads(row["channel_counts"]))
-        except json.JSONDecodeError:
-            channel_counts = None
-    return {
-        "day": row["day"],
-        "total_count": row["total_count"],
-        "channel_counts": channel_counts,
-        "repeat_ratio": row["repeat_ratio"],
-        "negative_ratio": row["negative_ratio"],
-        "avg_sentiment": row["avg_sentiment"],
-        "generated_at": row["updated_at"],
-    }
+def _item_dataset_state(conn: Any) -> Dict[str, Any]:
+    """Read inside the caller's transaction; timestamps alone miss same-ms inserts."""
+    state = dict(conn.execute(
+        "SELECT COUNT(*) AS total_count, COALESCE(MAX(id), 0) AS max_id, "
+        "COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
+    ).fetchone())
+    state.update(dict(conn.execute(
+        "SELECT database_id, revision FROM items_revision WHERE singleton = 1"
+    ).fetchone()))
+    return state
 
 
 def _stable_hash_payload(data: Dict[str, Any]) -> str:
@@ -322,10 +337,6 @@ def _normalize_channel_counts(counts: Optional[Dict[str, Any]]) -> Optional[Dict
     return {key: normalized.get(key, 0) for key in CHANNEL_CANONICAL_KEYS}
 
 
-def _round_metric(value: Any) -> float:
-    return round(float(value or 0.0), 6)
-
-
 def _default_visualization_payload() -> Dict[str, Any]:
     return {
         "time_series": [],
@@ -358,6 +369,10 @@ def _default_visualization_result(
         "global": _default_visualization_payload(),
         "categories": {},
         "category_aliases": aliases,
+        "category_counts": {},
+        "analysis_status": "not_computed",
+        "minimum_records": MIN_VIS_RECORDS,
+        "date_timezone": "UTC",
         "pipeline_warning": pipeline_warning,
         "generated_at": generated_at if generated_at is not None else _now_ms(),
     }
@@ -400,7 +415,7 @@ def _execute_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         )
 
         df1 = classifier.batch_predict(
-            df[["title", "url", "analysis_text", "channel", "ts"]].copy()
+            df[["id", "title", "url", "analysis_text", "channel", "ts"]].copy()
         )
         df2 = sentiment.batch_predict(
             df1, text_column="analysis_text", include_emotions=False, batch_size=500
@@ -415,88 +430,14 @@ def _execute_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "evaluator": evaluator,
             "df3": df3,
         }
-    except Exception as exc:
-        normalized = [
-            normalize_text(
-                str(r.get("title") or ""), str(r.get("text") or r.get("title") or "")
-            )
-            for r in rows
-        ]
-        total = len(normalized)
-        distinct = len(set(normalized))
-        repeat_ratio = float(
-            0.0 if total == 0 else max(0.0, min(1.0, 1 - (distinct / total)))
-        )
+    except Exception:
+        # Model exceptions can contain source text or private filesystem paths.
+        # Do not expose/persist them or replace failed inference with hash scores.
         return {
             "ok": False,
-            "input_count": total,
-            "repeat_ratio": repeat_ratio,
-            "warning": f"lsj pipeline unavailable: {exc}",
+            "input_count": len(rows),
+            "warning": "Experimental analysis is unavailable; check the local analysis dependencies and configuration.",
         }
-
-
-def _build_daily_metric_rows(df: Any) -> List[Dict[str, Any]]:
-    if df.empty or "timestamp" not in df.columns:
-        return []
-
-    work = df.dropna(subset=["timestamp"]).copy()
-    if work.empty:
-        return []
-
-    work["date"] = work["timestamp"].dt.date.astype(str)
-    work["is_negative"] = (work["sentiment"] == "negative").astype(float)
-    work["is_positive"] = (work["sentiment"] == "positive").astype(float)
-    work["is_neutral"] = (work["sentiment"] == "neutral").astype(float)
-    work["is_repeat"] = (
-        work["similarity"].astype(float) >= DEFAULT_REPEAT_THRESHOLD
-    ).astype(float)
-
-    daily = (
-        work.groupby("date")
-        .agg(
-            count=("title", "count"),
-            avg_polarity=("polarity", "mean"),
-            avg_similarity=("similarity", "mean"),
-            repeat_ratio=("is_repeat", "mean"),
-            negative_ratio=("is_negative", "mean"),
-            positive_ratio=("is_positive", "mean"),
-            neutral_ratio=("is_neutral", "mean"),
-        )
-        .reset_index()
-        .sort_values(by="date")
-    )
-
-    rows: List[Dict[str, Any]] = []
-    for item in daily.to_dict("records"):
-        rows.append(
-            {
-                "date": str(item["date"]),
-                "count": int(item["count"]),
-                "avg_polarity": _round_metric(item["avg_polarity"]),
-                "avg_similarity": _round_metric(item["avg_similarity"]),
-                "repeat_ratio": _round_metric(item["repeat_ratio"]),
-                "negative_ratio": _round_metric(item["negative_ratio"]),
-                "positive_ratio": _round_metric(item["positive_ratio"]),
-                "neutral_ratio": _round_metric(item["neutral_ratio"]),
-            }
-        )
-    return rows
-
-
-def _build_category_visualization(df: Any) -> Dict[str, Any]:
-    if df.empty or "category" not in df.columns:
-        return {}
-
-    categories: Dict[str, Any] = {}
-    for category, group in df.groupby("category"):
-        key = _normalize_category_key(category)
-        categories[key] = {
-            "alias": CATEGORY_ALIAS_MAP.get(key, key),
-            "label": str(category),
-            "time_series": _build_daily_metric_rows(group),
-        }
-
-    return dict(sorted(categories.items(), key=lambda item: item[0]))
 
 
 def _build_visualization_result(
@@ -512,24 +453,43 @@ def _build_visualization_result(
         limit_rows=limit_rows,
         input_count=len(rows),
     )
+    if not rows:
+        base["analysis_status"] = "empty"
+        return base
+    if len(rows) < MIN_VIS_RECORDS:
+        base["analysis_status"] = "insufficient_data"
+        return base
     execution = _execute_lsj_pipeline(rows)
 
     if not execution.get("ok"):
+        base["analysis_status"] = "unavailable"
         base["pipeline_warning"] = execution.get("warning")
         return base
 
-    if int(execution.get("input_count") or 0) == 0:
+    try:
+        from .visualization_metrics import build_visualization_metrics
+
+        df3 = execution["df3"]
+        # Adjacent-pair results only describe the original (ts, id) sequence.
+        # A pipeline that drops or reorders rows must not silently relabel them.
+        if (len(df3) != len(rows) or df3["id"].tolist() != [r["id"] for r in rows]
+                or df3["ts"].tolist() != [r["ts"] for r in rows]):
+            raise ValueError("Pipeline record alignment changed")
+        metrics = build_visualization_metrics(
+            df3, repeat_threshold=DEFAULT_REPEAT_THRESHOLD, category_aliases=CATEGORY_ALIAS_MAP,
+        )
+    except Exception:
+        # Do not turn a failed metric computation into zeroes or a successful chart.
+        base["analysis_status"] = "failed"
+        base["pipeline_warning"] = "visualization computation failed"
         return base
 
-    evaluator = execution["evaluator"]
-    df3 = execution["df3"]
-    processed = evaluator._preprocess_data(df3)
-    global_payload = evaluator.get_visualization_data(df3)
-    global_payload["time_series"] = _build_daily_metric_rows(processed)
-
-    base["window"]["input_count"] = int(execution["input_count"])
-    base["global"] = global_payload
-    base["categories"] = _build_category_visualization(processed)
+    base["window"]["processed_count"] = metrics["processed_count"]
+    base["analysis_status"] = "ready"
+    base["global"] = metrics["global"]
+    base["categories"] = metrics["categories"]
+    base["category_counts"] = metrics["category_counts"]
+    base["coverage"] = metrics["coverage"]
     return base
 
 
@@ -598,6 +558,44 @@ def _insert_analysis_job(
     return int(cur.lastrowid)
 
 
+def _prune_analysis_history(conn: Any) -> None:
+    """Keep terminal analysis history bounded without touching active work.
+
+    Jobs are also used as a best-effort cache.  Retaining the newest terminal
+    rows keeps recent cache reuse intact while allowing older keys to be
+    recomputed instead of letting payloads grow the per-user database forever.
+    The latest run rows are retained for the history endpoint; destructive
+    data operations still clear all derived state through ``clear_derived``.
+    """
+    conn.execute(
+        """
+        DELETE FROM analysis_jobs
+        WHERE status IN (?, ?)
+          AND id NOT IN (
+              SELECT id
+              FROM analysis_jobs
+              WHERE status IN (?, ?)
+              ORDER BY id DESC
+              LIMIT ?
+          )
+        """,
+        (JOB_COMPLETED, JOB_FAILED, JOB_COMPLETED, JOB_FAILED,
+         max(1, int(MAX_ANALYSIS_JOB_HISTORY))),
+    )
+    conn.execute(
+        """
+        DELETE FROM analysis_runs
+        WHERE id NOT IN (
+            SELECT id
+            FROM analysis_runs
+            ORDER BY id DESC
+            LIMIT ?
+        )
+        """,
+        (max(1, int(MAX_ANALYSIS_RUN_HISTORY)),),
+    )
+
+
 def _update_analysis_job(
     conn: Any,
     job_id: int,
@@ -636,6 +634,29 @@ def _update_analysis_job(
             job_id,
         ),
     )
+    if status in {JOB_COMPLETED, JOB_FAILED}:
+        _prune_analysis_history(conn)
+
+
+def _recover_interrupted_analysis_jobs() -> None:
+    """Called only during startup while this process owns the database lock."""
+    recovered_at = _now_ms()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """
+            UPDATE analysis_jobs
+            SET status = ?, error = ?, finished_at = ?, updated_at = ?
+            WHERE status IN (?, ?)
+            """,
+            (JOB_FAILED, "Analysis was interrupted before this service start; run it again.",
+             recovered_at, recovered_at, JOB_QUEUED, JOB_RUNNING),
+        )
+        _prune_analysis_history(conn)
+
+
+class AnalysisUnavailableError(RuntimeError):
+    """Expected optional-inference failure; never carries raw model exceptions."""
 
 
 def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -644,57 +665,73 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "input_count": 0,
             "category_counts": {},
             "sentiment_counts": {},
-            "negative_ratio": 0.0,
-            "avg_sentiment": 0.0,
-            "repeat_ratio": 0.0,
+            "comparison_count": 0,
+            "sentiment_count": 0,
+            "polarity_count": 0,
+            "negative_ratio": None,
+            "avg_sentiment": None,
+            "repeat_ratio": None,
             "quick_evaluation": None,
             "full_report": None,
         }
 
     execution = _execute_lsj_pipeline(rows)
     if not execution.get("ok"):
-        total = int(execution.get("input_count") or 0)
-        return {
-            "input_count": total,
-            "category_counts": {"unknown": total},
-            "sentiment_counts": {"Neutral": total},
-            "negative_ratio": 0.0,
-            "avg_sentiment": 0.0,
-            "repeat_ratio": float(execution.get("repeat_ratio") or 0.0),
-            "quick_evaluation": None,
-            "full_report": None,
-            "pipeline_warning": execution.get("warning"),
-        }
+        raise AnalysisUnavailableError("Experimental analysis is unavailable.")
 
-    import pandas as pd  # type: ignore
-
-    evaluator = execution["evaluator"]
     df3 = execution["df3"]
+    # Scores and adjacent comparisons must describe the original input sequence.
+    # Broken adapter output is an internal failure, not incomplete measurements.
+    try:
+        aligned = (type(execution.get("input_count")) is int
+                   and execution["input_count"] == len(rows) and len(df3) == len(rows)
+                   and df3["id"].tolist() == [row["id"] for row in rows]
+                   and df3["ts"].tolist() == [row["ts"] for row in rows])
+    except Exception:
+        aligned = False
+    if not aligned:
+        raise RuntimeError("Pipeline record alignment changed")
+    evaluator = execution["evaluator"]
     quick = evaluator.quick_evaluate(df3)
     report = evaluator.evaluate(df3, detailed=False).to_dict()
 
-    sentiment_norm = df3["sentiment"].fillna("").astype(str).str.lower()
     category_norm = df3["category"].fillna("other").astype(str)
-    polarity_num = pd.to_numeric(df3["polarity"], errors="coerce").fillna(0.0)
-    similarity_num = (
-        pd.to_numeric(df3["similarity"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
-    )
-
-    negative_ratio = float((sentiment_norm == "negative").mean())
-    avg_sentiment = float(polarity_num.mean())
-    repeat_ratio = float((similarity_num >= DEFAULT_REPEAT_THRESHOLD).mean())
+    similarities: List[float] = []
+    polarities: List[float] = []
+    sentiment_counts: Dict[str, int] = {}
+    for index, row in enumerate(df3.to_dict("records")):
+        similarity = finite_metric(row.get("similarity"), 0, 1)
+        if (index > 0 and similarity is not None
+                and ("similarity_valid" not in row or row["similarity_valid"] is True)):
+            similarities.append(similarity)
+        sentiment = row.get("sentiment")
+        label = sentiment.strip().lower() if isinstance(sentiment, str) else None
+        if (label not in {"positive", "neutral", "negative"}
+                or ("sentiment_valid" in row and row["sentiment_valid"] is not True)):
+            continue
+        # Only the metric with missing measurements loses observations; category
+        # counts above retain the complete input, including the first record.
+        key = label.title()
+        sentiment_counts[key] = sentiment_counts.get(key, 0) + 1
+        polarity = finite_metric(row.get("polarity"), -1, 1)
+        if polarity is not None:
+            polarities.append(polarity)
+    sentiment_count = sum(sentiment_counts.values())
+    negative_ratio = sentiment_counts.get("Negative", 0) / sentiment_count if sentiment_count else None
+    avg_sentiment = math.fsum(polarities) / len(polarities) if polarities else None
+    repeat_ratio = (sum(value >= DEFAULT_REPEAT_THRESHOLD for value in similarities) / len(similarities)
+                    if similarities else None)
 
     category_counts = {
         str(k): int(v) for k, v in category_norm.value_counts().to_dict().items()
     }
-    sentiment_counts = {
-        str(k): int(v) for k, v in df3["sentiment"].value_counts().to_dict().items()
-    }
-
     return {
-        "input_count": int(execution["input_count"]),
+        "input_count": len(rows),
         "category_counts": category_counts,
         "sentiment_counts": sentiment_counts,
+        "comparison_count": len(similarities),
+        "sentiment_count": sentiment_count,
+        "polarity_count": len(polarities),
         "negative_ratio": negative_ratio,
         "avg_sentiment": avg_sentiment,
         "repeat_ratio": repeat_ratio,
@@ -705,6 +742,10 @@ def _run_lsj_pipeline(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _get_job_row(conn: Any, job_id: int) -> Optional[Dict[str, Any]]:
+    # Python integers are unbounded, but SQLite INTEGER primary keys are not.
+    # An unrepresentable identifier cannot name a stored job.
+    if not -(2**63) <= job_id <= 2**63 - 1:
+        return None
     row = conn.execute(
         "SELECT * FROM analysis_jobs WHERE id = ? LIMIT 1",
         (job_id,),
@@ -712,31 +753,28 @@ def _get_job_row(conn: Any, job_id: int) -> Optional[Dict[str, Any]]:
     if row is None:
         return None
     data = dict(row)
+    _validate_stored_analysis(data)
     for key in ("result_payload", "metrics_json"):
-        if data.get(key):
-            try:
-                data[key] = json.loads(data[key])
-            except json.JSONDecodeError:
-                data[key] = None
+        data[key] = _read_stored_analysis(data.get(key))
     data["cache_hit"] = bool(data.get("cache_hit", 0))
     return data
 
 
-def insert_items(items: Iterable[IngestItem]) -> Tuple[int, int]:
+def insert_items(items: Iterable[IngestItem], *, connection=None, preserve_text: bool = False) -> Tuple[int, int]:
     inserted = 0
     duplicates = 0
     sql = """
-        INSERT OR IGNORE INTO items (
+        INSERT INTO items (
             url, title, text, ts, source, lang, channel, author, tags, meta,
             url_hash, content_hash, created_at
         ) VALUES (
             :url, :title, :text, :ts, :source, :lang, :channel, :author, :tags, :meta,
             :url_hash, :content_hash, :created_at
-        )
+        ) ON CONFLICT(url_hash) DO NOTHING
     """
-    with get_conn() as conn:
+    with (get_conn() if connection is None else nullcontext(connection)) as conn:
         for item in items:
-            row = _row_from_item(item)
+            row = _row_from_item(item, preserve_text=True) if preserve_text else _row_from_item(item)
             cur = conn.execute(sql, row)
             if cur.rowcount == 1:
                 inserted += 1
@@ -757,7 +795,9 @@ def _read_upload(file: UploadFile) -> str:
 
 
 def _load_items_from_csv(text: str) -> List[Dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(text))
+    # Excel and several Windows export tools prefix UTF-8 files with a BOM.
+    # It is metadata, not part of the first column name.
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     rows: List[Dict[str, Any]] = []
     for row in reader:
         cleaned = {k: (v if v != "" else None) for k, v in row.items()}
@@ -766,7 +806,7 @@ def _load_items_from_csv(text: str) -> List[Dict[str, Any]]:
 
 
 def _load_items_from_json(text: str) -> List[Dict[str, Any]]:
-    stripped = text.strip()
+    stripped = text.lstrip("\ufeff").strip()
     if not stripped:
         return []
     if stripped.startswith("["):
@@ -786,7 +826,7 @@ def _load_items_from_json(text: str) -> List[Dict[str, Any]]:
 
 
 def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
-    stripped = text.strip()
+    stripped = text.lstrip("\ufeff").strip()
     if not stripped:
         return []
     items: List[Dict[str, Any]] = []
@@ -798,59 +838,191 @@ def _load_items_from_jsonl(text: str) -> List[Dict[str, Any]]:
 
 
 # 以下函数用于辅助“后端->逻辑”的接口实现
-def _safe_json_loads(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (dict, list)):
-        return value
-    if isinstance(value, str):
+def _stored_analysis_conflict() -> HTTPException:
+    return HTTPException(status_code=409, detail={
+        "code": "stored_analysis_invalid", "message": "Stored analysis data is invalid.",
+    })
+
+
+def _validate_stored_analysis(value: Any) -> None:
+    try:
+        validate_analysis_value(value)
+    except InvalidStoredAnalysis:
+        raise _stored_analysis_conflict() from None
+
+
+def _read_stored_analysis(value: Any) -> Any:
+    try:
+        return load_analysis_json(value)
+    except InvalidStoredAnalysis:
+        raise _stored_analysis_conflict() from None
+
+
+def _load_analysis_cache(value: Any) -> Dict[str, Any]:
+    """Invalid stored caches are recomputed; their historical rows stay intact."""
+    try:
+        payload = load_analysis_json(value)
+        return payload if isinstance(payload, dict) else {}
+    except InvalidStoredAnalysis:
+        return {}
+
+
+def _cache_count(value: Any, maximum: int, minimum: int = 0) -> bool:
+    return type(value) is int and minimum <= value <= maximum
+
+
+def _valid_visualization_series(value: Any, *, maximum: int, first_date: str, last_date: str) -> bool:
+    """Check current daily chart fields, preserving independent missing metrics."""
+    if not isinstance(value, list):
+        return False
+    previous_date = ""
+    metric_counts = {
+        "avg_polarity": ("polarity_count", -1),
+        "avg_similarity": ("comparison_count", 0),
+        "repeat_ratio": ("comparison_count", 0),
+        "positive_ratio": ("sentiment_count", 0),
+        "neutral_ratio": ("sentiment_count", 0),
+        "negative_ratio": ("sentiment_count", 0),
+    }
+    for row in value:
+        if not isinstance(row, dict) or not _cache_count(row.get("count"), maximum, 1):
+            return False
+        date = row.get("date")
+        if not isinstance(date, str) or len(date) != 10 or not first_date <= date <= last_date:
+            return False
         try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    return None
+            if datetime.fromisoformat(date).date().isoformat() != date or date <= previous_date:
+                return False
+        except ValueError:
+            return False
+        previous_date = date
+        if any(not _cache_count(row.get(key), row["count"])
+               for key in ("comparison_count", "sentiment_count", "polarity_count")):
+            return False
+        if row["polarity_count"] > row["sentiment_count"]:
+            return False
+        for key, (count_key, lower) in metric_counts.items():
+            if key not in row:
+                return False
+            if row[count_key] == 0:
+                if row[key] is not None:
+                    return False
+            elif finite_metric(row[key], lower, 1) is None:
+                return False
+        if row["sentiment_count"] and not math.isclose(
+            sum(row[f"{label}_ratio"] for label in ("positive", "neutral", "negative")),
+            1.0, abs_tol=1e-5,
+        ):
+            return False
+    return sum(row["count"] for row in value) <= maximum
 
 
-def _load_items_for_export(
-    conn: Any,
-    from_ts: Optional[int],
-    to_ts: Optional[int],
-    limit_rows: int,
-) -> List[Dict[str, Any]]:
-    where_parts = ["1=1"]
-    params: List[Any] = []
-    if from_ts is not None:
-        where_parts.append("ts >= ?")
-        params.append(from_ts)
-    if to_ts is not None:
-        where_parts.append("ts <= ?")
-        params.append(to_ts)
+def _valid_visualization_cache(
+    payload: Dict[str, Any], *, from_ts: int, to_ts: int, limit_rows: int,
+    input_count: int, available_count: int,
+) -> bool:
+    """Only reuse structurally complete schema-v3 chart results for this snapshot.
 
-    where_sql = " AND ".join(where_parts)
-    sql = f"""
-        SELECT id, url, title, text, ts, source, lang, channel, author, tags, meta, created_at
-        FROM items
-        WHERE {where_sql}
-        ORDER BY ts ASC, id ASC
-        LIMIT ?
+    This is a cache boundary, not a historical migration or model-quality check.
+    Invalid rows remain in history and the existing analysis path recomputes.
     """
-    params.append(limit_rows)
-    rows = conn.execute(sql, tuple(params)).fetchall()
-    return [dict(r) for r in rows]
+    if (payload.get("analysis_status") != "ready" or payload.get("pipeline_warning")
+            or input_count < MIN_VIS_RECORDS or payload.get("date_timezone") != "UTC"
+            or type(payload.get("minimum_records")) is not int
+            or payload["minimum_records"] != MIN_VIS_RECORDS
+            or not _cache_count(payload.get("generated_at"), MAX_INGEST_TS)
+            or payload.get("category_aliases") != CATEGORY_ALIAS_MAP):
+        return False
+    window = payload.get("window")
+    expected = {"from_ts": from_ts, "to_ts": to_ts, "limit_rows": limit_rows,
+                "input_count": input_count, "processed_count": input_count,
+                "available_count": available_count}
+    if not isinstance(window, dict) or any(type(window.get(key)) is not int or window[key] != value
+                                          for key, value in expected.items()):
+        return False
+    if window.get("truncated") is not (available_count > input_count):
+        return False
+    coverage = payload.get("coverage")
+    coverage_keys = ("record_count", "timestamp_count", "category_count", "comparison_count", "sentiment_count")
+    if not isinstance(coverage, dict) or any(not _cache_count(coverage.get(key), input_count)
+                                            for key in coverage_keys):
+        return False
+    if coverage["record_count"] != input_count or coverage["comparison_count"] > input_count - 1:
+        return False
+    counts, categories, charts = payload.get("category_counts"), payload.get("categories"), payload.get("global")
+    if not all(isinstance(value, dict) for value in (counts, categories, charts)):
+        return False
+    if (set(counts) - set(CATEGORY_ALIAS_MAP) or set(categories) != set(counts)
+            or any(not _cache_count(count, input_count, 1) for count in counts.values())
+            or sum(counts.values()) != coverage["category_count"]):
+        return False
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    first_date = (epoch + timedelta(milliseconds=from_ts)).date().isoformat()
+    last_date = (epoch + timedelta(milliseconds=to_ts)).date().isoformat()
+    series = charts.get("time_series")
+    if not _valid_visualization_series(series, maximum=input_count, first_date=first_date, last_date=last_date):
+        return False
+    if sum(row["count"] for row in series) != coverage["timestamp_count"]:
+        return False
+    missing_dates = input_count - coverage["timestamp_count"]
+    if any(not coverage[key] - missing_dates <= sum(row[key] for row in series) <= coverage[key]
+           for key in ("comparison_count", "sentiment_count")):
+        return False
+    by_date = {row["date"]: row for row in series}
+    category_daily_counts: Dict[str, int] = {}
+    for key, category in categories.items():
+        if (not isinstance(category, dict) or category.get("label") != key
+                or category.get("alias") != CATEGORY_ALIAS_MAP[key]
+                or not _valid_visualization_series(category.get("time_series"), maximum=counts[key],
+                                                   first_date=first_date, last_date=last_date)):
+            return False
+        if sum(row["count"] for row in category["time_series"]) < counts[key] - missing_dates:
+            return False
+        for row in category["time_series"]:
+            global_row = by_date.get(row["date"])
+            if global_row is None or any(row[field] > global_row[field] for field in
+                                         ("count", "comparison_count", "sentiment_count", "polarity_count")):
+                return False
+            category_daily_counts[row["date"]] = category_daily_counts.get(row["date"], 0) + row["count"]
+    if any(count > by_date[date]["count"] for date, count in category_daily_counts.items()):
+        return False
+    distribution = charts.get("category_distribution")
+    if not isinstance(distribution, dict) or set(distribution) != set(counts):
+        return False
+    if any(finite_metric(distribution[key], 0, 1) is None or not math.isclose(
+        distribution[key], count / coverage["category_count"], abs_tol=1e-6,
+    ) for key, count in counts.items()):
+        return False
+    sentiment = charts.get("sentiment_distribution")
+    if (not isinstance(sentiment, dict) or set(sentiment) - {"positive", "neutral", "negative"}
+            or any(finite_metric(value, 0, 1) is None or value <= 0 for value in sentiment.values())
+            or bool(sentiment) != bool(coverage["sentiment_count"])):
+        return False
+    if sentiment and not math.isclose(sum(sentiment.values()), 1.0, abs_tol=1e-5):
+        return False
+    histogram, hourly = charts.get("similarity_histogram"), charts.get("hourly_distribution")
+    bins = {"0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1.0"}
+    if (not isinstance(histogram, dict) or set(histogram) != (bins if coverage["comparison_count"] else set())
+            or any(not _cache_count(value, input_count) for value in histogram.values())
+            or sum(histogram.values()) != coverage["comparison_count"]):
+        return False
+    if (not isinstance(hourly, dict) or set(hourly) - {str(hour) for hour in range(24)}
+            or any(not _cache_count(value, input_count, 1) for value in hourly.values())
+            or sum(hourly.values()) != coverage["timestamp_count"]):
+        return False
+    return True
 
 
-def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, Any]]:
-    shaped: List[Dict[str, Any]] = []
+def _shape_export_rows(rows: Iterable[Dict[str, Any]], view: str) -> Iterable[Dict[str, Any]]:
     for r in rows:
         title = _clean_optional_str(r.get("title")) or ""
         text = _clean_optional_str(r.get("text")) or title
 
-        tags = _safe_json_loads(r.get("tags"))
-        meta = _safe_json_loads(r.get("meta"))
+        tags = load_analysis_json(r.get("tags"))
+        meta = load_analysis_json(r.get("meta"))
 
         if view == "analysis":
-            shaped.append(
-                {
+            yield {
                     "id": r.get("id"),
                     "title": title,
                     "url": r.get("url"),
@@ -864,10 +1036,8 @@ def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, 
                     "tags": tags,
                     "meta": meta,
                 }
-            )
         else:  # raw
-            shaped.append(
-                {
+            yield {
                     "id": r.get("id"),
                     "url": r.get("url"),
                     "title": title,
@@ -881,52 +1051,35 @@ def _shape_export_rows(rows: List[Dict[str, Any]], view: str) -> List[Dict[str, 
                     "meta": meta,
                     "created_at": r.get("created_at"),
                 }
-            )
-    return shaped
 
 
-def _to_jsonl(items: List[Dict[str, Any]]) -> str:
-    return "\n".join(json.dumps(x, ensure_ascii=False) for x in items)
-
-
-def _to_csv(items: List[Dict[str, Any]]) -> str:
-    if not items:
-        return ""
-    buf = io.StringIO()
-    fieldnames = list(items[0].keys())
-    writer = csv.DictWriter(buf, fieldnames=fieldnames)
-    writer.writeheader()
-    for row in items:
-        safe_row = {}
-        for k, v in row.items():
-            if isinstance(v, (dict, list)):
-                safe_row[k] = json.dumps(v, ensure_ascii=False)
-            else:
-                safe_row[k] = v
-        writer.writerow(safe_row)
-    return buf.getvalue()
+EXPORT_CSV_COLUMNS = {
+    "analysis": ("id", "title", "url", "analysis_text", "text", "channel", "ts",
+                 "source", "lang", "author", "tags", "meta"),
+    "raw": ("id", "url", "title", "text", "ts", "source", "lang", "channel",
+            "author", "tags", "meta", "created_at"),
+}
+TRAINING_CSV_COLUMNS = ("input", "label", "ts", "url", "title", "source")
 
 
 def _host_is_private(host: str) -> bool:
-    h = (host or "").lower().strip()
+    h = (host or "").strip().lower().rstrip(".")
     if not h:
         return False
-    if h in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+    if h == "localhost" or h.endswith((".localhost", ".local")):
         return True
-    if h.endswith(".local"):
-        return True
-    if h.startswith("10."):
-        return True
-    if h.startswith("192.168."):
-        return True
-    if h.startswith("172."):
-        # 172.16.0.0 - 172.31.255.255
-        parts = h.split(".")
-        if len(parts) >= 2 and parts[1].isdigit():
-            sec = int(parts[1])
-            if 16 <= sec <= 31:
-                return True
-    return False
+    try:
+        address = ipaddress.ip_address(h)
+    except ValueError:
+        # Inspect the URL only: resolving a DNS name leaks browsing hosts and
+        # cannot guarantee the address to which it will resolve in the future.
+        return False
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    # Global/private flags alone miss some reserved, multicast and site-local IPs.
+    return (not address.is_global or address.is_multicast or address.is_loopback
+            or address.is_link_local or address.is_unspecified or address.is_reserved
+            or (isinstance(address, ipaddress.IPv6Address) and address.is_site_local))
 
 
 def _is_internal_url(url: str) -> bool:
@@ -976,18 +1129,16 @@ def _compress_ws(text: str) -> str:
 
 
 def _prepare_training_rows(
-    rows: List[Dict[str, Any]],
+    rows: Iterable[Dict[str, Any]],
     *,
+    budget: export_io.PreparationBudget,
     label_field: str,
     exclude_internal: bool,
     exclude_auth_pages: bool,
     exclude_search_pages: bool,
     dedup_by_input: bool,
     max_input_len: int,
-) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    seen: set[str] = set()
-
+) -> Iterable[Dict[str, Any]]:
     for r in rows:
         url = str(r.get("url") or "")
         title = _clean_optional_str(r.get("title")) or ""
@@ -1010,12 +1161,10 @@ def _prepare_training_rows(
 
         if dedup_by_input:
             key = normalize_text("", input_text)
-            if key in seen:
+            if budget.duplicate(key):
                 continue
-            seen.add(key)
 
-        out.append(
-            {
+        yield {
                 "input": input_text,
                 "label": label,
                 "ts": r.get("ts"),
@@ -1023,41 +1172,73 @@ def _prepare_training_rows(
                 "title": title,
                 "source": r.get("source"),
             }
-        )
-    return out
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # 启动逻辑：和原来的 on_startup 完全一致
-    init_db(_schema_path())
-    yield  # 分割线：启动完成，应用开始运行
-    # 关闭逻辑（如果需要的话，比如关闭数据库连接）
-    # 示例：await db.close() （如果有异步数据库连接的话）
+    with process_ownership(db.DB_PATH):
+        _app.state.security = LocalSecurity.load(db.DB_PATH)
+        _app.state.operation_lock = asyncio.Lock()
+        _app.state.analysis_lock = asyncio.Lock()
+        _app.state.request_slots = asyncio.Semaphore(4)
+        _app.state.export_slots = asyncio.Semaphore(2)
+        work_owner = WorkOwner()
+        _app.state.work_owner = work_owner
+        init_db(_schema_path())
+        _recover_interrupted_analysis_jobs()
+        try:
+            yield
+        finally:
+            # Uvicorn may end lifespan immediately after cancelling requests.
+            # Retain the OS database lock until their actual workers finish.
+            await work_owner.drain()
 
 
 app = FastAPI(
     title="Information Diet Manager (MVP)",
-    lifespan=lifespan,  # 关键：把生命周期函数关联到 app
+    lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 允许前端请求
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request, exc: RequestValidationError):
+    # Do not echo page text, invalid JSON values or exception contexts from a request.
+    details = [{"type": error["type"], "loc": error["loc"], "msg": error["msg"]}
+               for error in exc.errors()]
+    return Response(json.dumps({"detail": details}, ensure_ascii=True),
+                    status_code=422, media_type="application/json")
 
 
-@app.post("/collect", response_model=IngestAck)
-def collect(item: IngestItem) -> IngestAck:
+app.add_middleware(LocalAccessMiddleware)
+install_data_routes(app, insert_items)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/session")
+def session(request: Request):
+    return {"role": request.scope["idm_role"]}
+
+
+def _collect_sync(item: IngestItem) -> IngestAck:
     inserted, duplicates = insert_items([item])
     return IngestAck(inserted=inserted, duplicates=duplicates, failed=0)
 
 
+@app.post("/collect", response_model=IngestAck)
+async def collect(item: IngestItem) -> IngestAck:
+    return await run_owned_sync(_collect_sync, item=item)
+
+
 @app.post("/import", response_model=IngestAck)
-def import_items(file: UploadFile = File(...)) -> IngestAck:
+async def import_items(file: UploadFile = File(...)) -> IngestAck:
+    # Keep FastAPI's request-owned upload open until its worker stops reading.
+    return await run_owned_sync(_import_items_sync, file=file)
+
+
+def _import_items_sync(file: UploadFile) -> IngestAck:
     filename = (file.filename or "").lower()
     text = _read_upload(file)
     failed = 0
@@ -1071,10 +1252,10 @@ def import_items(file: UploadFile = File(...)) -> IngestAck:
             raw_items = _load_items_from_json(text)
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type.")
-    except (ValueError, json.JSONDecodeError) as exc:
+    except (ValueError, csv.Error, RecursionError):
         raise HTTPException(
-            status_code=400, detail=f"Invalid file contents: {exc}"
-        ) from exc
+            status_code=400, detail="Invalid file contents."
+        ) from None
     items: List[IngestItem] = []
     for raw in raw_items:
         try:
@@ -1085,101 +1266,110 @@ def import_items(file: UploadFile = File(...)) -> IngestAck:
     return IngestAck(inserted=inserted, duplicates=duplicates, failed=failed)
 
 
+def _read_stored_item_json(value: Any) -> Any:
+    """Apply shared JSON safety checks without imposing ingest-field shapes."""
+    try:
+        return load_analysis_json(value)
+    except InvalidStoredAnalysis:
+        raise HTTPException(409, detail={
+            "code": "stored_item_invalid", "message": "Stored item JSON is invalid.",
+        }) from None
+
+
 @app.get("/items")
 def list_items(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     limit: Optional[int] = Query(None, ge=1, le=200),
+    pagination: str = Query("offset", pattern="^(offset|cursor)$"),
+    cursor: Optional[str] = Query(None, min_length=1, max_length=2048),
 ) -> Dict[str, Any]:
+    if cursor is not None and pagination != "cursor":
+        raise HTTPException(400, detail="A cursor requires pagination=cursor.")
+    if pagination == "cursor" and (page != 1 or limit is not None):
+        raise HTTPException(400, detail="Cursor pagination uses page_size and cursor only.")
     if limit is not None:
         page_size = limit
     offset = (page - 1) * page_size
     with get_conn() as conn:
-        total = conn.execute("SELECT COUNT(*) AS cnt FROM items").fetchone()["cnt"]
-        rows = conn.execute(
-            "SELECT * FROM items ORDER BY id DESC LIMIT ? OFFSET ?",
-            (page_size, offset),
-        ).fetchall()
+        conn.execute("BEGIN")
+        if pagination == "cursor":
+            rows, metadata = read_cursor_page(conn, page_size=page_size, cursor=cursor)
+        else:
+            # Legacy page-number clients retain their contract, but each count
+            # and page now share a SQLite snapshot within this request.
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM items").fetchone()["cnt"]
+            rows = conn.execute(
+                "SELECT * FROM items ORDER BY id DESC LIMIT ? OFFSET ?",
+                (page_size, min(offset, 2**63 - 1)),
+            ).fetchall()
+            metadata = {"page": page, "page_size": page_size, "total": total}
     items: List[Dict[str, Any]] = []
     for row in rows:
         item: Dict[str, Any] = dict(row)
-        if item.get("tags"):
-            try:
-                item["tags"] = json.loads(item["tags"])
-            except json.JSONDecodeError:
-                item["tags"] = None
-        if item.get("meta"):
-            try:
-                item["meta"] = json.loads(item["meta"])
-            except json.JSONDecodeError:
-                item["meta"] = None
+        for field in ("tags", "meta"):
+            item[field] = _read_stored_item_json(item.get(field))
         items.append(item)
-    return {"page": page, "page_size": page_size, "total": total, "items": items}
+    return {**metadata, "items": items}
 
 
-@app.post("/analyze/run")
-def run_analysis(
-    force: bool = Query(False),
-    backfill_limit: int = Query(2000, ge=0, le=20000),
-) -> Dict[str, Any]:
+def _global_statistics(*, force: bool, backfill_limit: int, record_run: bool) -> Dict[str, Any]:
+    """Whole-library page counts, never windowed model scores.
+
+    stats_daily is a compatibility projection only: old releases wrote arbitrary
+    analysis windows there. Only explicitly versioned global run payloads can
+    be reused, and all state/count/cache reads share a short write transaction.
+    """
     day = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
-        item_state = conn.execute(
-            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
-        ).fetchone()
-        max_created_at = int(item_state["max_created_at"] or 0)
+        conn.execute("BEGIN IMMEDIATE")
+        item_state = _item_dataset_state(conn)
+        max_created_at = int(item_state["max_created_at"])
+        data_version = _stable_hash_payload(item_state)
         existing = conn.execute(
-            "SELECT * FROM stats_daily WHERE day = ? LIMIT 1",
+            "SELECT payload FROM analysis_runs WHERE day = ? ORDER BY id DESC LIMIT 1",
             (day,),
         ).fetchone()
-        if (
-            not force
-            and existing is not None
-            and int(existing["updated_at"] or 0) >= max_created_at
-        ):
-            cached_payload = _payload_from_stats_row(existing)
-            cached_payload["cached"] = True
-            cached_payload["embeddings_backfilled"] = 0
-            conn.execute(
-                """
-                INSERT INTO analysis_runs (
-                    day, total_count, channel_counts, repeat_ratio, negative_ratio, avg_sentiment,
-                    payload, cached, item_max_created_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    day,
-                    cached_payload["total_count"],
-                    _as_json(cached_payload.get("channel_counts")),
-                    cached_payload.get("repeat_ratio"),
-                    cached_payload.get("negative_ratio"),
-                    cached_payload.get("avg_sentiment"),
-                    _as_json(cached_payload),
-                    1,
-                    max_created_at,
-                    _now_ms(),
-                ),
-            )
-            return cached_payload
+        payload = None
+        if not force and existing is not None:
+            candidate = _load_analysis_cache(existing["payload"])
+            if valid_global_statistics_cache(
+                candidate, day=day, data_version=data_version, total_count=item_state["total_count"],
+            ):
+                payload = {**candidate, "cached": True, "embeddings_backfilled": 0}
 
-        backfilled = 0
-        if backfill_limit > 0:
-            backfilled = _backfill_missing_embeddings(conn, limit=backfill_limit)
+        if payload is None:
+            backfilled = _backfill_missing_embeddings(conn, limit=backfill_limit) if backfill_limit > 0 else 0
+            content = conn.execute(
+                "SELECT COUNT(*) AS measured, COUNT(DISTINCT content_hash) AS distinct_count "
+                "FROM items WHERE content_hash IS NOT NULL AND content_hash != ''"
+            ).fetchone()
+            sample_count = int(content["measured"])
+            repeat_ratio = ((sample_count - int(content["distinct_count"])) / sample_count
+                            if sample_count else None)
+            channel_rows = conn.execute("SELECT channel, COUNT(*) AS cnt FROM items GROUP BY channel").fetchall()
+            channel_counts = {key: 0 for key in CHANNEL_CANONICAL_KEYS}
+            for row in channel_rows:
+                channel_counts[_canonicalize_channel_key(row["channel"])] += int(row["cnt"])
+            payload = {
+                "day": day,
+                "total_count": int(item_state["total_count"]),
+                "channel_counts": channel_counts,
+                "repeat_ratio": repeat_ratio,
+                "repeat_sample_count": sample_count,
+                "repeat_metric": "duplicate_normalized_content_hash_fraction",
+                "negative_ratio": None,
+                "avg_sentiment": None,
+                "generated_at": _now_ms(),
+                "cached": False,
+                "embeddings_backfilled": backfilled,
+                "statistics_scope": "all_saved_pages",
+                "statistics_version": 1,
+                "data_version": data_version,
+            }
 
-        total = conn.execute("SELECT COUNT(*) AS cnt FROM items").fetchone()["cnt"]
-        distinct_content = conn.execute(
-            "SELECT COUNT(DISTINCT content_hash) AS cnt FROM items WHERE content_hash IS NOT NULL"
-        ).fetchone()["cnt"]
-        channel_rows = conn.execute(
-            "SELECT channel, COUNT(*) AS cnt FROM items GROUP BY channel"
-        ).fetchall()
-        repeat_ratio = 0.0
-        if total:
-            repeat_ratio = max(0.0, min(1.0, 1 - (distinct_content / total)))
-        channel_counts = _normalize_channel_counts(
-            {row["channel"] or "unknown": row["cnt"] for row in channel_rows}
-        ) or {key: 0 for key in CHANNEL_CANONICAL_KEYS}
-        now_ms = _now_ms()
+        # Rewrite even a cache hit: this repairs old/mixed daily projections
+        # without ever interpreting them as trustworthy global statistics.
         conn.execute(
             """
             INSERT INTO stats_daily (
@@ -1196,52 +1386,42 @@ def run_analysis(
             """,
             (
                 day,
-                total,
-                _as_json(channel_counts),
-                repeat_ratio,
+                payload["total_count"],
+                _as_json(payload["channel_counts"]),
+                payload["repeat_ratio"],
                 None,
                 None,
-                now_ms,
-                now_ms,
+                payload["generated_at"],
+                payload["generated_at"],
             ),
         )
-        payload = {
-            "day": day,
-            "total_count": total,
-            "channel_counts": channel_counts,
-            "repeat_ratio": repeat_ratio,
-            "negative_ratio": None,
-            "avg_sentiment": None,
-            "generated_at": now_ms,
-            "cached": False,
-            "embeddings_backfilled": backfilled,
-        }
-        conn.execute(
-            """
-            INSERT INTO analysis_runs (
-                day, total_count, channel_counts, repeat_ratio, negative_ratio, avg_sentiment,
-                payload, cached, item_max_created_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                day,
-                total,
-                _as_json(channel_counts),
-                repeat_ratio,
-                None,
-                None,
-                _as_json(payload),
-                0,
-                max_created_at,
-                now_ms,
-            ),
-        )
+        if record_run or not payload["cached"]:
+            conn.execute(
+                """
+                INSERT INTO analysis_runs (
+                    day, total_count, channel_counts, repeat_ratio, negative_ratio, avg_sentiment,
+                    payload, cached, item_max_created_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (day, payload["total_count"], _as_json(payload["channel_counts"]), payload["repeat_ratio"],
+                 None, None, _as_json(payload), int(payload["cached"]), max_created_at, _now_ms()),
+            )
+        _prune_analysis_history(conn)
         return payload
+
+
+@app.post("/analyze/run")
+async def run_analysis(
+    force: bool = Query(False),
+    backfill_limit: int = Query(2000, ge=0, le=20000),
+) -> Dict[str, Any]:
+    return await run_owned_sync(_global_statistics, force=force, backfill_limit=backfill_limit, record_run=True)
 
 
 @app.get("/analyze/history")
 def analyze_history(limit: int = Query(20, ge=1, le=200)) -> Dict[str, Any]:
     with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM analysis_runs").fetchone()["cnt"]
         rows = conn.execute(
             """
             SELECT id, day, total_count, channel_counts, repeat_ratio, negative_ratio, avg_sentiment,
@@ -1255,33 +1435,48 @@ def analyze_history(limit: int = Query(20, ge=1, le=200)) -> Dict[str, Any]:
     runs: List[Dict[str, Any]] = []
     for row in rows:
         run = dict(row)
-        if run.get("channel_counts"):
-            try:
-                run["channel_counts"] = json.loads(run["channel_counts"])
-            except json.JSONDecodeError:
-                run["channel_counts"] = None
+        _validate_stored_analysis(run)
+        run["channel_counts"] = _read_stored_analysis(run.get("channel_counts"))
         run["cached"] = bool(run.get("cached", 0))
         runs.append(run)
-    return {"total": len(runs), "runs": runs}
+    return {"total": int(total), "returned": len(runs), "runs": runs}
 
 
 @app.post("/analyze/run_full")
-def run_full_analysis(
+async def run_full_analysis(
     force: bool = Query(False),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
+    to_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
     limit_rows: int = Query(5000, ge=1, le=50000),
 ) -> Dict[str, Any]:
+    return await run_owned_sync(
+        _run_full_analysis_snapshot, force=force, from_ts=from_ts,
+        to_ts=to_ts, limit_rows=limit_rows,
+    )
+
+
+def _failed_analysis_response(conn, job_id, started_at, input_count, status, message):
+    duration = _now_ms() - started_at
+    _update_analysis_job(
+        conn, job_id, status=JOB_FAILED, error=message,
+        metrics_json={"cache_hit": False, "input_count": input_count, "duration_ms": duration},
+        duration_ms=duration, finished_at=_now_ms(),
+    )
+    # Returning lets the connection commit the failed job.
+    return JSONResponse(status_code=status, content={"job_id": job_id, "status": JOB_FAILED, "detail": message})
+
+
+def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
     if from_ts is not None and to_ts is not None and from_ts > to_ts:
         raise HTTPException(
             status_code=400, detail="from_ts cannot be greater than to_ts"
         )
     day = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
-        item_state = conn.execute(
-            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
-        ).fetchone()
-        max_created_at = int(item_state["max_created_at"] or 0)
+        conn.execute("BEGIN IMMEDIATE")
+        item_state = _item_dataset_state(conn)
+        revision = {key: item_state[key] for key in ("database_id", "revision")}
+        max_created_at = int(item_state["max_created_at"])
         rows = _load_items_for_analysis(
             conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
         )
@@ -1292,6 +1487,8 @@ def run_full_analysis(
             "to_ts": to_ts,
             "limit_rows": limit_rows,
             "mode": "run_full",
+            "schema_version": 2,
+            "dataset": item_state,
         }
         input_hash = _stable_hash_payload(job_key)
 
@@ -1305,13 +1502,11 @@ def run_full_analysis(
                 """,
                 (input_hash, max_created_at, JOB_COMPLETED),
             ).fetchone()
-            if cached:
-                cached_payload: Dict[str, Any] = {}
-                if cached["result_payload"]:
-                    try:
-                        cached_payload = json.loads(cached["result_payload"])
-                    except json.JSONDecodeError:
-                        cached_payload = {}
+            cached_payload = _load_analysis_cache(cached["result_payload"]) if cached else {}
+            if cached and valid_full_analysis_cache(
+                cached_payload, day=day, from_ts=from_ts, to_ts=to_ts,
+                limit_rows=limit_rows, input_count=input_count,
+            ):
                 job_id = _insert_analysis_job(
                     conn,
                     status=JOB_COMPLETED,
@@ -1328,7 +1523,11 @@ def run_full_analysis(
                     conn,
                     job_id,
                     status=JOB_COMPLETED,
-                    result_payload=cached_payload,
+                    result_payload={
+                        **cached_payload,
+                        "experimental": True,
+                        "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
+                    },
                     metrics_json={
                         "cache_reuse_from_job_id": int(cached["id"]),
                         "input_count": input_count,
@@ -1343,7 +1542,11 @@ def run_full_analysis(
                     "status": JOB_COMPLETED,
                     "cached": True,
                     "reused_from_job_id": int(cached["id"]),
-                    "result": cached_payload,
+                    "result": {
+                        **cached_payload,
+                        "experimental": True,
+                        "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
+                    },
                 }
         # not cached的情况也自然下落到这里
         job_id = _insert_analysis_job(
@@ -1366,59 +1569,66 @@ def run_full_analysis(
             started_at=started_at,
         )
 
+    # Inference owns no SQLite connection or data-operation lock. Inserts can
+    # proceed; destructive changes invalidate this snapshot before publication.
+    failure = None
+    try:
+        pipeline = _run_lsj_pipeline(rows)
+        now_ms = _now_ms()
+
+        channel_counts: Dict[str, int] = {}
+        for r in rows:
+            key = _canonicalize_channel_key(r.get("channel"))
+            channel_counts[key] = channel_counts.get(key, 0) + 1
+        channel_counts = _normalize_channel_counts(channel_counts) or {
+            key: 0 for key in CHANNEL_CANONICAL_KEYS
+        }
+
+        # Windowed experimental metrics belong only to their run/job.
+        # stats_daily is reserved for whole-library basic page statistics.
+        payload = {
+            "day": day,
+            "statistics_scope": "analysis_window",
+            "statistics_version": 2,
+            "experimental": True,
+            "experimental_notice": EXPERIMENTAL_ANALYSIS_NOTICE,
+            "analysis_status": "ready" if input_count else "empty",
+            "repeat_metric": "legacy_adjacent_text_similarity_threshold_fraction",
+            "window": {"from_ts": from_ts, "to_ts": to_ts, "limit_rows": limit_rows,
+                       "input_count": input_count},
+            "total_count": int(pipeline["input_count"]),
+            "channel_counts": channel_counts,
+            "category_counts": pipeline["category_counts"],
+            "sentiment_counts": pipeline["sentiment_counts"],
+            "comparison_count": pipeline["comparison_count"],
+            "sentiment_count": pipeline["sentiment_count"],
+            "polarity_count": pipeline["polarity_count"],
+            "repeat_ratio": pipeline["repeat_ratio"],
+            "negative_ratio": pipeline["negative_ratio"],
+            "avg_sentiment": pipeline["avg_sentiment"],
+            "quick_evaluation": pipeline["quick_evaluation"],
+            "full_report": pipeline["full_report"],
+            "pipeline_warning": pipeline.get("pipeline_warning"),
+            "generated_at": now_ms,
+            "cached": False,
+        }
+    except AnalysisUnavailableError:
+        failure = (503, "Experimental analysis is unavailable; check the local analysis dependencies and configuration.")
+    except ValueError:
+        failure = (422, "Legacy scoring lacks complete valid measurements; use /dashboard/visualization for partial statistics.")
+    except Exception:
+        failure = (500, "Legacy analysis failed; no valid result was produced.")
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_analysis_revision(conn, revision, job_id=job_id)
+        if failure is not None:
+            return _failed_analysis_response(conn, job_id, started_at, input_count, *failure)
+        conn.execute("SAVEPOINT legacy_analysis_result")
         try:
-            pipeline = _run_lsj_pipeline(rows)
-            now_ms = _now_ms()
-
-            channel_counts: Dict[str, int] = {}
-            for r in rows:
-                key = _canonicalize_channel_key(r.get("channel"))
-                channel_counts[key] = channel_counts.get(key, 0) + 1
-            channel_counts = _normalize_channel_counts(channel_counts) or {
-                key: 0 for key in CHANNEL_CANONICAL_KEYS
-            }
-
-            conn.execute(
-                """
-                INSERT INTO stats_daily (
-                    day, total_count, channel_counts, repeat_ratio, negative_ratio,
-                    avg_sentiment, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(day) DO UPDATE SET
-                    total_count=excluded.total_count,
-                    channel_counts=excluded.channel_counts,
-                    repeat_ratio=excluded.repeat_ratio,
-                    negative_ratio=excluded.negative_ratio,
-                    avg_sentiment=excluded.avg_sentiment,
-                    updated_at=excluded.updated_at
-                """,
-                (
-                    day,
-                    int(pipeline["input_count"]),
-                    _as_json(channel_counts),
-                    float(pipeline["repeat_ratio"]),
-                    float(pipeline["negative_ratio"]),
-                    float(pipeline["avg_sentiment"]),
-                    now_ms,
-                    now_ms,
-                ),
-            )
-
-            payload = {
-                "day": day,
-                "total_count": int(pipeline["input_count"]),
-                "channel_counts": channel_counts,
-                "category_counts": pipeline["category_counts"],
-                "sentiment_counts": pipeline["sentiment_counts"],
-                "repeat_ratio": float(pipeline["repeat_ratio"]),
-                "negative_ratio": float(pipeline["negative_ratio"]),
-                "avg_sentiment": float(pipeline["avg_sentiment"]),
-                "quick_evaluation": pipeline["quick_evaluation"],
-                "full_report": pipeline["full_report"],
-                "pipeline_warning": pipeline.get("pipeline_warning"),
-                "generated_at": now_ms,
-                "cached": False,
-            }
+            # Newly published reports must satisfy the same finite, UTF-8 and
+            # depth contract as historical reads. Fail inside the savepoint.
+            validate_analysis_value(payload)
             conn.execute(
                 """
                 INSERT INTO analysis_runs (
@@ -1430,10 +1640,12 @@ def run_full_analysis(
                     day,
                     int(pipeline["input_count"]),
                     _as_json(channel_counts),
-                    float(pipeline["repeat_ratio"]),
-                    float(pipeline["negative_ratio"]),
-                    float(pipeline["avg_sentiment"]),
-                    _as_json(payload),
+                    payload["repeat_ratio"],
+                    payload["negative_ratio"],
+                    payload["avg_sentiment"],
+                    # Reject non-finite legacy reports inside the savepoint;
+                    # never persist a completed job with invalid JSON numbers.
+                    json.dumps(payload, ensure_ascii=False, allow_nan=False),
                     0,
                     max_created_at,
                     now_ms,
@@ -1453,32 +1665,26 @@ def run_full_analysis(
                 duration_ms=duration_ms,
                 finished_at=_now_ms(),
             )
+            conn.execute("RELEASE legacy_analysis_result")
             return {
                 "job_id": job_id,
                 "status": JOB_COMPLETED,
                 "cached": False,
                 "result": payload,
             }
-        except Exception as exc:
-            duration_ms = _now_ms() - started_at
-            err_detail = f"{exc}\n{traceback.format_exc(limit=5)}"
-            _update_analysis_job(
-                conn,
-                job_id,
-                status=JOB_FAILED,
-                error=err_detail[:4000],
-                metrics_json={
-                    "cache_hit": False,
-                    "input_count": input_count,
-                    "duration_ms": duration_ms,
-                },
-                duration_ms=duration_ms,
-                finished_at=_now_ms(),
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK TO legacy_analysis_result")
+                conn.execute("RELEASE legacy_analysis_result")
+            else:
+                # A whole-transaction rollback removes the savepoint and
+                # releases the writer; another change may now own this data.
+                conn.execute("BEGIN IMMEDIATE")
+                _require_analysis_revision(conn, revision, job_id=job_id)
+            return _failed_analysis_response(
+                conn, job_id, started_at, input_count, 500,
+                "Legacy analysis failed; no valid result was produced.",
             )
-            raise HTTPException(
-                status_code=500,
-                detail=f"run_full failed, job_id={job_id}, error={exc}",
-            ) from exc
 
 
 @app.get("/analyze/jobs/{job_id}")
@@ -1510,29 +1716,44 @@ def get_analyze_result(job_id: int) -> Dict[str, Any]:
 
 
 @app.get("/dashboard/summary")
-def dashboard_summary() -> Dict[str, Any]:
-    with get_conn() as conn:
-        item_state = conn.execute(
-            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
-        ).fetchone()
-        max_created_at = int(item_state["max_created_at"] or 0)
-        row = conn.execute(
-            "SELECT * FROM stats_daily ORDER BY day DESC LIMIT 1"
-        ).fetchone()
-    if row and int(row["updated_at"] or 0) >= max_created_at:
-        return _payload_from_stats_row(row)
-    return run_analysis(force=False, backfill_limit=2000)
+async def dashboard_summary() -> Dict[str, Any]:
+    return await run_owned_sync(_global_statistics, force=False, backfill_limit=2000, record_run=False)
 
 
 # 以下路由用于“后端->逻辑”的接口
+def _require_analysis_revision(conn: Any, expected: Dict[str, Any], *, job_id: Optional[int] = None) -> None:
+    actual = dict(conn.execute("SELECT database_id, revision FROM items_revision WHERE singleton = 1").fetchone())
+    job = None if job_id is None else conn.execute("SELECT status FROM analysis_jobs WHERE id = ?", (job_id,)).fetchone()
+    job_inactive = job_id is not None and (job is None or job["status"] != JOB_RUNNING)
+    if actual != expected or job_inactive:
+        if job_id is not None:
+            # A delete/restore may already have removed this job: UPDATE never
+            # recreates it. Direct external updates can leave it present; finish
+            # that job before raising so it cannot remain RUNNING indefinitely.
+            _update_analysis_job(conn, job_id, status=JOB_FAILED,
+                                 error="analysis snapshot expired", finished_at=_now_ms())
+            conn.commit()
+        raise HTTPException(409, detail={
+            "code": "analysis_snapshot_expired",
+            "message": "Records changed during analysis; run analysis again.",
+        })
+
+
 @app.get("/dashboard/visualization")
-def dashboard_visualization(
+async def dashboard_visualization(
     days: int = Query(DEFAULT_VIS_DAYS, ge=1, le=90),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
+    to_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
     limit_rows: int = Query(5000, ge=1, le=50000),
     force: bool = Query(False),
 ) -> Dict[str, Any]:
+    return await run_owned_sync(
+        _dashboard_visualization_snapshot, days=days, from_ts=from_ts,
+        to_ts=to_ts, limit_rows=limit_rows, force=force,
+    )
+
+
+def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force):
     if from_ts is not None and to_ts is not None and from_ts > to_ts:
         raise HTTPException(
             status_code=400, detail="from_ts cannot be greater than to_ts"
@@ -1545,12 +1766,21 @@ def dashboard_visualization(
         if from_ts is not None
         else max(0, resolved_to_ts - days * 24 * 60 * 60 * 1000)
     )
+    if resolved_from_ts > resolved_to_ts:
+        raise HTTPException(400, detail="from_ts cannot be greater than the resolved to_ts")
 
     day = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
+        # Keep the coverage count and selected rows in the same read snapshot.
+        conn.execute("BEGIN")
+        available_count = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE ts >= ? AND ts <= ?",
+            (resolved_from_ts, resolved_to_ts),
+        ).fetchone()[0]
         item_state = conn.execute(
-            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at FROM items"
+            "SELECT COALESCE(MAX(created_at), 0) AS max_created_at, COALESCE(MAX(id), 0) AS max_id FROM items"
         ).fetchone()
+        revision = dict(conn.execute("SELECT database_id, revision FROM items_revision WHERE singleton = 1").fetchone())
         max_created_at = int(item_state["max_created_at"] or 0)
         rows = _load_items_for_analysis(
             conn,
@@ -1561,13 +1791,20 @@ def dashboard_visualization(
         input_count = len(rows)
         job_key = {
             "days": days,
-            "from_ts": from_ts,
-            "to_ts": to_ts,
+            "from_ts": resolved_from_ts,
+            "to_ts": resolved_to_ts,
             "limit_rows": limit_rows,
             "mode": "dashboard_visualization",
+            "schema_version": 3,
+            "data_revision": revision,
+            "max_id": int(item_state["max_id"]),
         }
         input_hash = _stable_hash_payload(job_key)
 
+    # Release the read snapshot before writing job/cache metadata.
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_analysis_revision(conn, revision)
         if not force:
             cached = conn.execute(
                 """
@@ -1579,13 +1816,11 @@ def dashboard_visualization(
                 (input_hash, max_created_at, JOB_COMPLETED),
             ).fetchone()
             if cached:
-                cached_payload: Dict[str, Any] = {}
-                if cached["result_payload"]:
-                    try:
-                        cached_payload = json.loads(cached["result_payload"])
-                    except json.JSONDecodeError:
-                        cached_payload = {}
-                if cached_payload:
+                cached_payload = _load_analysis_cache(cached["result_payload"])
+                if _valid_visualization_cache(
+                    cached_payload, from_ts=resolved_from_ts, to_ts=resolved_to_ts,
+                    limit_rows=limit_rows, input_count=input_count, available_count=int(available_count),
+                ):
                     job_id = _insert_analysis_job(
                         conn,
                         status=JOB_COMPLETED,
@@ -1629,36 +1864,64 @@ def dashboard_visualization(
             input_count=input_count,
             cache_hit=False,
         )
-        started_at = _now_ms()
-        payload = _build_visualization_result(
-            rows,
-            from_ts=resolved_from_ts,
-            to_ts=resolved_to_ts,
-            limit_rows=limit_rows,
-        )
-        payload["cached"] = False
-        _update_analysis_job(
-            conn,
-            job_id,
-            status=JOB_COMPLETED,
-            result_payload=payload,
-            metrics_json={
-                "input_count": input_count,
-                "cache_hit": False,
-                "mode": "dashboard_visualization",
-                "pipeline_warning": payload.get("pipeline_warning"),
-            },
-            duration_ms=_now_ms() - started_at,
-            started_at=started_at,
-            finished_at=_now_ms(),
-        )
-        return payload
+
+    # Optional inference must not hold SQLite's writer lock and block collection
+    # or deletion. Destructive changes invalidate the result before publication.
+    started_at = _now_ms()
+    payload = _build_visualization_result(
+        rows,
+        from_ts=resolved_from_ts,
+        to_ts=resolved_to_ts,
+        limit_rows=limit_rows,
+    )
+    payload["window"]["available_count"] = int(available_count)
+    payload["window"]["truncated"] = available_count > len(rows)
+    payload["cached"] = False
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_analysis_revision(conn, revision, job_id=job_id)
+        conn.execute("SAVEPOINT visualization_result")
+        try:
+            # Validate the persisted JSON representation: hourly keys are
+            # integers in metrics and have always become strings on the wire.
+            # Keep serialization and partial write effects in one boundary.
+            payload = load_analysis_json(json.dumps(payload, ensure_ascii=False, allow_nan=False))
+            _update_analysis_job(
+                conn,
+                job_id,
+                status=JOB_FAILED if payload["analysis_status"] in {"failed", "unavailable"} else JOB_COMPLETED,
+                result_payload=payload,
+                metrics_json={
+                    "input_count": input_count,
+                    "cache_hit": False,
+                    "mode": "dashboard_visualization",
+                    "pipeline_warning": payload.get("pipeline_warning"),
+                },
+                duration_ms=_now_ms() - started_at,
+                started_at=started_at,
+                finished_at=_now_ms(),
+            )
+            conn.execute("RELEASE visualization_result")
+            return payload
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK TO visualization_result")
+                conn.execute("RELEASE visualization_result")
+            else:
+                # SQLite can abort the entire transaction (including its
+                # savepoints). Reacquire and recheck before recording failure.
+                conn.execute("BEGIN IMMEDIATE")
+                _require_analysis_revision(conn, revision, job_id=job_id)
+            return _failed_analysis_response(
+                conn, job_id, started_at, input_count, 500,
+                "Visualization analysis failed; no valid result was produced.",
+            )
 
 
 @app.get("/export/lsj")
-def export_lsj(
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+async def export_lsj(
+    from_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
+    to_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
     limit_rows: int = Query(5000, ge=1, le=200000),
     view: str = Query("analysis", pattern="^(analysis|raw)$"),
     fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
@@ -1674,54 +1937,26 @@ def export_lsj(
             status_code=400, detail="from_ts cannot be greater than to_ts"
         )
 
-    with get_conn() as conn:
-        rows = _load_items_for_export(
-            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
-        )
-
-    items = _shape_export_rows(rows, view=view)
-
-    if fmt == "json":
-        return {
-            "count": len(items),
-            "view": view,
-            "from_ts": from_ts,
-            "to_ts": to_ts,
-            "items": items,
-        }
-
-    if fmt == "jsonl":
-        content = _to_jsonl(items)
-        return StreamingResponse(
-            io.StringIO(content),
-            media_type="application/x-ndjson",
-            headers={
-                "Content-Disposition": f'attachment; filename="lsj_export_{view}.jsonl"'
-            },
-        )
-
-    # csv
-    content = _to_csv(items)
-    return StreamingResponse(
-        io.StringIO(content),
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="lsj_export_{view}.csv"'
-        },
+    return await export_io.prepare_export_response(
+        transform=lambda rows, budget: _shape_export_rows(rows, view),
+        from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows, fmt=fmt,
+        columns=EXPORT_CSV_COLUMNS[view],
+        metadata={"view": view, "from_ts": from_ts, "to_ts": to_ts},
+        filename=f"lsj_export_{view}",
     )
 
 
 @app.get("/export/lsj/training")
-def export_lsj_training(
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+async def export_lsj_training(
+    from_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
+    to_ts: Optional[int] = Query(None, ge=0, le=MAX_INGEST_TS),
     limit_rows: int = Query(5000, ge=1, le=200000),
     label_field: str = Query("channel", pattern="^(channel|source)$"),
     fmt: str = Query("json", pattern="^(json|jsonl|csv)$"),
     # 新增参数
     bare: bool = Query(True, description="json格式时仅返回数组，适配 data_cleaning.py"),
     exclude_internal: bool = Query(
-        True, description="过滤 localhost/127.0.0.1/内网地址"
+        True, description="过滤本地域名与非公网、组播 IP 字面量；不解析 DNS"
     ),
     exclude_auth_pages: bool = Query(True, description="过滤登录/oauth/授权回调等页面"),
     exclude_search_pages: bool = Query(False, description="过滤搜索结果页"),
@@ -1737,47 +1972,16 @@ def export_lsj_training(
             status_code=400, detail="from_ts cannot be greater than to_ts"
         )
 
-    with get_conn() as conn:
-        rows = _load_items_for_export(
-            conn, from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows
-        )
-
-    items = _prepare_training_rows(
-        rows,
-        label_field=label_field,
-        exclude_internal=exclude_internal,
-        exclude_auth_pages=exclude_auth_pages,
-        exclude_search_pages=exclude_search_pages,
-        dedup_by_input=dedup_by_input,
-        max_input_len=max_input_len,
-    )
-
-    if fmt == "json":
-        if bare:
-            return items
-        return {
-            "count": len(items),
-            "label_field": label_field,
-            "from_ts": from_ts,
-            "to_ts": to_ts,
-            "items": items,
-        }
-
-    if fmt == "jsonl":
-        content = _to_jsonl(items)
-        return StreamingResponse(
-            io.StringIO(content),
-            media_type="application/x-ndjson",
-            headers={
-                "Content-Disposition": 'attachment; filename="lsj_training.jsonl"'
-            },
-        )
-
-    content = _to_csv(items)
-    return StreamingResponse(
-        io.StringIO(content),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="lsj_training.csv"'},
+    return await export_io.prepare_export_response(
+        transform=lambda rows, budget: _prepare_training_rows(
+            rows, budget=budget, label_field=label_field,
+            exclude_internal=exclude_internal, exclude_auth_pages=exclude_auth_pages,
+            exclude_search_pages=exclude_search_pages, dedup_by_input=dedup_by_input,
+            max_input_len=max_input_len),
+        from_ts=from_ts, to_ts=to_ts, limit_rows=limit_rows, fmt=fmt,
+        columns=TRAINING_CSV_COLUMNS,
+        metadata=None if bare else {"label_field": label_field, "from_ts": from_ts, "to_ts": to_ts},
+        filename="lsj_training",
     )
 
 

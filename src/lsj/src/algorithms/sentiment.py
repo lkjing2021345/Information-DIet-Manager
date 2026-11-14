@@ -11,11 +11,9 @@ from __future__ import annotations  # 让 Python 3.8/3.9 支持 | 类型注解
     - 自定义模型适合在特定业务标注数据上提升一致性；
     - 两者可以组合使用，以在可解释性与泛化能力之间取得平衡。
 """
-# ======== 环境变量设置 ========
-import os  # 系统环境变量
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'  # 为 HuggingFace 下载配置国内镜像
 # ======== 标准库导入 ========
 import pickle  # 模型持久化
+import math
 from pathlib import Path  # 路径处理
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
@@ -73,6 +71,7 @@ class SentimentScore:
     neg_word: List[str] = field(default_factory=list)
     categories: Dict[str, Any] = field(default_factory=dict)
     raw: Dict[str, Any] = field(default_factory=dict)
+    valid: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -82,6 +81,7 @@ class SentimentScore:
             'neg_word': self.neg_word,
             'categories': self.categories,
             'raw': self.raw,
+            'valid': self.valid,
         }
 
 
@@ -124,12 +124,12 @@ class CntextSentimentBackend:
 
     def analyze_score(self, text: str) -> SentimentScore:
         if self.analyzer._is_empty_text(text):
-            return SentimentScore()
+            return SentimentScore(valid=False)
 
         try:
             if ct is None:
                 logger.error("cntext 未安装，无法进行情感分析")
-                return SentimentScore()
+                return SentimentScore(valid=False)
 
             if self.analyzer.custom_dict:
                 raw = ct.sentiment(str(text), diction=self.analyzer.custom_dict)
@@ -139,6 +139,16 @@ class CntextSentimentBackend:
                 default_yaml = ct.read_yaml_dict('zh_common_DUTIR.yaml')
                 default_dict = default_yaml.get('Dictionary', default_yaml)
                 raw = ct.sentiment(str(text), diction=default_dict)
+
+            count_fields = {'pos_num', 'pos', 'neg_num', 'neg', '乐_num', '喜_num', '好_num',
+                            '怒_num', '愤_num', '哀_num', '悲_num', '惧_num', '恐_num',
+                            '恶_num', '厌_num', '惊_num', '惊讶_num'}
+            if not isinstance(raw, dict) or not count_fields.intersection(raw):
+                raise ValueError("sentiment backend returned no recognized counts")
+            for key in count_fields.intersection(raw):
+                count = raw[key]
+                if isinstance(count, (bool, str)) or not math.isfinite(float(count)) or count < 0 or int(count) != count:
+                    raise ValueError("sentiment backend returned invalid counts")
 
             pos = raw.get('pos_num', raw.get('pos', 0))
             neg = raw.get('neg_num', raw.get('neg', 0))
@@ -166,18 +176,23 @@ class CntextSentimentBackend:
                 if isinstance(k, str) and k.endswith('_num') and k not in exclude
             }
 
+            for count in (pos, neg):
+                if isinstance(count, (bool, str)) or not math.isfinite(float(count)) or count < 0 or int(count) != count:
+                    raise ValueError("sentiment backend returned invalid counts")
+
             return SentimentScore(
-                pos=int(pos) if pd.notna(pos) else 0,
-                neg=int(neg) if pd.notna(neg) else 0,
+                pos=int(pos),
+                neg=int(neg),
                 pos_word=list(pos_words),
                 neg_word=list(neg_words),
                 categories=categories,
                 raw=raw,
+                valid=True,
             )
 
         except Exception as e:
-            logger.exception(f"情感分析失败: {e}")
-            return SentimentScore()
+            logger.error("情感分析失败 (%s)", type(e).__name__)
+            return SentimentScore(valid=False)
 
     def analyze_emotions(self, text: str) -> Dict[str, int]:
         if self.analyzer._is_empty_text(text):
@@ -564,7 +579,7 @@ class SentimentAnalyzer:
 
     def _empty_cntext_score_result(self) -> Dict[str, Any]:
         """cntext 打分失败/空文本时的统一返回。"""
-        return SentimentScore().to_dict()
+        return SentimentScore(valid=False).to_dict()
 
     def _load_stopwords(self) -> set[str]:
         """加载停用词并缓存，避免每次分词都重复读取文件。"""
@@ -661,7 +676,7 @@ class SentimentAnalyzer:
         try:
             words = jieba.lcut(str(text))
         except Exception as e:
-            logger.exception(f"出现异常，分词失败: {e}")
+            logger.error("分词失败 (%s)", type(e).__name__)
             return []
 
         stopwords_set = self._load_stopwords()
@@ -698,13 +713,14 @@ class SentimentAnalyzer:
             return self.SENTIMENT_NEUTRAL
     
     def _empty_result(self) -> Dict[str, Any]:
-        """返回空文本或分析失败时使用的默认预测结果。"""
+        """显式保留不可用结果；缺失不能伪装成中性文本。"""
         return {
-            'sentiment': self.SENTIMENT_NEUTRAL,
-            'polarity': 0.0,
-            'pos_count': 0,
-            'neg_count': 0,
-            'confidence': 0.0,
+            'sentiment': None,
+            'polarity': None,
+            'pos_count': None,
+            'neg_count': None,
+            'confidence': None,
+            'sentiment_valid': False,
             'pos_words': [],
             'neg_words': []
         }
@@ -731,9 +747,10 @@ class SentimentAnalyzer:
         if self._is_empty_text(text):
             logger.error("传入文本为空")
             return {
-                'sentiment': self.SENTIMENT_NEUTRAL,
-                'polarity': 0,
-                'sentiment_scores': {'pos': 0, 'neg': 0},
+                'sentiment': None,
+                'polarity': None,
+                'sentiment_scores': {'pos': None, 'neg': None},
+                'sentiment_valid': False,
                 'emotions': None,
                 'pos_words': [],
                 'neg_words': []
@@ -741,6 +758,9 @@ class SentimentAnalyzer:
 
         sentiment_score_obj = self.cntext_backend.analyze_score(text)
         sentiment_score = sentiment_score_obj.to_dict()
+
+        if not sentiment_score_obj.valid:
+            return {**self._empty_result(), 'sentiment_scores': {'pos': None, 'neg': None}}
 
         pos_count = sentiment_score['pos']
         neg_count = sentiment_score['neg']
@@ -754,6 +774,7 @@ class SentimentAnalyzer:
         result = {
             'sentiment': sentiment,
             'polarity': polarity,
+            'sentiment_valid': True,
             'sentiment_scores': {
                 'pos': pos_count,
                 'neg': neg_count
@@ -812,6 +833,9 @@ class SentimentAnalyzer:
             return None
 
         result = self.predict_by_cntext(text)
+
+        if not result.get('sentiment_valid', False):
+            return self._empty_result()
 
         sentiment = result['sentiment']
         polarity = result['polarity']
@@ -892,6 +916,7 @@ class SentimentAnalyzer:
         pos_counts = []
         neg_counts = []
         confidences = []
+        valid_predictions = []
         emotions_list = [] if include_emotions else None
 
         total_batches = (len(df) + batch_size - 1) // batch_size
@@ -906,53 +931,37 @@ class SentimentAnalyzer:
             for idx, row in batch_df.iterrows():
                 text = row[text_column]
 
-                if text is None or pd.isna(text) or str(text).strip() == '':
-                    sentiments.append(self.SENTIMENT_NEUTRAL)
-                    polarities.append(0.0)
-                    pos_counts.append(0)
-                    neg_counts.append(0)
-                    confidences.append(0.0)
-                    if include_emotions:
-                        emotions_list.append({})
-                    continue
-
+                result = None
                 try:
-                    result = self.predict(
-                        text=str(text),
-                        include_emotions=include_emotions,
-                        include_words=False,
-                        use_custom_model=True
-                    )
-
-                    if result is None:
-                        # 预测失败时退回默认中性结果，避免中断整批任务。
-                        sentiments.append(self.SENTIMENT_NEUTRAL)
-                        polarities.append(0.0)
-                        pos_counts.append(0)
-                        neg_counts.append(0)
-                        confidences.append(0.0)
-                        if include_emotions:
-                            emotions_list.append({})
-                    else:
-                        # 提取结果
-                        sentiments.append(result.get('sentiment', self.SENTIMENT_NEUTRAL))
-                        polarities.append(result.get('polarity', 0.0))
-                        pos_counts.append(result.get('pos_count', 0))
-                        neg_counts.append(result.get('neg_count', 0))
-                        confidences.append(result.get('confidence', 0.0))
-
-                        if include_emotions:
-                            emotions_list.append(result.get('emotions', {}))
-
+                    if not self._is_empty_text(text):
+                        result = self.predict(
+                            text=str(text), include_emotions=include_emotions,
+                            include_words=False, use_custom_model=True,
+                        )
                 except Exception as e:
-                    logger.error(f"处理索引 {idx} 时出错: {e}")
-                    sentiments.append(self.SENTIMENT_NEUTRAL)
-                    polarities.append(0.0)
-                    pos_counts.append(0)
-                    neg_counts.append(0)
-                    confidences.append(0.0)
-                    if include_emotions:
-                        emotions_list.append({})
+                    logger.error("处理索引 %s 时出错: %s", idx, type(e).__name__)
+
+                valid = False
+                if isinstance(result, dict) and ('sentiment_valid' not in result or result['sentiment_valid'] is True):
+                    label = result.get('sentiment')
+                    polarity = result.get('polarity')
+                    try:
+                        valid = (isinstance(label, str) and label.strip().lower() in
+                                 {'positive', 'neutral', 'negative'} and
+                                 not isinstance(polarity, (bool, str)) and
+                                 math.isfinite(float(polarity)) and -1 <= float(polarity) <= 1)
+                    except (TypeError, ValueError, OverflowError):
+                        valid = False
+                if not valid:
+                    result = self._empty_result()
+                sentiments.append(result.get('sentiment'))
+                polarities.append(result.get('polarity'))
+                pos_counts.append(result.get('pos_count'))
+                neg_counts.append(result.get('neg_count'))
+                confidences.append(result.get('confidence'))
+                valid_predictions.append(valid)
+                if include_emotions:
+                    emotions_list.append(result.get('emotions', {}))
 
             processed = end_idx
             progress = (processed / len(df)) * 100
@@ -966,6 +975,7 @@ class SentimentAnalyzer:
         result_df['pos_count'] = pos_counts
         result_df['neg_count'] = neg_counts
         result_df['confidence'] = confidences
+        result_df['sentiment_valid'] = valid_predictions
 
         if include_emotions and emotions_list is not None:
             result_df['emotions'] = emotions_list
@@ -1306,8 +1316,8 @@ class SentimentAnalyzer:
                 'count'
             ]
 
-            # 标准差在仅一个样本的分组中会是 NaN，这里统一补 0。
-            trend_data['polarity_std'] = trend_data['polarity_std'].fillna(0)
+            # 单样本分组的标准差未定义，保留 NaN 以区分缺失测量和真实的 0 波动。
+            trend_data['polarity_std'] = trend_data['polarity_std'].where(trend_data['count'] > 1)
 
             # 计算移动平均，帮助观察趋势而非单点波动。
             if len(trend_data) >= 3:
@@ -1364,11 +1374,45 @@ class SentimentAnalyzer:
             logger.warning("输入 DataFrame 为空")
             return {'error': 'Empty DataFrame'}
 
+        def finite_number(value, lower, upper):
+            # Numeric strings from tabular exports remain supported; booleans
+            # and invalid/out-of-range measurements must not become scores.
+            if pd.api.types.is_bool(value):
+                return None
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return number if math.isfinite(number) and lower <= number <= upper else None
+
+        def statistics(series, *, quartiles=False):
+            measured = series.dropna()
+            keys = {'mean': 'mean', 'std': 'std', 'min': 'min', 'max': 'max', 'median': '50%'}
+            if quartiles:
+                keys.update(q25='25%', q75='75%')
+            description = measured.describe() if not measured.empty else {}
+            result = {}
+            for key, source in keys.items():
+                value = finite_number(description.get(source), -math.inf, math.inf)
+                result[key] = round(value, 4) if value is not None else None
+            return result
+
         df = df.copy()  # 使用副本，避免修改调用方原始数据
-        df['polarity'] = pd.to_numeric(df['polarity'], errors='coerce')  # 转成数值，非法值记为 NaN
-        df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce')  # 转成数值，便于统计
+        df['sentiment'] = df['sentiment'].astype(object).map(
+            lambda value: value.strip().title() if isinstance(value, str) else None)
+        df['polarity'] = df['polarity'].map(lambda value: finite_number(value, -1, 1)).astype(float)
+        valid = df['sentiment'].isin({'Positive', 'Neutral', 'Negative'}) & df['polarity'].notna()
+        if 'sentiment_valid' in df.columns:
+            valid &= df['sentiment_valid'].astype(object).map(lambda value: pd.api.types.is_bool(value) and bool(value))
+        df['sentiment'] = df['sentiment'].where(valid)
+        df['polarity'] = df['polarity'].where(valid)
+        df['confidence'] = df['confidence'].map(lambda value: finite_number(value, 0, 1)).astype(float).where(valid)
+        confidence_count = int(df['confidence'].notna().sum())
         report: Dict[str, Any] = {
             'total_records': len(df),  # 报告覆盖的总记录数
+            'valid_records': int(valid.sum()),
+            'missing_records': int((~valid).sum()),
+            'confidence_records': confidence_count,
             'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 报告生成时间
         }
 
@@ -1379,57 +1423,58 @@ class SentimentAnalyzer:
             'percentages': sentiment_pct
         }
 
-        polarity_stats = df['polarity'].describe().to_dict()
-        report['polarity_statistics'] = {
-            'mean': round(polarity_stats.get('mean', 0) or 0, 4),
-            'std': round(polarity_stats.get('std', 0) or 0, 4),
-            'min': round(polarity_stats.get('min', 0) or 0, 4),
-            'max': round(polarity_stats.get('max', 0) or 0, 4),
-            'median': round(df['polarity'].median() if df['polarity'].notna().any() else 0, 4),
-            'q25': round(polarity_stats.get('25%', 0) or 0, 4),
-            'q75': round(polarity_stats.get('75%', 0) or 0, 4)
-        }
+        report['polarity_statistics'] = statistics(df['polarity'], quartiles=True)
 
         if 'emotions' in df.columns:
             try:
-                emotion_df = self.get_emotion_distribution(df)
+                def valid_emotions(value):
+                    if not isinstance(value, dict):
+                        return {}
+                    counts = {}
+                    for emotion, raw_count in value.items():
+                        count = finite_number(raw_count, 0, math.inf)
+                        if isinstance(emotion, str) and count is not None and count.is_integer():
+                            counts[emotion] = int(count)
+                    return counts
+
+                emotion_input = df.loc[valid, ['emotions']].copy()
+                emotion_input['emotions'] = emotion_input['emotions'].map(valid_emotions)
+                emotion_df = self.get_emotion_distribution(emotion_input)
                 report['emotion_distribution'] = emotion_df.to_dict('records') if not emotion_df.empty else None
             except Exception as e:
-                logger.warning(f"统计情绪分布出错: {e}")
+                logger.warning("统计情绪分布出错: %s", type(e).__name__)
                 report['emotion_distribution'] = None
         else:
             report['emotion_distribution'] = None
 
-        confidence_stats = df['confidence'].describe().to_dict()
-        report['confidence_statistics'] = {
-            'mean': round(confidence_stats.get('mean', 0) or 0, 4),
-            'std': round(confidence_stats.get('std', 0) or 0, 4),
-            'min': round(confidence_stats.get('min', 0) or 0, 4),
-            'max': round(confidence_stats.get('max', 0) or 0, 4),
-            'median': round(df['confidence'].median() if df['confidence'].notna().any() else 0, 4)
-        }
+        report['confidence_statistics'] = statistics(df['confidence'])
 
         if 'pos_count' in df.columns and 'neg_count' in df.columns:
-            report['word_statistics'] = {
-                'total_positive_words': int(df['pos_count'].sum()),
-                'total_negative_words': int(df['neg_count'].sum()),
-                'avg_positive_words': round(df['pos_count'].mean(), 2),
-                'avg_negative_words': round(df['neg_count'].mean(), 2)
-            }
+            word_stats = {}
+            for column, label in [('pos_count', 'positive'), ('neg_count', 'negative')]:
+                counts = df[column].map(lambda value: finite_number(value, 0, math.inf)).astype(float).where(valid).dropna()
+                counts = counts[counts.mod(1).eq(0)]
+                total = finite_number(counts.sum(), 0, math.inf) if not counts.empty else None
+                mean = finite_number(counts.mean(), 0, math.inf) if not counts.empty else None
+                word_stats[f'total_{label}_words'] = int(total) if total is not None else None
+                word_stats[f'avg_{label}_words'] = round(mean, 2) if mean is not None else None
+            report['word_statistics'] = word_stats
 
         if sentiment_dist:
             dominant = max(sentiment_dist, key=sentiment_dist.get)
         else:
             dominant = 'Unknown'
+        mean_polarity = report['polarity_statistics']['mean']
         report['overall_summary'] = {
             'dominant_sentiment': dominant,
-            'overall_polarity': 'Positive' if report['polarity_statistics']['mean'] > 0.1
-            else 'Negative' if report['polarity_statistics']['mean'] < -0.1
+            'overall_polarity': 'Unknown' if mean_polarity is None
+            else 'Positive' if mean_polarity > 0.1
+            else 'Negative' if mean_polarity < -0.1
             else 'Neutral',
-            'avg_confidence': round(report['confidence_statistics']['mean'], 4),
+            'avg_confidence': report['confidence_statistics']['mean'],
             'high_confidence_ratio': round(
-                (df['confidence'] >= 0.7).sum() / len(df) * 100, 2
-            )
+                int((df['confidence'] >= 0.7).sum()) / confidence_count * 100, 2
+            ) if confidence_count else None,
         }
 
         logger.info("情感分析报告生成完成")

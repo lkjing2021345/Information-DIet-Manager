@@ -3,54 +3,61 @@
   "$id": "https://example.com/schemas/ingest-item.json",
   "title": "IngestItem",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "description": "The API ignores unknown top-level properties. String lengths count Unicode code points. Title constraints apply after trimming outer whitespace. Runtime metadata byte and nesting limits are described below and enforced by the API.",
   "required": ["url", "title", "ts", "source"],
   "properties": {
     "url": {
       "type": "string",
       "format": "uri",
       "maxLength": 2048,
-      "description": "Content URL."
+      "description": "HTTP or HTTPS content URL."
     },
     "title": {
       "type": "string",
       "minLength": 1,
       "maxLength": 300,
-      "description": "Title or short summary."
+      "pattern": "\\S",
+      "description": "Title or short summary; API trims outer whitespace before applying length constraints."
     },
     "text": {
-      "type": "string",
+      "type": ["string", "null"],
       "maxLength": 2000,
       "description": "Optional description or truncated body."
     },
     "ts": {
       "type": "integer",
-      "description": "Unix epoch milliseconds (access time)."
+      "minimum": 0,
+      "maximum": 253402300799999,
+      "description": "Unix epoch milliseconds from 1970 through year 9999. API requires a strict integer and rejects strings, booleans and floating-point representations."
     },
     "source": {
       "type": "string",
       "enum": ["plugin", "import"]
     },
     "lang": {
-      "type": "string",
+      "type": ["string", "null"],
       "maxLength": 16
     },
     "channel": {
-      "type": "string",
+      "type": ["string", "null"],
       "maxLength": 32,
       "description": "short_video | news | social | other"
     },
     "author": {
-      "type": "string",
+      "type": ["string", "null"],
       "maxLength": 120
     },
     "tags": {
-      "type": "array",
+      "type": ["array", "null"],
+      "maxItems": 10,
       "items": { "type": "string", "maxLength": 40 }
     },
     "meta": {
-      "type": "object",
-      "description": "Extra plugin/import fields"
+      "type": ["object", "null"],
+      "description": "Extra plugin/import fields. At most 8192 UTF-8 bytes when serialized as compact JSON with literal Unicode; at most 8 nested object/array levels, counting this root object as level 1. Only finite JSON values and string object keys are accepted. These runtime limits require API validation in addition to this JSON Schema.",
+      "x-maxUtf8Bytes": 8192,
+      "x-maxContainerDepth": 8
     }
   }
 }

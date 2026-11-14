@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "local_path": "chrome-extension/readability.js",
+  "repository": "https://github.com/mozilla/readability",
+  "upstream_path": "Readability.js",
+  "upstream_commit": "d7949dc47dd9ed9ee1d3b34ffdcf3bce28cde435",
+  "upstream_raw_url": "https://raw.githubusercontent.com/mozilla/readability/d7949dc47dd9ed9ee1d3b34ffdcf3bce28cde435/Readability.js",
+  "reviewed_on": "2026-10-03",
+  "comparison_policy": "lf-or-crlf-only",
+  "files": {
+    "lf": {
+      "sha256": "e9330028c8a5a4aa7d75147be2605d520f7f213c7b28474947dc0e9c984e9bed",
+      "size_bytes": 90944
+    },
+    "crlf": {
+      "sha256": "ffadf8434be4558c87edbe25c9a4cf740ae7a7d6c687c7471a216d805b0ae05d",
+      "size_bytes": 93756
+    }
+  },
+  "release_version": null,
+  "upstream_package_version": "0.6.0",
+  "verified_license": null
+}

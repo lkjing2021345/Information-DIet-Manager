@@ -48,6 +48,7 @@ import math
 import os
 import random
 import re
+import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass, field
@@ -79,6 +80,14 @@ def log_event(logger: logging.Logger, level: str, event: str, **kwargs):
     payload = {"event": event, **kwargs}
     msg = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     getattr(logger, level.lower(), logger.info)(msg)
+
+
+class CollectorPersistenceError(RuntimeError):
+    """A failed write may have partially succeeded; never replay it automatically."""
+
+    def __init__(self, stage: str):
+        self.stage = stage
+        super().__init__("Collector persistence failed; inspect the output before resuming.")
 
 
 class BloomFilter:
@@ -313,7 +322,7 @@ class ProgressTracker:
                 "warning",
                 "progress_load_failed",
                 progress_path=self.progress_path,
-                reason=str(e),
+                error_type=type(e).__name__,
             )
             return None
 
@@ -422,19 +431,27 @@ class DataStore:
             return
         try:
             if self.output_format == "csv":
-                file_exists = os.path.exists(self.output_path)
                 Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+                fields = self._csv_append_fields()
+                needs_header = fields is None
+                fields = fields or ["entry_id", "text", "label", "model", "created_at"]
+                needs_separator = not needs_header and self._append_needs_separator()
                 with open(self.output_path, "a", encoding="utf-8", newline="") as f:
-                    writer = csv.DictWriter(
-                        f, fieldnames=["entry_id", "text", "label", "model", "created_at"]
-                    )
-                    if not file_exists or os.path.getsize(self.output_path) == 0:
+                    if needs_separator:
+                        f.write("\n")
+                    writer = csv.DictWriter(f, fieldnames=fields)
+                    if needs_header:
                         writer.writeheader()
                     for r in records:
-                        writer.writerow(r.to_dict())
+                        row = r.to_dict()
+                        row["id"] = r.entry_id
+                        writer.writerow({field: row.get(field, "") for field in fields})
             elif self.output_format == "jsonl":
                 Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
+                needs_separator = self._append_needs_separator()
                 with open(self.output_path, "a", encoding="utf-8") as f:
+                    if needs_separator:
+                        f.write("\n")
                     for r in records:
                         f.write(json.dumps(r.to_dict(), ensure_ascii=False) + "\n")
             else:
@@ -445,6 +462,29 @@ class DataStore:
                 self.rewrite_all(list(merged.values()))
         except Exception as e:
             raise IOError(f"写入结果失败: {e}") from e
+
+    def _csv_append_fields(self) -> Optional[List[str]]:
+        if not os.path.exists(self.output_path):
+            return None
+        with open(self.output_path, "r", encoding="utf-8-sig", newline="") as f:
+            fields = next(csv.reader(f, strict=True), None)
+        if fields is not None and (
+            not all(field.strip() for field in fields)
+            or len(set(fields)) != len(fields)
+            or "label" not in fields
+            or "text" not in fields
+        ):
+            raise ValueError("CSV header is not supported")
+        return fields
+
+    def _append_needs_separator(self) -> bool:
+        if not os.path.exists(self.output_path):
+            return False
+        with open(self.output_path, "rb") as f:
+            if f.seek(0, os.SEEK_END) == 0:
+                return False
+            f.seek(-1, os.SEEK_END)
+            return f.read(1) not in (b"\r", b"\n")
 
     def _read_csv(self, path: str) -> List[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8-sig", newline="") as f:
@@ -521,10 +561,22 @@ class CircuitBreaker:
 class BaseModelClient:
     def __init__(self, cfg: ModelConfig):
         self.cfg = cfg
-        self.http = httpx.AsyncClient(timeout=cfg.timeout)
+        self.http: Optional[httpx.AsyncClient] = None
+        self._closed = False
+        self._close_failed = False
+        self._close_lock = asyncio.Lock()
         self.last_request_ts = 0.0
         self.min_interval = 1.0 / max(0.1, cfg.qps_limit)
         self._rate_limit_lock = asyncio.Lock()
+
+    def _get_http(self) -> httpx.AsyncClient:
+        if self._closed:
+            raise RuntimeError("Model client is closed.")
+        if self.http is None:
+            # Allocate at the async request site, never during construction.
+            # No await separates the check, allocation, and ownership assignment.
+            self.http = httpx.AsyncClient(timeout=self.cfg.timeout)
+        return self.http
 
     async def _rate_limit_wait(self):
         async with self._rate_limit_lock:
@@ -538,7 +590,19 @@ class BaseModelClient:
         raise NotImplementedError
 
     async def close(self):
-        await self.http.aclose()
+        self._closed = True
+        async with self._close_lock:
+            if self._close_failed:
+                raise RuntimeError("Model client cleanup previously failed; resource state is unknown.") from None
+            if self.http is not None:
+                try:
+                    await self.http.aclose()
+                except BaseException:
+                    # HTTPX may already mark itself closed; another aclose can
+                    # be a no-op, so retain ownership and the failed state.
+                    self._close_failed = True
+                    raise
+                self.http = None
 
 
 class OpenAIClient(BaseModelClient):
@@ -559,7 +623,8 @@ class OpenAIClient(BaseModelClient):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        r = await self.http.post(url, headers=headers, json=payload)
+        http = self._get_http()
+        r = await http.post(url, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
         return data["choices"][0]["message"]["content"]
@@ -580,7 +645,8 @@ class AnthropicClient(BaseModelClient):
             "temperature": temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
-        r = await self.http.post(url, headers=headers, json=payload)
+        http = self._get_http()
+        r = await http.post(url, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
         if "content" in data and data["content"]:
@@ -598,6 +664,10 @@ class ModelPool:
     """职责：多模型健康检查、限流、熔断、失败重试与故障转移。"""
 
     def __init__(self, model_configs: List[ModelConfig], logger: logging.Logger):
+        model_configs = list(model_configs)
+        for cfg in model_configs:
+            if isinstance(cfg.concurrency, bool) or not isinstance(cfg.concurrency, int) or cfg.concurrency <= 0:
+                raise ValueError("Model concurrency must be a positive integer.")
         self.logger = logger
         self.cfgs: Dict[str, ModelConfig] = {c.name: c for c in model_configs}
         self.clients: Dict[str, BaseModelClient] = {}
@@ -672,7 +742,7 @@ class ModelPool:
                         "model_request_retry",
                         model=name,
                         retry=retry + 1,
-                        reason=str(e),
+                        error_type=type(e).__name__,
                         backoff=round(backoff, 3),
                     )
                     await asyncio.sleep(backoff)
@@ -682,11 +752,18 @@ class ModelPool:
                     self.breakers[name].on_failure()
                     await asyncio.sleep(0.2)
 
-        raise RuntimeError(f"All models failed. last_error={last_err}")
+        raise RuntimeError("All models failed.") from last_err
 
     async def close(self):
+        first_error = None
         for client in self.clients.values():
-            await client.close()
+            try:
+                await client.close()
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
 
 
 # -----------------------------
@@ -749,6 +826,7 @@ class SentimentDataCollector:
         self._pending_flush: List[Record] = []
         self._last_progress_log = 0
         self._stop_requested = False
+        self._persistence_error: Optional[CollectorPersistenceError] = None
 
         self.ppl_model = None
         self.ppl_tokenizer = None
@@ -817,7 +895,7 @@ class SentimentDataCollector:
             log_event(self.logger, "info", "sbert_loaded", model="shibing624/text2vec-base-chinese")
         except Exception as e:
             self.embed_model = None
-            log_event(self.logger, "warning", "sbert_unavailable", reason=str(e))
+            log_event(self.logger, "warning", "sbert_unavailable", error_type=type(e).__name__)
 
     def _try_load_ppl_model(self):
         try:
@@ -833,7 +911,7 @@ class SentimentDataCollector:
         except Exception as e:
             self.ppl_model = None
             self.ppl_tokenizer = None
-            log_event(self.logger, "warning", "ppl_model_unavailable", reason=str(e))
+            log_event(self.logger, "warning", "ppl_model_unavailable", error_type=type(e).__name__)
 
     @staticmethod
     def _build_targets(keys: List[str], ratios: List[float], total: int) -> Dict[str, int]:
@@ -1009,6 +1087,10 @@ class SentimentDataCollector:
         self.initial_existing_count = len(records)
         self.state.existing_count = len(records)
         self.state.deduped_existing_count = len(records)
+        # Persisted rows are the current baseline, including earlier runs' additions.
+        # A sidecar may predate or outlive the output and cannot establish row counts.
+        self.state.accepted_new_count = 0
+        self.state.label_counts = {c: 0 for c in self.categories}
 
         for r in records:
             self.id_set.add(r.entry_id)
@@ -1025,11 +1107,10 @@ class SentimentDataCollector:
                 self.embeddings = np.asarray(embs, dtype=np.float32)
                 self.embedding_texts = [r.text for r in records]
             except Exception as e:
-                log_event(self.logger, "warning", "history_embedding_failed", reason=str(e))
+                log_event(self.logger, "warning", "history_embedding_failed", error_type=type(e).__name__)
 
         restored = self.progress.load()
         if restored and restored.output_path == self.cfg.output and restored.target_count == self.target_count:
-            self.state.accepted_new_count = restored.accepted_new_count
             self.state.generated_count = restored.generated_count
             self.state.duplicate_count = restored.duplicate_count
             self.state.filtered_count = restored.filtered_count
@@ -1043,9 +1124,6 @@ class SentimentDataCollector:
             self.state.event_counts.update(restored.event_counts)
             self.state.tone_counts.update(restored.tone_counts)
             self.state.contrast_pair_count = restored.contrast_pair_count
-            for k, v in restored.label_counts.items():
-                if k in self.state.label_counts:
-                    self.state.label_counts[k] = max(self.state.label_counts[k], v)
             self.state.status = "resumed"
         else:
             self.state.status = "ready"
@@ -1061,7 +1139,8 @@ class SentimentDataCollector:
         )
 
     def _remaining_target(self) -> int:
-        return max(0, self.target_count - self.state.total_effective_count)
+        # Pending candidates reserve capacity but are not confirmed output rows.
+        return max(0, self.target_count - self.state.total_effective_count - len(self._pending_flush))
 
     def _is_done(self) -> bool:
         return self.state.total_effective_count >= self.target_count
@@ -1087,12 +1166,12 @@ class SentimentDataCollector:
             log_event(self.logger, "warning", "task_timeout", spec=spec)
             return None
         except Exception as e:
-            log_event(self.logger, "warning", "generate_failed", spec=spec, reason=str(e))
+            log_event(self.logger, "warning", "generate_failed", spec=spec, error_type=type(e).__name__)
             return None
 
         obj = safe_json_extract(raw)
         if not obj or "text" not in obj:
-            log_event(self.logger, "warning", "parse_failed", raw_preview=raw[:200])
+            log_event(self.logger, "warning", "parse_failed", response_length=len(raw))
             return None
 
         text = normalize_text(str(obj["text"]))
@@ -1103,8 +1182,8 @@ class SentimentDataCollector:
                 "warning",
                 "label_mismatch",
                 expected=spec["label"],
-                actual=label,
-                text_preview=text[:50],
+                received_label_length=len(label),
+                text_length=len(text),
             )
             return None
 
@@ -1117,9 +1196,17 @@ class SentimentDataCollector:
 
     async def _process_spec(self, spec: Dict[str, str]) -> bool:
         """单任务处理。返回 True 表示最终新增成功，False 表示失败/重复/过滤。"""
+        if self._persistence_error is not None:
+            raise self._persistence_error
+        if self._stop_requested:
+            return False
         record = await self._generate_one(spec)
         async with self._state_lock:
             self.state.attempt_count += 1
+        if self._persistence_error is not None:
+            raise self._persistence_error
+        if self._stop_requested:
+            return False
 
         if record is None:
             async with self._state_lock:
@@ -1142,14 +1229,15 @@ class SentimentDataCollector:
 
     async def _append_record(self, record: Record, spec: Dict[str, str]):
         async with self._writer_lock:
-            if self._is_done():
+            if self._persistence_error is not None:
+                raise self._persistence_error
+            if self._stop_requested or self._remaining_target() == 0:
                 return
             if record.entry_id in {r.entry_id for r in self._pending_flush}:
                 self.state.duplicate_count += 1
                 return
 
             self._pending_flush.append(record)
-            self.state.accepted_new_count += 1
             self.state.generated_count += 1
             self.state.label_counts[record.label] = self.state.label_counts.get(record.label, 0) + 1
             self.state.style_counts[spec["sentence_type"]] = self.state.style_counts.get(spec["sentence_type"], 0) + 1
@@ -1162,26 +1250,45 @@ class SentimentDataCollector:
             if spec.get("contrast_group_id"):
                 self.state.contrast_pair_count += 1
 
-            if len(self._pending_flush) >= self.flush_every or self._is_done():
+            if len(self._pending_flush) >= self.flush_every or self._remaining_target() == 0:
                 self._flush_pending_sync()
-                await self.progress.save(self.state)
+                await self._save_progress()
 
             if self.state.total_effective_count - self._last_progress_log >= max(50, self.flush_every):
                 self._last_progress_log = self.state.total_effective_count
                 self._log_progress()
 
     def _flush_pending_sync(self):
+        if self._persistence_error is not None:
+            raise self._persistence_error
         if not self._pending_flush:
             return
+        records = list(self._pending_flush)
         try:
-            records = list(self._pending_flush)
             self.store.append_records(records)
-            self._pending_flush.clear()
-            log_event(self.logger, "info", "records_flushed", count=len(records), output=self.cfg.output)
-        except Exception as e:
+        except Exception as exc:
             self.state.failed_count += len(self._pending_flush)
-            log_event(self.logger, "error", "flush_failed", reason=str(e), count=len(self._pending_flush))
-            self._pending_flush.clear()
+            error = self._record_persistence_failure("output", exc)
+            raise error
+        self.state.accepted_new_count += len(records)
+        self._pending_flush.clear()
+        log_event(self.logger, "info", "records_flushed", count=len(records), output=self.cfg.output)
+
+    def _record_persistence_failure(self, stage: str, exc: Exception) -> CollectorPersistenceError:
+        self._stop_requested = True
+        if self._persistence_error is None:
+            self._persistence_error = CollectorPersistenceError(stage)
+            self._persistence_error.__cause__ = exc
+            log_event(self.logger, "error", "persistence_failed", stage=stage,
+                      error_type=type(exc).__name__, pending_count=len(self._pending_flush))
+        return self._persistence_error
+
+    async def _save_progress(self):
+        try:
+            await self.progress.save(self.state)
+        except Exception as exc:
+            error = self._record_persistence_failure("progress", exc)
+            raise error
 
     def _choose_contrast_label(self, label: str) -> str:
         contrast_map = {
@@ -1237,104 +1344,114 @@ class SentimentDataCollector:
         max_attempts = self.target_count * max(1, self.cfg.max_attempt_factor)
         in_flight: set = set()
 
-        while not self._is_done() and self.state.attempt_count < max_attempts and not self._stop_requested:
-            remaining_target = self._remaining_target()
-            available_slots = max(0, self.max_workers - len(in_flight))
-            if available_slots == 0:
-                done, in_flight = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    try:
-                        await task
-                    except Exception as e:
-                        async with self._state_lock:
-                            self.state.failed_count += 1
-                        log_event(self.logger, "error", "worker_crashed", reason=str(e))
-                continue
-
-            to_submit = min(self.batch_size, available_slots, remaining_target)
-            if to_submit <= 0:
-                break
-
-            for _ in range(to_submit):
-                spec = self._build_one_spec()
-                task = asyncio.create_task(self._process_spec(spec))
-                in_flight.add(task)
-                task.add_done_callback(lambda t, bag=in_flight: bag.discard(t))
-
-            log_event(
-                self.logger,
-                "info",
-                "tasks_submitted",
-                batch=to_submit,
-                in_flight=len(in_flight),
-                remaining_target=self._remaining_target(),
-            )
-
-            if in_flight:
-                done, _ = await asyncio.wait(in_flight, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    try:
-                        await task
-                    except Exception as e:
-                        async with self._state_lock:
-                            self.state.failed_count += 1
-                        log_event(self.logger, "error", "worker_crashed", reason=str(e))
-
-        if in_flight:
-            results = await asyncio.gather(*list(in_flight), return_exceptions=True)
-            for r in results:
-                if isinstance(r, Exception):
+        async def consume(done):
+            for task in done:
+                try:
+                    await task
+                except CollectorPersistenceError:
+                    raise
+                except Exception as exc:
                     async with self._state_lock:
                         self.state.failed_count += 1
-                    log_event(self.logger, "error", "worker_crashed", reason=str(r))
-
-    async def collect(self):
-        await self._load_existing_state()
-        await self.progress.save(self.state)
-
-        if self._is_done():
-            log_event(
-                self.logger,
-                "info",
-                "target_already_satisfied",
-                target_count=self.target_count,
-                existing_count=self.state.existing_count,
-            )
-            self._log_summary(final=True)
-            await self.pool.close()
-            return
-
-        log_event(
-            self.logger,
-            "info",
-            "collector_start",
-            target_count=self.target_count,
-            existing_count=self.state.existing_count,
-            remaining_target=self._remaining_target(),
-            max_workers=self.max_workers,
-            output=self.cfg.output,
-        )
+                    log_event(self.logger, "error", "worker_crashed", error_type=type(exc).__name__)
+                finally:
+                    # Keep ownership until the result, including failure, is read.
+                    in_flight.discard(task)
 
         try:
-            self.state.status = "running"
-            await self._run_dispatch_loop()
-        except KeyboardInterrupt:
-            self._stop_requested = True
-            self.state.status = "interrupted"
-            log_event(self.logger, "warning", "collector_interrupted")
-            raise
-        except Exception as e:
-            self.state.status = "failed"
-            log_event(self.logger, "error", "collector_failed", reason=str(e))
-            raise
+            while not self._is_done() and self.state.attempt_count < max_attempts and not self._stop_requested:
+                remaining_target = self._remaining_target()
+                available_slots = max(0, self.max_workers - len(in_flight))
+                if available_slots == 0:
+                    done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                    await consume(done)
+                    continue
+
+                to_submit = min(self.batch_size, available_slots, remaining_target)
+                if to_submit <= 0:
+                    break
+
+                for _ in range(to_submit):
+                    spec = self._build_one_spec()
+                    in_flight.add(asyncio.create_task(self._process_spec(spec)))
+
+                log_event(self.logger, "info", "tasks_submitted", batch=to_submit,
+                          in_flight=len(in_flight), remaining_target=self._remaining_target())
+                if in_flight:
+                    done, _ = await asyncio.wait(in_flight, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
+                    await consume(done)
+
+            while in_flight:
+                done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                await consume(done)
+            if self._persistence_error is not None:
+                raise self._persistence_error
         finally:
+            self._stop_requested = True
+            for task in in_flight:
+                if not task.done():
+                    task.cancel()
+            if in_flight:
+                await asyncio.gather(*in_flight, return_exceptions=True)
+            in_flight.clear()
+
+    async def collect(self):
+        primary_error = None
+        try:
+            if self._persistence_error is not None:
+                raise self._persistence_error
+            if self._stop_requested:
+                raise RuntimeError("Collector has stopped; create a new instance to resume.")
+            await self._load_existing_state()
+            await self._save_progress()
+            if not self._is_done():
+                log_event(self.logger, "info", "collector_start", target_count=self.target_count,
+                          existing_count=self.state.existing_count, remaining_target=self._remaining_target(),
+                          max_workers=self.max_workers, output=self.cfg.output)
+                self.state.status = "running"
+                await self._run_dispatch_loop()
+            else:
+                log_event(self.logger, "info", "target_already_satisfied",
+                          target_count=self.target_count, existing_count=self.state.existing_count)
+            # Flush only after a successful run, never during error cleanup:
+            # an unsuccessful append may already have written part of this batch.
             async with self._writer_lock:
                 self._flush_pending_sync()
-                await self.progress.save(self.state)
-            await self.pool.close()
+        except BaseException as exc:
+            primary_error = exc
+        finally:
+            self._stop_requested = True
+            try:
+                await self.pool.close()
+            except BaseException as exc:
+                if primary_error is None:
+                    primary_error = exc
+                else:
+                    log_event(self.logger, "error", "collector_cleanup_failed",
+                              error_type=type(exc).__name__)
 
-        self.state.status = "completed" if self._is_done() else "partial"
-        await self.progress.save(self.state)
+        if primary_error is None:
+            self.state.status = "completed" if self._is_done() and not self._pending_flush else "partial"
+            try:
+                await self._save_progress()
+            except BaseException as exc:
+                primary_error = exc
+
+        if primary_error is not None:
+            self.state.status = (
+                "interrupted" if isinstance(primary_error, (KeyboardInterrupt, asyncio.CancelledError)) else "failed"
+            )
+            log_event(self.logger, "error", "collector_failed", status=self.state.status,
+                      error_type=type(primary_error).__name__)
+            # Sidecar persistence is best effort when the storage itself is failing.
+            # Its error must not hide the original failure, or retry output writes.
+            try:
+                await self.progress.save(self.state)
+            except BaseException as exc:
+                log_event(self.logger, "error", "failure_progress_save_failed",
+                          error_type=type(exc).__name__)
+            raise primary_error
+
         self._log_summary(final=True)
 
     def _log_progress(self):
@@ -1553,10 +1670,19 @@ async def async_main():
     await collector.collect()
 
 
-if __name__ == "__main__":
+def cli_main() -> int:
     try:
         asyncio.run(async_main())
-    except KeyboardInterrupt:
-        print("Interrupted by user.")
-    except Exception as e:
-        print(f"Fatal error: {e}")
+    except (KeyboardInterrupt, asyncio.CancelledError) as exc:
+        print(json.dumps({"success": False, "error": "Collector interrupted; inspect output before resuming.",
+                          "error_type": type(exc).__name__}), file=sys.stderr)
+        return 130
+    except Exception as exc:
+        print(json.dumps({"success": False, "error": "Collector failed; inspect output before resuming.",
+                          "error_type": type(exc).__name__}), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(cli_main())

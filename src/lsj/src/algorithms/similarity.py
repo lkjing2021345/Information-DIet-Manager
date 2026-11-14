@@ -126,7 +126,7 @@ class SimilarityAnalyzer:
             filtered = [w for w in words if w.strip() and w not in self.stopwords]
             return filtered
         except Exception as e:
-            logger.error(f"分词失败: {e}")
+            logger.error("分词失败 (%s)", type(e).__name__)
             return []
 
     def _load_word_vectors(self, model_path: str) -> None:
@@ -496,7 +496,8 @@ class SimilarityAnalyzer:
             reference_column: 参考列名（如果为 None，则计算相邻两条）
 
         返回:
-            pd.DataFrame
+            pd.DataFrame。无前驱、空文本或零向量的比较为 NaN，并标记
+            similarity_valid=False；有效的零相似度仍保留为 0。
         """
         if text_column not in df.columns:
             logger.error(f"列 '{text_column}' 不存在")
@@ -518,35 +519,61 @@ class SimilarityAnalyzer:
             texts = result_df[text_column].fillna("").astype(str).tolist()
             refs = result_df[reference_column].fillna("").astype(str).tolist()
 
-            self.fit(texts + refs)
+            try:
+                self.fit(texts + refs)
+            except ValueError as exc:
+                if all(not t.strip() for t in texts + refs) or "empty vocabulary" in str(exc):
+                    result_df["similarity"] = float("nan")
+                    result_df["similarity_valid"] = False
+                    return result_df
+                raise
 
             A = self.vectorizer.transform(texts)
             B = self.vectorizer.transform(refs)
 
             # 行对行点积（L2 归一化下即余弦相似度），向量化方式快于逐行循环。
             sims = np.asarray(A.multiply(B).sum(axis=1)).ravel()
-            result_df["similarity"] = sims.astype(float)
+            valid = ((A.getnnz(axis=1) > 0) & (B.getnnz(axis=1) > 0) & np.isfinite(sims)
+                     & (sims >= -1e-6) & (sims <= 1 + 1e-6))
+            # TF-IDF float32 dot products may exceed one by rounding error.
+            result_df["similarity"] = np.where(valid, np.clip(sims, 0.0, 1.0), np.nan)
+            result_df["similarity_valid"] = valid
 
         else:
             texts = result_df[text_column].fillna("").astype(str).tolist()
 
-            # 若全为空文本，直接返回全 0，避免无意义建模。
+            # 空文本没有可比较的内容，不能把缺失测量写成零。
             if all(not t.strip() for t in texts):
-                result_df["similarity_to_previous"] = [0.0] * len(result_df)
+                result_df["similarity_to_previous"] = float("nan")
+                result_df["similarity_valid"] = False
                 return result_df
 
             # 训练词表，确保后续相邻比较使用同一特征空间。
-            self.fit(texts)
+            try:
+                self.fit(texts)
+            except ValueError as exc:
+                if "empty vocabulary" in str(exc):
+                    result_df["similarity_to_previous"] = float("nan")
+                    result_df["similarity_valid"] = False
+                    return result_df
+                raise
 
             # 一次性向量化后，相邻行做稀疏点积，避免重复 transform。
             vecs = self.vectorizer.transform(texts)
 
-            similarities = [0.0]  # 第一条记录没有“上一条”可供比较
+            nonempty_vectors = vecs.getnnz(axis=1) > 0
+            similarities = [float("nan")]  # 第一条记录没有“上一条”可供比较
             for i in range(1, len(texts)):
+                if not (nonempty_vectors[i - 1] and nonempty_vectors[i]):
+                    similarities.append(float("nan"))
+                    continue
                 sim = float(vecs[i - 1].multiply(vecs[i]).sum())
+                sim = (float(np.clip(sim, 0.0, 1.0))
+                       if np.isfinite(sim) and -1e-6 <= sim <= 1 + 1e-6 else float("nan"))
                 similarities.append(sim)
 
             result_df["similarity_to_previous"] = similarities
+            result_df["similarity_valid"] = np.isfinite(similarities)
 
         logger.info("批量相似度计算完成")
         return result_df
@@ -622,14 +649,21 @@ class SimilarityAnalyzer:
         for col in similarity_cols:
             # 强制转成数值，非法值记为 NaN，避免 describe 统计时报错。
             series = pd.to_numeric(df[col], errors="coerce")
-            col_stats = series.describe().to_dict()
+            valid = series.replace([np.inf, -np.inf], np.nan).dropna()
+
+            def rounded_or_none(value: Any) -> Optional[float]:
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    return None
+                return round(numeric, 4) if np.isfinite(numeric) else None
 
             stats[col] = {
-                "mean": round(float(col_stats.get("mean", 0) or 0), 4),
-                "std": round(float(col_stats.get("std", 0) or 0), 4),
-                "min": round(float(col_stats.get("min", 0) or 0), 4),
-                "max": round(float(col_stats.get("max", 0) or 0), 4),
-                "median": round(float(series.median() if not series.empty else 0), 4)
+                "mean": rounded_or_none(valid.mean()) if not valid.empty else None,
+                "std": rounded_or_none(valid.std()) if len(valid) > 1 else None,
+                "min": rounded_or_none(valid.min()) if not valid.empty else None,
+                "max": rounded_or_none(valid.max()) if not valid.empty else None,
+                "median": rounded_or_none(valid.median()) if not valid.empty else None,
             }
 
         logger.info("相似度统计完成")

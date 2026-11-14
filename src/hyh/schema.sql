@@ -31,6 +31,24 @@ ON items (ts);
 CREATE INDEX IF NOT EXISTS idx_items_channel
 ON items (channel);
 
+-- Additive migration for consistent drawer pagination. New rows can be kept
+-- outside a cursor's maximum ID; destructive changes must invalidate it.
+CREATE TABLE IF NOT EXISTS items_revision (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    database_id TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO items_revision (singleton, database_id, revision)
+VALUES (1, lower(hex(randomblob(16))), 0);
+CREATE TRIGGER IF NOT EXISTS items_revision_delete AFTER DELETE ON items
+BEGIN
+    UPDATE items_revision SET revision = revision + 1 WHERE singleton = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS items_revision_update AFTER UPDATE ON items
+BEGIN
+    UPDATE items_revision SET revision = revision + 1 WHERE singleton = 1;
+END;
+
 -- Embeddings (optional for MVP; can store vector blob or file path)
 CREATE TABLE IF NOT EXISTS embeddings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
