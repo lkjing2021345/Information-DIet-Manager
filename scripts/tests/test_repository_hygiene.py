@@ -51,7 +51,7 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.git("add", "--force", "--", *paths)
 
     def check(self, *, repository=None, env=None):
-        environment = self.git_environment(os.environ if env is None else env)
+        environment = dict(os.environ if env is None else env)
         environment["PYTHONUTF8"] = "1"
         return subprocess.run(
             [sys.executable, str(CHECKER), "--repo", str(repository or self.repo)],
@@ -137,6 +137,15 @@ class RepositoryHygieneTests(unittest.TestCase):
         result = self.check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1 indexed paths checked", result.stdout)
+
+    def test_host_git_config_environment_does_not_break_the_checker(self):
+        self.stage(["README.md"])
+        environment = os.environ.copy()
+        environment["GIT_CONFIG_COUNT"] = "1"
+        environment["GIT_CONFIG_KEY_0"] = "synthetic.invalid"
+        environment.pop("GIT_CONFIG_VALUE_0", None)
+        result = self.check(env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cached_removal_passes_and_preserves_the_local_file(self):
         self.stage(["src/hyh/data/private.sqlite3"])
