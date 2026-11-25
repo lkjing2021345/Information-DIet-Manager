@@ -85,30 +85,31 @@ def _load(path: Path) -> dict[str, Any]:
 def check(report: dict[str, Any], policy: dict[str, Any], *, today: date | None = None) -> list[str]:
     """Return human-readable accepted findings or raise for a policy breach."""
     today = today or date.today()
-    if policy.get("schema_version") != 1:
+    if type(policy.get("schema_version")) is not int or policy["schema_version"] != 1:
         raise AuditPolicyError("Policy schema_version must be 1")
     allowed = policy.get("allowed", [])
     if not isinstance(allowed, list):
         raise AuditPolicyError("Policy allowed must be a list")
     by_url: dict[str, dict[str, Any]] = {}
     for item in allowed:
-        if not isinstance(item, dict) or not isinstance(item.get("url"), str):
-            raise AuditPolicyError("Every policy entry must contain a URL")
-        if item["url"] in by_url:
-            raise AuditPolicyError(f"Duplicate policy URL: {item['url']}")
+        url = item.get("url") if isinstance(item, dict) else None
+        if not isinstance(url, str) or not url.startswith("https://github.com/advisories/"):
+            raise AuditPolicyError("Every policy entry must contain a GitHub Advisory URL")
+        if url in by_url:
+            raise AuditPolicyError(f"Duplicate policy URL: {url}")
         expiry = item.get("expires")
         if not isinstance(expiry, str):
-            raise AuditPolicyError(f"Policy entry {item['url']} must contain an ISO expiry date")
+            raise AuditPolicyError(f"Policy entry {url} must contain an ISO expiry date")
         try:
             expires = date.fromisoformat(expiry)
         except ValueError as exc:
             raise AuditPolicyError(f"Policy expiry is not ISO formatted: {expiry}") from exc
         if expires < today:
-            raise AuditPolicyError(f"Policy entry expired on {expiry}: {item['url']}")
+            raise AuditPolicyError(f"Policy entry expired on {expiry}: {url}")
         reason = item.get("reason")
         if not isinstance(reason, str) or not reason.strip():
-            raise AuditPolicyError(f"Policy entry {item['url']} must contain a non-empty reason")
-        by_url[item["url"]] = item
+            raise AuditPolicyError(f"Policy entry {url} must contain a non-empty reason")
+        by_url[url] = item
 
     accepted: list[str] = []
     rejected: list[str] = []

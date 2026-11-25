@@ -43,6 +43,15 @@ class NpmAuditPolicyTests(unittest.TestCase):
     def test_policy_schema_version_must_be_one(self) -> None:
         with self.assertRaisesRegex(AuditPolicyError, "schema_version"):
             check({"vulnerabilities": {}}, {"schema_version": 2, "allowed": []})
+        with self.assertRaisesRegex(AuditPolicyError, "schema_version"):
+            check({"vulnerabilities": {}}, {"schema_version": True, "allowed": []})
+
+    def test_policy_url_must_be_a_github_advisory(self) -> None:
+        with self.assertRaisesRegex(AuditPolicyError, "GitHub Advisory URL"):
+            check(
+                report(ADVISORY),
+                policy({"url": "https://example.invalid/advisory", "expires": "2026-12-31", "reason": "synthetic"}),
+            )
 
     def test_policy_reason_is_required(self) -> None:
         with self.assertRaisesRegex(AuditPolicyError, "non-empty reason"):
