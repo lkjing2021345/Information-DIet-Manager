@@ -1,6 +1,6 @@
 # 2026-11-26 质量状态与迭代记录
 
-本轮基于原作者已经合并的 `f4891f2` 继续维护，后续提交仍推送到 fork 的 `main`。前端源码和视觉文件没有改动，本轮完成依赖锁安全升级、报告确定性、锁生成范围复现和 CI 隔离环境校验。
+本轮基于原作者已经合并的 `f4891f2` 继续维护，后续提交仍推送到 fork 的 `main`。前端源码和视觉文件没有改动，本轮完成依赖锁安全升级、报告确定性、锁生成范围复现、CI 隔离环境校验和离线分析 CLI 契约收紧。
 
 ## 本轮已完成
 
@@ -16,6 +16,7 @@
 | `f8ac511` | 记录 Windows / Python 3.12 / Node 24 Quality CI 通过结果 |
 | `5bba8bd` | `--scope all` 为 runtime、test、toolchain 分别写入最小可复现的 `CUSTOM_COMPILE_COMMAND`，并增加三次调用的回归校验 |
 | `91d9578` | CI 的 Python 依赖兼容性检查显式调用隔离的测试解释器，确保 `pip check` 覆盖测试锁实际安装环境 |
+| `b610d97` | 离线分析 CLI 对显式模型路径检查加载结果，失败时终止分析；`include_emotions` 和 `detailed` 只接受 JSON 布尔值，并补齐入口回归测试 |
 
 依赖审计策略目前记录 8 个来自官方 npm 报告的 Advisory URL，其中包含 Vue 服务端渲染链路、`source-map-js` 和 Vite 8.3.2 开发工具链。所有条目到期日为 2026-12-31，升级前端依赖后应删除对应策略项并重新完成浏览器验收。
 
@@ -23,7 +24,7 @@
 
 | 检查 | 结果 | 证据边界 |
 | --- | --- | --- |
-| Python 完整回归 | 1785 passed；195 个 subtests；无警告 | 合成数据、契约和状态测试，不代表真实模型质量 |
+| Python 完整回归 | 1789 passed；195 个 subtests；无警告 | 合成数据、契约和状态测试，不代表真实模型质量 |
 | Starlette TestClient 定向回归 | 68 passed，无弃用警告 | 只验证测试客户端兼容性 |
 | npm 审计策略 | 12 项策略测试通过；实际官方 registry 报告中的 8 个 Advisory 均被显式到期策略识别 | 允许列表只延迟治理，不修复漏洞 |
 | Python 锁文件审计 | runtime、test、toolchain、installer 四套锁均报告 No known vulnerabilities found；维护环境 `pip check` 和生成器校验通过 | 只覆盖 PyPI 公布的漏洞，不能替代运行时行为验收 |
