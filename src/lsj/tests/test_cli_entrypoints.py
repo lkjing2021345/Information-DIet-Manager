@@ -186,6 +186,10 @@ def synthetic_algorithms(monkeypatch):
         def __init__(self, *, model_path):
             calls.append(("classifier_init", model_path))
 
+        def load_model(self, path):
+            calls.append(("classifier_model", path))
+            return True
+
         def batch_predict(self, frame, *, batch_size):
             calls.append(("classifier", batch_size))
             return frame.assign(category="Tools")
@@ -196,6 +200,7 @@ def synthetic_algorithms(monkeypatch):
 
         def load_model(self, path):
             calls.append(("sentiment_model", path))
+            return True
 
         def batch_predict(self, frame, *, text_column, include_emotions, batch_size):
             calls.append(("sentiment", text_column, include_emotions, batch_size))
@@ -230,6 +235,68 @@ def synthetic_algorithms(monkeypatch):
     return calls
 
 
+def test_json_boolean_options_require_real_booleans(cli):
+    for name, invalid in (("include_emotions", "false"), ("detailed", 0), ("include_emotions", [])):
+        with pytest.raises(ValueError, match=f"{name} 必须是布尔值"):
+            cli._resolve_bool_option({name: invalid}, name, False)
+
+    assert cli._resolve_bool_option({}, "include_emotions", True) is True
+    assert cli._resolve_bool_option({"detailed": False}, "detailed", True) is False
+
+
+@pytest.mark.parametrize("name,invalid", [("include_emotions", "false"), ("detailed", 0)])
+def test_main_rejects_non_boolean_json_options(cli, monkeypatch, tmp_path, name, invalid):
+    source = tmp_path / "invalid-options.json"
+    source.write_text(json.dumps({
+        "records": [{
+            "title": "Synthetic title", "url": "https://example.invalid",
+            "category": "Tools", "sentiment": "Neutral", "polarity": 0.0, "similarity": 0.25,
+        }],
+        "options": {name: invalid},
+    }), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "synthetic-cli", "--mode", "evaluate", "--input_file", str(source),
+    ])
+
+    with pytest.raises(ValueError, match=f"{name} 必须是布尔值"):
+        cli.main()
+
+
+def test_explicit_model_load_failures_abort_the_full_pipeline(cli, synthetic_algorithms, monkeypatch):
+    import pandas as pd
+
+    sentiment = sys.modules["sentiment"].SentimentAnalyzer
+
+    def failed_sentiment_load(self, path):
+        return False
+
+    monkeypatch.setattr(sentiment, "load_model", failed_sentiment_load)
+    with pytest.raises(ValueError, match="情感模型无法加载"):
+        cli.run_full_pipeline(
+            pd.DataFrame({"title": ["Synthetic title"], "url": ["https://example.invalid"]}),
+            sentiment_model_path="missing-sentiment",
+            classifier_model_path=None,
+            include_emotions=False,
+            batch_size=4,
+            detailed=False,
+        )
+
+    class FailedClassifier(sys.modules["classifier"].ContentClassifier):
+        def load_model(self, path):
+            return False
+
+    monkeypatch.setattr(sys.modules["classifier"], "ContentClassifier", FailedClassifier)
+    with pytest.raises(ValueError, match="分类模型无法加载"):
+        cli.run_full_pipeline(
+            pd.DataFrame({"title": ["Synthetic title"], "url": ["https://example.invalid"]}),
+            sentiment_model_path=None,
+            classifier_model_path="missing-classifier",
+            include_emotions=False,
+            batch_size=4,
+            detailed=False,
+        )
+
+
 @pytest.mark.parametrize("mode", ["analyze", "evaluate"])
 def test_modes_preserve_argument_input_and_output_wiring_with_synthetic_models(cli, synthetic_algorithms, monkeypatch, tmp_path, mode):
     calls = synthetic_algorithms
@@ -248,7 +315,8 @@ def test_modes_preserve_argument_input_and_output_wiring_with_synthetic_models(c
     evaluated = next(event for event in calls if event[0] == "evaluate")
     assert evaluated[1] is True and evaluated[2][0]["similarity"] == 0.25
     if mode == "analyze":
-        assert ("classifier_init", "synthetic-classifier") in calls
+        assert ("classifier_init", None) in calls
+        assert ("classifier_model", "synthetic-classifier") in calls
         assert ("sentiment_model", "synthetic-sentiment") in calls
         assert ("classifier", 7) in calls and ("sentiment", "analysis_text", True, 7) in calls
         assert ("similarity", "analysis_text") in calls

@@ -191,10 +191,14 @@ def run_full_pipeline(
     from similarity import SimilarityAnalyzer
 
     sentiment_analyzer = SentimentAnalyzer(use_bert=False)
-    if sentiment_model_path:
-        sentiment_analyzer.load_model(sentiment_model_path)
+    if sentiment_model_path and sentiment_analyzer.load_model(sentiment_model_path) is not True:
+        raise ValueError("指定的情感模型无法加载。")
 
-    content_classifier = ContentClassifier(model_path=classifier_model_path)
+    # Load explicitly supplied classifier models here so a failed path cannot
+    # silently fall back to rule-only classification for a successful CLI run.
+    content_classifier = ContentClassifier(model_path=None)
+    if classifier_model_path and content_classifier.load_model(classifier_model_path) is not True:
+        raise ValueError("指定的分类模型无法加载。")
     similarity_analyzer = SimilarityAnalyzer()
 
     analysis_df = df.copy()
@@ -277,6 +281,16 @@ def _coerce_positive_int(value: Any) -> int:
     if parsed <= 0:
         raise ValueError("batch_size 必须是正整数")
     return parsed
+
+
+def _resolve_bool_option(options: Dict[str, Any], name: str, fallback: bool) -> bool:
+    """Resolve a JSON option without treating strings or containers as booleans."""
+    if name not in options:
+        return fallback
+    value = options[name]
+    if type(value) is not bool:
+        raise ValueError(f"{name} 必须是布尔值。")
+    return value
 
 
 def positive_int(value: str) -> int:
@@ -382,10 +396,10 @@ def main() -> None:
     payload = load_input_data(args.input_file, args.input_format)
     df, options = normalize_input_data(payload)
 
-    include_emotions = bool(options.get("include_emotions", args.include_emotions))
+    include_emotions = _resolve_bool_option(options, "include_emotions", args.include_emotions)
     raw_batch_size = options.get("batch_size", args.batch_size)
     batch_size = _coerce_positive_int(raw_batch_size)
-    detailed = bool(options.get("detailed", args.detailed))
+    detailed = _resolve_bool_option(options, "detailed", args.detailed)
 
     if args.mode == "analyze":
         result, report, evaluator = run_full_pipeline(
