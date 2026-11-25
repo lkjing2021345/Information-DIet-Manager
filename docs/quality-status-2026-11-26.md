@@ -19,8 +19,8 @@
 | Python 完整回归 | 1778 passed；195 个 subtests；无警告 | 合成数据、契约和状态测试，不代表真实模型质量 |
 | Starlette TestClient 定向回归 | 68 passed，无弃用警告 | 只验证测试客户端兼容性 |
 | npm 审计策略 | 实际官方 registry 报告中的 8 个 Advisory 均被显式到期策略识别 | 允许列表只延迟治理，不修复漏洞 |
-| 前端单元、构建和真实浏览器 E2E | 既有验证保持通过 | 本轮未修改前端，Vite 仍报告约 1.23 MB 主 JS chunk |
-| 扩展单元和真实浏览器 E2E | 既有验证保持通过 | 使用隔离 Chrome for Testing、临时数据库和合成密钥 |
+| 前端单元、构建和真实浏览器 E2E | 35 passed；构建通过；31 个 E2E 场景通过 | 本轮未修改前端，Vite 仍报告约 1.23 MB 主 JS chunk |
+| 扩展单元和真实浏览器 E2E | 38 passed；10 个 E2E 场景通过 | 使用隔离 Chrome for Testing、临时数据库和合成密钥 |
 | 仓库卫生与 Python 编译 | 通过 | 历史 `docs/audit-2026-09-24/` 仍未跟踪，未进入提交 |
 
 ## 仍未闭环
