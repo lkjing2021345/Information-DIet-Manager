@@ -85,6 +85,11 @@ def compile_commands(*, upgrade: bool, scope: str = "application") -> list[list[
     return commands
 
 
+def _generation_scope(command: list[str]) -> str:
+    """Return the smallest CLI scope that reproduces one generated lock."""
+    return "toolchain" if "requirements/locks/toolchain.in" in command else "application"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upgrade", action="store_true", help="Explicitly re-resolve transitive dependencies")
@@ -93,7 +98,16 @@ def main() -> int:
     try:
         validate_generator()
         for command in compile_commands(upgrade=args.upgrade, scope=args.scope):
-            subprocess.run(command, cwd=ROOT, env=generator_environment(ROOT, upgrade=args.upgrade, scope=args.scope), check=True)
+            subprocess.run(
+                command,
+                cwd=ROOT,
+                env=generator_environment(
+                    ROOT,
+                    upgrade=args.upgrade,
+                    scope=_generation_scope(command),
+                ),
+                check=True,
+            )
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Dependency lock generation failed: {exc}\n")
     return 0
