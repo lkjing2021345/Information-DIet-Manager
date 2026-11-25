@@ -6,8 +6,10 @@ Markdown 构建与报告生成模块。
     1. 提供通用的 MarkdownBuilder，封装常见文档片段拼装能力；
     2. 基于评估结果对象生成结构化的健康评估报告。
 """
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+import html
+import re
 from pathlib import Path
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from urllib.parse import quote
 
 from utils.logger import setup_logger
@@ -22,6 +24,13 @@ if TYPE_CHECKING:
         SentimentHealthMetrics, ContentQualityMetrics,
         TimeAllocationMetrics
     )
+
+
+def escape_markdown_text(value: Any) -> str:
+    """Render untrusted report text as a single Markdown text fragment."""
+    text = html.escape(str(value), quote=False)
+    text = text.replace("\\", "\\\\").replace("\r", " ").replace("\n", " ")
+    return re.sub(r"([`*_{}\[\]()#+\-.!|>~])", r"\\\1", text)
 
 
 class MarkdownBuilder:
@@ -350,7 +359,8 @@ class ReportMarkdownGenerator:
             for category, count in sorted_categories:
                 ratio = count / total * 100 if total > 0 else 0
                 bar = self.md.add_progress_bar(ratio, 100, width=15)
-                self.md.add_list_item(f"{category}: {count} 条 ({ratio:.1f}%) {bar}")
+                safe_category = escape_markdown_text(category)
+                self.md.add_list_item(f"{safe_category}: {count} 条 ({ratio:.1f}%) {bar}")
 
         self.md.add_line()
 
@@ -532,7 +542,7 @@ class ReportMarkdownGenerator:
 
             for category, stats in analysis.distribution_table.items():
                 rows.append([
-                    category,
+                    escape_markdown_text(category),
                     stats.get('count', 0),
                     f"{stats.get('ratio', 0) * 100:.1f}%",
                     f"{stats.get('duration', 0):.1f}"
@@ -551,7 +561,9 @@ class ReportMarkdownGenerator:
             for i, content in enumerate(analysis.top_positive_content[:5], 1):
                 title = content.get('title', '未知')
                 polarity = content.get('polarity', 0)
-                self.md.add_numbered_item(f"{title} (极性: {polarity:.2f})", i)
+                self.md.add_numbered_item(
+                    f"{escape_markdown_text(title)} (极性: {polarity:.2f})", i
+                )
             self.md.add_line()
 
         if analysis.top_negative_content:
@@ -559,7 +571,9 @@ class ReportMarkdownGenerator:
             for i, content in enumerate(analysis.top_negative_content[:5], 1):
                 title = content.get('title', '未知')
                 polarity = content.get('polarity', 0)
-                self.md.add_numbered_item(f"{title} (极性: {polarity:.2f})", i)
+                self.md.add_numbered_item(
+                    f"{escape_markdown_text(title)} (极性: {polarity:.2f})", i
+                )
             self.md.add_line()
 
         self.md.add_line()

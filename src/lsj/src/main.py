@@ -357,7 +357,6 @@ def dump_output(result: Dict[str, Any], output_file: Optional[str]) -> None:
     if output_file:
         Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         Path(output_file).write_text(content, encoding="utf-8")
-        print(f"结果已写入: {output_file}")
     else:
         print(content)
 

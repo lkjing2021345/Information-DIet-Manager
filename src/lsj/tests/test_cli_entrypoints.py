@@ -347,7 +347,7 @@ def test_analyze_prefers_body_text_and_falls_back_to_title(cli, synthetic_algori
     assert [row["analysis_text"] for row in evaluated[2]] == ["Synthetic body", "Fallback title"]
 
 
-def test_json_output_file_matches_standard_output_contract(cli, synthetic_algorithms, monkeypatch, tmp_path):
+def test_json_output_file_matches_standard_output_contract(cli, synthetic_algorithms, monkeypatch, tmp_path, capsys):
     source = tmp_path / "synthetic-input.json"
     output = tmp_path / "synthetic-output.json"
     source.write_text(json.dumps({"records": [{
@@ -365,6 +365,7 @@ def test_json_output_file_matches_standard_output_contract(cli, synthetic_algori
     assert result["mode"] == "evaluate"
     assert result["records"][0]["similarity"] == 0.25
     assert result["report"] == {"synthetic_report": True}
+    assert capsys.readouterr().out.splitlines() == [f"结果已写入: {output}"]
     assert not any(event[0] == "export" for event in synthetic_algorithms)
 
 
