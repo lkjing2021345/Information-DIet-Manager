@@ -10,6 +10,36 @@
       "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
       "expires": "2026-12-31",
       "reason": "source-map-js advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-698v-4r3x-3vcv",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-r825-w8mm-5pxw",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-587h-7wmj-h5pm",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-9jrq-w75r-8gcw",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-rq7h-c2jc-7f22",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-vfpm-58rq-9qcg",
+      "expires": "2026-12-31",
+      "reason": "Vite 8.3.2 development-tool advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
     }
   ]
 }
