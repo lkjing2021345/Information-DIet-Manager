@@ -8,7 +8,6 @@ Markdown 构建与报告生成模块。
 """
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
-from datetime import datetime
 from urllib.parse import quote
 
 from utils.logger import setup_logger
@@ -252,7 +251,9 @@ class ReportMarkdownGenerator:
         self.md.add_list_item("建议结合长期趋势观察，不建议仅凭单周期结果做重大决策。")
         self.md.add_line()
         self.md.add_horizontal_rule()
-        self.md.add_paragraph(f"_报告生成完成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")
+        self.md.add_paragraph(
+            f"_报告生成完成于 {report.metadata.generated_at.strftime('%Y-%m-%d %H:%M:%S')}_"
+        )
 
     def _add_executive_summary(self, report: 'EvaluationReport') -> None:
         """添加执行摘要"""

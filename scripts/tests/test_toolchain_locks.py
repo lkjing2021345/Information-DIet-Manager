@@ -42,7 +42,7 @@ class ToolchainLockTests(unittest.TestCase):
         self.assertEqual(env["CUSTOM_COMPILE_COMMAND"], "python scripts/lock_python_dependencies.py --scope toolchain --upgrade")
 
     def test_generator_refuses_missing_extra_and_version_drift_in_transitives(self):
-        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.0.0"}
+        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.2.1"}
         installer = {"pip": "26.2.1"}
         expected = {**tools, **installer}
         with tempfile.TemporaryDirectory(prefix="idm-toolchain-") as directory:
@@ -67,7 +67,7 @@ class ToolchainLockTests(unittest.TestCase):
                                 generator.validate_generator()
 
     def test_tool_audit_cannot_omit_a_build_tool_or_duplicate_the_installer(self):
-        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.0.0"}
+        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.2.1"}
         installer = {"pip": "26.2.1"}
         audit = lambda pins: {"dependencies": [{"name": name, "version": version, "vulns": []} for name, version in pins.items()]}
         args = dict(application=tools, installer=installer,

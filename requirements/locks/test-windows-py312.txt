@@ -23,8 +23,8 @@ anyio==4.15.1 \
     #   httpx
     #   httpx2
     #   starlette
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+certifi==2026.11.20 \
+    --hash=sha256:7422df25243767b9877031a2248cb14d09ddac9beee846f4cef3d5c9191d488f
     # via
     #   httpcore
     #   httpx
