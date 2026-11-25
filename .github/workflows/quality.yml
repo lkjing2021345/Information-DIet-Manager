@@ -65,7 +65,11 @@ jobs:
           "IDM_TEST_PYTHON=$pythonTest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Check Python dependency compatibility
-        run: python -m pip check
+        shell: pwsh
+        run: |
+          $pythonTest = Join-Path $env:RUNNER_TEMP 'idm-python-test/Scripts/python.exe'
+          & $pythonTest -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install hashed Python maintainer tools in an isolated environment
         shell: pwsh
