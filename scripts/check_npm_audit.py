@@ -85,6 +85,8 @@ def _load(path: Path) -> dict[str, Any]:
 def check(report: dict[str, Any], policy: dict[str, Any], *, today: date | None = None) -> list[str]:
     """Return human-readable accepted findings or raise for a policy breach."""
     today = today or date.today()
+    if policy.get("schema_version") != 1:
+        raise AuditPolicyError("Policy schema_version must be 1")
     allowed = policy.get("allowed", [])
     if not isinstance(allowed, list):
         raise AuditPolicyError("Policy allowed must be a list")
@@ -103,6 +105,9 @@ def check(report: dict[str, Any], policy: dict[str, Any], *, today: date | None 
             raise AuditPolicyError(f"Policy expiry is not ISO formatted: {expiry}") from exc
         if expires < today:
             raise AuditPolicyError(f"Policy entry expired on {expiry}: {item['url']}")
+        reason = item.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise AuditPolicyError(f"Policy entry {item['url']} must contain a non-empty reason")
         by_url[item["url"]] = item
 
     accepted: list[str] = []
