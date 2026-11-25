@@ -8,7 +8,8 @@
 | --- | --- |
 | `3039fbe` | 前端 npm 审计改为解析官方 registry 的 JSON 报告，未知或过期漏洞仍阻断 CI；已知漏洞必须进入带到期日的显式策略 |
 | `9e69f8b` | 测试依赖增加 `httpx2==2.16.2`，并补齐 `httpcore2`、`truststore` 的哈希锁，消除 Starlette TestClient 弃用提示 |
-| 当前轮次 | 仓库卫生测试清理宿主注入的 `GIT_CONFIG_*` 环境变量，避免临时 Git 仓库测试受 Codex 宿主配置影响 |
+| `abff2b5` | 仓库卫生测试清理宿主注入的 `GIT_CONFIG_*` 环境变量，避免临时 Git 仓库测试受 Codex 宿主配置影响 |
+| `f150bc4` | 生产仓库卫生检查脚本也隔离 `GIT_CONFIG_*`，并增加宿主配置回归用例 |
 
 依赖审计策略目前记录 8 个来自官方 npm 报告的 Advisory URL，其中包含 Vue 服务端渲染链路、`source-map-js` 和 Vite 8.3.2 开发工具链。所有条目到期日为 2026-12-31，升级前端依赖后应删除对应策略项并重新完成浏览器验收。
 
@@ -16,7 +17,7 @@
 
 | 检查 | 结果 | 证据边界 |
 | --- | --- | --- |
-| Python 完整回归 | 1778 passed；195 个 subtests；无警告 | 合成数据、契约和状态测试，不代表真实模型质量 |
+| Python 完整回归 | 1779 passed；195 个 subtests；无警告 | 合成数据、契约和状态测试，不代表真实模型质量 |
 | Starlette TestClient 定向回归 | 68 passed，无弃用警告 | 只验证测试客户端兼容性 |
 | npm 审计策略 | 实际官方 registry 报告中的 8 个 Advisory 均被显式到期策略识别 | 允许列表只延迟治理，不修复漏洞 |
 | 前端单元、构建和真实浏览器 E2E | 35 passed；构建通过；31 个 E2E 场景通过 | 本轮未修改前端，Vite 仍报告约 1.23 MB 主 JS chunk |
