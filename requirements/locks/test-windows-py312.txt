@@ -21,6 +21,7 @@ anyio==4.15.1 \
     # via
     #   -c requirements/locks/runtime-windows-py312.txt
     #   httpx
+    #   httpx2
     #   starlette
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
@@ -45,12 +46,19 @@ h11==0.16.0 \
     # via
     #   -c requirements/locks/runtime-windows-py312.txt
     #   httpcore
+    #   httpcore2
     #   uvicorn
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
     # via httpx
+httpcore2==2.16.2 \
+    --hash=sha256:16051ae2a42f776007543f32de9349a317b23d2cbb4e1456b4bac0e88b87419a
+    # via httpx2
 httpx==0.28.1 \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+    # via -r requirements-test.txt
+httpx2==2.16.2 \
+    --hash=sha256:f05c13aade4c45dbf1c9060647a1058f0acad62398fad96e741269edb33d46f5
     # via -r requirements-test.txt
 idna==3.20 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
@@ -58,6 +66,7 @@ idna==3.20 \
     #   -c requirements/locks/runtime-windows-py312.txt
     #   anyio
     #   httpx
+    #   httpx2
 iniconfig==2.3.0 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
     # via pytest
@@ -344,6 +353,11 @@ starlette==1.7.0 \
     # via
     #   -c requirements/locks/runtime-windows-py312.txt
     #   fastapi
+truststore==0.10.5 \
+    --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
     # via
@@ -354,6 +368,7 @@ typing-extensions==4.16.0 \
     #   pydantic-core
     #   starlette
     #   typing-inspection
+    #   httpx2
 typing-inspection==0.4.4 \
     --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
     # via
