@@ -27,6 +27,7 @@
 | Python 锁文件审计 | runtime、test、toolchain、installer 四套锁均报告 No known vulnerabilities found；维护环境 `pip check` 和生成器校验通过 | 只覆盖 PyPI 公布的漏洞，不能替代运行时行为验收 |
 | 前端单元、构建和真实浏览器 E2E | 35 passed；构建通过；31 个 E2E 场景通过 | 本轮未修改前端，Vite 仍报告约 1.23 MB 主 JS chunk |
 | 扩展单元和真实浏览器 E2E | 38 passed；10 个 E2E 场景通过 | 使用隔离 Chrome for Testing、临时数据库和合成密钥 |
+| GitHub Actions | run `45687442191` / `f703044` 的 Windows / Python 3.12 / Node 24 job 成功 | 远程 runner 结果与本地验证分开记录 |
 | 仓库卫生与 Python 编译 | 通过 | 历史 `docs/audit-2026-09-24/` 仍未跟踪，未进入提交 |
 
 ## 仍未闭环
