@@ -22,10 +22,22 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.git("init", "--quiet")
 
     def git(self, *args):
+        environment = self.git_environment()
         return subprocess.run(
             ["git", "-c", f"safe.directory={self.repo}", "-C", str(self.repo), *args],
-            capture_output=True, check=True, timeout=30,
+            capture_output=True, check=True, timeout=30, env=environment,
         )
+
+    @staticmethod
+    def git_environment(source=None):
+        """Avoid malformed host-injected command-line config in Git tests."""
+        environment = os.environ.copy() if source is None else dict(source)
+        for name in tuple(environment):
+            if (name == "GIT_CONFIG_COUNT" or name.startswith("GIT_CONFIG_KEY_")
+                    or name.startswith("GIT_CONFIG_VALUE_")):
+                environment.pop(name, None)
+        environment.pop("GIT_CONFIG_PARAMETERS", None)
+        return environment
 
     def write(self, relative, content="synthetic fixture\n"):
         target = self.repo / relative
@@ -39,7 +51,7 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.git("add", "--force", "--", *paths)
 
     def check(self, *, repository=None, env=None):
-        environment = dict(os.environ if env is None else env)
+        environment = self.git_environment(os.environ if env is None else env)
         environment["PYTHONUTF8"] = "1"
         return subprocess.run(
             [sys.executable, str(CHECKER), "--repo", str(repository or self.repo)],
