@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "allowed": [
+    {
+      "url": "https://github.com/advisories/GHSA-g2v6-rqmx-r4w6",
+      "expires": "2026-12-31",
+      "reason": "Vue server-renderer advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+      "expires": "2026-12-31",
+      "reason": "source-map-js advisory. Upgrade is tracked separately because the current frontend change boundary forbids changing frontend package files."
+    }
+  ]
+}
