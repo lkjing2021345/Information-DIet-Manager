@@ -1518,6 +1518,7 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                 cached_payload, day=day, from_ts=from_ts, to_ts=to_ts,
                 limit_rows=limit_rows, input_count=input_count,
             ):
+                reused_from_job_id = int(cached["id"])
                 job_id = _insert_analysis_job(
                     conn,
                     status=JOB_COMPLETED,
@@ -1552,7 +1553,7 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                     "job_id": job_id,
                     "status": JOB_COMPLETED,
                     "cached": True,
-                    "reused_from_job_id": int(cached["id"]),
+                    "reused_from_job_id": reused_from_job_id,
                     "result": {
                         **cached_payload,
                         "experimental": True,
@@ -1832,6 +1833,12 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                     cached_payload, from_ts=resolved_from_ts, to_ts=resolved_to_ts,
                     limit_rows=limit_rows, input_count=input_count, available_count=int(available_count),
                 ):
+                    reused_from_job_id = int(cached["id"])
+                    cached_result = {
+                        **cached_payload,
+                        "cached": True,
+                        "reused_from_job_id": reused_from_job_id,
+                    }
                     job_id = _insert_analysis_job(
                         conn,
                         status=JOB_COMPLETED,
@@ -1848,9 +1855,9 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                         conn,
                         job_id,
                         status=JOB_COMPLETED,
-                        result_payload=cached_payload,
+                        result_payload=cached_result,
                         metrics_json={
-                            "cache_reuse_from_job_id": int(cached["id"]),
+                            "cache_reuse_from_job_id": reused_from_job_id,
                             "input_count": input_count,
                             "cache_hit": True,
                             "mode": "dashboard_visualization",
@@ -1859,9 +1866,7 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                         started_at=_now_ms(),
                         finished_at=_now_ms(),
                     )
-                    cached_payload["cached"] = True
-                    cached_payload["reused_from_job_id"] = int(cached["id"])
-                    return cached_payload
+                    return cached_result
 
         job_id = _insert_analysis_job(
             conn,

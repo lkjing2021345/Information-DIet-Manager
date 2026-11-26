@@ -116,6 +116,7 @@ Both pagination modes preserve legitimate stored `tags`/`meta` JSON values, incl
   - cache keys carry visualization schema version 3, resolved time boundaries, database identity/revision and maximum ID; only ready results without warnings are reusable
   - a moving window or changed dataset cannot reuse an old key; a cache hit retains its original generation timestamp
   - creation and publication check the destructive-data revision inside write transactions; deletion/restore during computation returns `409 analysis_snapshot_expired` without republishing old results
+  - cache hits return `cached: true` and `reused_from_job_id`; the same cache metadata is persisted in the new `analysis_jobs.result_payload` and returned by the corresponding job/result reads
   - response shape:
     - `window`
       - `from_ts`, `to_ts`, `limit_rows`, `input_count`
@@ -173,6 +174,7 @@ Both pagination modes preserve legitimate stored `tags`/`meta` JSON values, incl
     - `analysis_jobs` (job lifecycle)
   - returns `statistics_scope: "analysis_window"`, `statistics_version: 2`, `analysis_status: "ready" | "empty"` and the requested `window`; it never overwrites whole-library statistics
   - returns `experimental: true` and an `experimental_notice`; embedded legacy score/health-like fields are informational research output only and must not be presented as a health, psychological, personality, or diagnostic assessment
+  - cache hits return top-level `cached: true` and `reused_from_job_id`; the embedded analytical `result` remains the original payload for backward compatibility, and the new job stores that same analytical payload
   - top-level `comparison_count`, `sentiment_count` and `polarity_count` expose each metric's valid denominator; the first page has no predecessor, invalid/out-of-range measurements and invalid flags are excluded, and empty denominators produce null
   - top-level `repeat_metric: "legacy_adjacent_text_similarity_threshold_fraction"` uses valid original adjacent comparisons; the embedded quick/full scoring reports remain experimental legacy outputs with their own preprocessing, not independently validated measurements
   - unavailable dependencies/pipeline return 503, incomplete samples return 422, and unexpected failures return 500; each has a safe fixed message, failed status and `job_id`, without fabricated neutral measurements or raw exception details
