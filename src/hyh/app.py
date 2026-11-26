@@ -147,6 +147,16 @@ def _clean_optional_str(value: Any) -> Optional[str]:
     return s if s else None
 
 
+def _clean_import_str(value: Any, field: str) -> Optional[str]:
+    """Normalize an import text field without accepting non-string JSON values."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string or null")
+    s = value.strip()
+    return s if s else None
+
+
 def _truncate_text(value: Optional[str], max_len: int = MAX_TEXT_LEN) -> Optional[str]:
     if value is None:
         return None
@@ -157,7 +167,7 @@ def _prepare_item(raw: Dict[str, Any]) -> IngestItem:
     data = {str(k).strip(): v for k, v in raw.items() if k is not None}
     for key in ("url", "title", "text", "source", "lang", "channel", "author"):
         if key in data:
-            data[key] = _clean_optional_str(data.get(key))
+            data[key] = _clean_import_str(data.get(key), key)
     if "tags" in data:
         data["tags"] = _parse_tags(data.get("tags"))
     if "meta" in data:

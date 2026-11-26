@@ -176,6 +176,32 @@ def test_other_report_formats_keep_existing_serialization(report_module, tmp_pat
         assert "中文" in text
 
 
+@pytest.mark.parametrize("format", ["json", "html"])
+def test_machine_readable_report_formats_replace_non_finite_values(report_module, tmp_path, format):
+    evaluator, report = generate_report(report_module)
+    report.metrics.diversity.avg_similarity = float("nan")
+    output = tmp_path / f"non-finite.{format}"
+
+    evaluator.export_report(report, str(output), format=format)
+    text = output.read_text(encoding="utf-8")
+
+    if format == "json":
+        payload = json.loads(
+            text,
+            parse_constant=lambda value: pytest.fail(f"non-standard JSON constant: {value}"),
+        )
+    else:
+        parsed = ReportHTML()
+        parsed.feed(text)
+        parsed.close()
+        payload = json.loads(
+            parsed.pre_texts[1],
+            parse_constant=lambda value: pytest.fail(f"non-standard JSON constant: {value}"),
+        )
+
+    assert payload["metrics"]["diversity"]["avg_similarity"] is None
+
+
 def test_markdown_dynamic_text_cannot_inject_markup(report_module):
     malicious = "</script><script>window.idm_injected=1</script> [click](javascript:alert(1))\n- injected"
     generator = report_module.ReportMarkdownGenerator()
