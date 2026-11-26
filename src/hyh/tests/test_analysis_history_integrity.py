@@ -262,6 +262,18 @@ def test_overdeep_finite_window_cache_is_recomputed_and_preserved(client, monkey
     assert after["analysis_jobs"][:-1] == before["analysis_jobs"]
     cached = request()
     assert cached.status_code == 200 and cached.json()["cached"] is True
+    with db.get_conn() as conn:
+        jobs = conn.execute(
+            "SELECT id, result_payload FROM analysis_jobs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    stored = json.loads(jobs["result_payload"])
+    if mode == "dashboard":
+        assert stored["cached"] is True
+        assert stored["reused_from_job_id"] == jobs["id"] - 1
+    else:
+        assert stored == refreshed.json()["result"]
+        assert stored["cached"] is False
+        assert "reused_from_job_id" not in stored
     assert calls == [5, 5]
 
 

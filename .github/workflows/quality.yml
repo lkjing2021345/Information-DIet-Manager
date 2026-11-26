@@ -65,7 +65,11 @@ jobs:
           "IDM_TEST_PYTHON=$pythonTest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Check Python dependency compatibility
-        run: python -m pip check
+        shell: pwsh
+        run: |
+          $pythonTest = Join-Path $env:RUNNER_TEMP 'idm-python-test/Scripts/python.exe'
+          & $pythonTest -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install hashed Python maintainer tools in an isolated environment
         shell: pwsh
@@ -161,7 +165,19 @@ jobs:
 
       - name: Audit all frontend dependencies against the official registry
         working-directory: frontend
-        run: npm audit --package-lock-only --include=dev --include=optional --include=peer --audit-level=low --registry=https://registry.npmjs.org
+        shell: pwsh
+        run: |
+          $auditPath = Join-Path $env:RUNNER_TEMP 'idm-frontend-npm-audit.json'
+          npm audit --package-lock-only --include=dev --include=optional --include=peer --audit-level=low --registry=https://registry.npmjs.org --json > $auditPath
+          $auditExit = $LASTEXITCODE
+          if (-not (Test-Path -LiteralPath $auditPath)) {
+            throw 'npm audit did not produce a JSON report.'
+          }
+          python (Join-Path $env:GITHUB_WORKSPACE 'scripts/check_npm_audit.py') --input $auditPath --policy (Join-Path $env:GITHUB_WORKSPACE 'scripts/npm-audit-allowlist.json')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($auditExit -ne 0) {
+            Write-Host 'npm audit reported only advisories explicitly tracked by the repository policy.'
+          }
 
       - name: Run frontend tests
         working-directory: frontend

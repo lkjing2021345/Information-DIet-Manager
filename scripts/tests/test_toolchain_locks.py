@@ -1,6 +1,7 @@
 """Maintainer tools must be reproducible without weakening application checks."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -41,8 +42,25 @@ class ToolchainLockTests(unittest.TestCase):
         env = generator.generator_environment(Path("synthetic-root"), upgrade=True, scope="toolchain")
         self.assertEqual(env["CUSTOM_COMPILE_COMMAND"], "python scripts/lock_python_dependencies.py --scope toolchain --upgrade")
 
+    def test_each_all_scope_command_gets_a_reproducible_header_scope(self):
+        with (patch.object(generator, "validate_generator"),
+              patch.object(generator.subprocess, "run") as run,
+              patch.object(sys, "argv", ["lock_python_dependencies.py", "--scope", "all", "--upgrade"])):
+            self.assertEqual(generator.main(), 0)
+        self.assertEqual(run.call_count, 3)
+        expected = [
+            ("application", "python scripts/lock_python_dependencies.py --upgrade"),
+            ("application", "python scripts/lock_python_dependencies.py --upgrade"),
+            ("toolchain", "python scripts/lock_python_dependencies.py --scope toolchain --upgrade"),
+        ]
+        for invocation, (scope, header) in zip(run.call_args_list, expected):
+            command = invocation.args[0]
+            self.assertEqual(generator._generation_scope(command), scope)
+            self.assertEqual(invocation.kwargs["env"]["CUSTOM_COMPILE_COMMAND"], header)
+            self.assertTrue(invocation.kwargs["check"])
+
     def test_generator_refuses_missing_extra_and_version_drift_in_transitives(self):
-        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.0.0"}
+        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.2.1"}
         installer = {"pip": "26.2.1"}
         expected = {**tools, **installer}
         with tempfile.TemporaryDirectory(prefix="idm-toolchain-") as directory:
@@ -67,7 +85,7 @@ class ToolchainLockTests(unittest.TestCase):
                                 generator.validate_generator()
 
     def test_tool_audit_cannot_omit_a_build_tool_or_duplicate_the_installer(self):
-        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.0.0"}
+        tools = {"pip-tools": "7.6.1", "pip-audit": "2.10.1", "setuptools": "84.2.1"}
         installer = {"pip": "26.2.1"}
         audit = lambda pins: {"dependencies": [{"name": name, "version": version, "vulns": []} for name, version in pins.items()]}
         args = dict(application=tools, installer=installer,

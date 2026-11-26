@@ -12,6 +12,7 @@
 """
 import hashlib
 import json
+import math
 from html import escape
 from pathlib import Path
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -41,6 +42,35 @@ def _safe_identifier_reference(value: Any) -> str:
         return "<redacted>"
     digest = hashlib.sha256(raw).hexdigest()[:16]
     return f"<redacted sha256={digest}>"
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert report values to strict-JSON-compatible primitives."""
+    if isinstance(value, (float, np.floating)):
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else None
+
+    if isinstance(value, np.integer):
+        return int(value)
+
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+
+    # Keep this generic for scalar values supplied by pandas or another
+    # optional numeric backend without importing that backend in callers.
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            converted = item()
+        except (TypeError, ValueError):
+            converted = value
+        if converted is not value:
+            return _json_safe(converted)
+
+    return value
 
 
 # ========= 枚举类定义 =========
@@ -553,10 +583,15 @@ class EvaluationReport:
 
     def to_json(self, filepath: str, indent: int = 2) -> None:
         """导出为JSON"""
-        data = self.to_dict()
-
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=indent)
+        # Serialize before opening the destination so invalid values cannot
+        # leave a partially written report behind.
+        content = json.dumps(
+            _json_safe(self.to_dict()),
+            ensure_ascii=False,
+            indent=indent,
+            allow_nan=False,
+        )
+        Path(filepath).write_text(content, encoding="utf-8")
 
         logger.info(f"报告导出到: {filepath}")
 
@@ -2479,7 +2514,7 @@ class InformationQualityEvaluator:
             return
 
         if fmt == "html":
-            data = report.to_dict()
+            data = _json_safe(report.to_dict())
             summary = report.get_summary()
             html_content = (
                 "<!DOCTYPE html>\n"
@@ -2490,7 +2525,7 @@ class InformationQualityEvaluator:
                 "<h2>摘要</h2>\n"
                 f"<pre>{escape(summary)}</pre>\n"
                 "<h2>完整数据（JSON）</h2>\n"
-                f"<pre>{escape(json.dumps(data, ensure_ascii=False, indent=2))}</pre>\n"
+                f"<pre>{escape(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False))}</pre>\n"
                 "</body>\n"
                 "</html>\n"
             )

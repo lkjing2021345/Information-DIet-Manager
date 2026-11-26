@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -56,6 +57,17 @@ class Violation:
     reason: str
 
 
+def _git_environment() -> dict[str, str]:
+    """Ignore host-injected command-line config while reading the index."""
+    environment = os.environ.copy()
+    for name in tuple(environment):
+        if (name == "GIT_CONFIG_COUNT" or name.startswith("GIT_CONFIG_KEY_")
+                or name.startswith("GIT_CONFIG_VALUE_")):
+            environment.pop(name, None)
+    environment.pop("GIT_CONFIG_PARAMETERS", None)
+    return environment
+
+
 def violation_reason(path: str) -> str | None:
     """Classify an indexed path, not its payload; comparisons are Windows-safe."""
     normalized = path.replace("\\", "/").casefold()
@@ -93,7 +105,7 @@ def indexed_paths(repository: Path) -> list[str]:
         result = subprocess.run(
             ["git", "-c", f"safe.directory={repository}", "-C", str(repository),
              "ls-files", "--cached", "-z"],
-            capture_output=True,
+            capture_output=True, env=_git_environment(),
             check=False,
             timeout=30,
         )

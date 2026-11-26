@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .db import get_conn, init_db
 from .models import IngestAck, IngestItem, MAX_INGEST_TS
-from .utils import normalize_text, normalize_url, sha256_hex
+from .utils import normalize_text, normalize_url, sanitize_ingest_url, sha256_hex
 from . import db
 from .security import LocalAccessMiddleware, LocalSecurity, process_ownership
 from .data_management import install_data_routes
@@ -147,6 +147,16 @@ def _clean_optional_str(value: Any) -> Optional[str]:
     return s if s else None
 
 
+def _clean_import_str(value: Any, field: str) -> Optional[str]:
+    """Normalize an import text field without accepting non-string JSON values."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string or null")
+    s = value.strip()
+    return s if s else None
+
+
 def _truncate_text(value: Optional[str], max_len: int = MAX_TEXT_LEN) -> Optional[str]:
     if value is None:
         return None
@@ -157,7 +167,7 @@ def _prepare_item(raw: Dict[str, Any]) -> IngestItem:
     data = {str(k).strip(): v for k, v in raw.items() if k is not None}
     for key in ("url", "title", "text", "source", "lang", "channel", "author"):
         if key in data:
-            data[key] = _clean_optional_str(data.get(key))
+            data[key] = _clean_import_str(data.get(key), key)
     if "tags" in data:
         data["tags"] = _parse_tags(data.get("tags"))
     if "meta" in data:
@@ -182,10 +192,11 @@ def _row_from_item(item: IngestItem, *, preserve_text: bool = False) -> Dict[str
         if text is None:
             text = title
         text = _truncate_text(text)
-    url_norm = normalize_url(str(item.url))
+    stored_url = sanitize_ingest_url(str(item.url))
+    url_norm = normalize_url(stored_url)
     content_norm = normalize_text(title, text)
     return {
-        "url": str(item.url),
+        "url": stored_url,
         "title": title,
         "text": text,
         "ts": item.ts,
@@ -1507,6 +1518,7 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                 cached_payload, day=day, from_ts=from_ts, to_ts=to_ts,
                 limit_rows=limit_rows, input_count=input_count,
             ):
+                reused_from_job_id = int(cached["id"])
                 job_id = _insert_analysis_job(
                     conn,
                     status=JOB_COMPLETED,
@@ -1541,7 +1553,7 @@ def _run_full_analysis_snapshot(*, force, from_ts, to_ts, limit_rows):
                     "job_id": job_id,
                     "status": JOB_COMPLETED,
                     "cached": True,
-                    "reused_from_job_id": int(cached["id"]),
+                    "reused_from_job_id": reused_from_job_id,
                     "result": {
                         **cached_payload,
                         "experimental": True,
@@ -1821,6 +1833,12 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                     cached_payload, from_ts=resolved_from_ts, to_ts=resolved_to_ts,
                     limit_rows=limit_rows, input_count=input_count, available_count=int(available_count),
                 ):
+                    reused_from_job_id = int(cached["id"])
+                    cached_result = {
+                        **cached_payload,
+                        "cached": True,
+                        "reused_from_job_id": reused_from_job_id,
+                    }
                     job_id = _insert_analysis_job(
                         conn,
                         status=JOB_COMPLETED,
@@ -1837,9 +1855,9 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                         conn,
                         job_id,
                         status=JOB_COMPLETED,
-                        result_payload=cached_payload,
+                        result_payload=cached_result,
                         metrics_json={
-                            "cache_reuse_from_job_id": int(cached["id"]),
+                            "cache_reuse_from_job_id": reused_from_job_id,
                             "input_count": input_count,
                             "cache_hit": True,
                             "mode": "dashboard_visualization",
@@ -1848,9 +1866,7 @@ def _dashboard_visualization_snapshot(*, days, from_ts, to_ts, limit_rows, force
                         started_at=_now_ms(),
                         finished_at=_now_ms(),
                     )
-                    cached_payload["cached"] = True
-                    cached_payload["reused_from_job_id"] = int(cached["id"])
-                    return cached_payload
+                    return cached_result
 
         job_id = _insert_analysis_job(
             conn,

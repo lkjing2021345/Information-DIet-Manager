@@ -87,7 +87,7 @@ Information Diet Manager 是一个面向 Windows + Chrome、由用户在本机�
 - 扩展单测：`node --test chrome-extension/tests/*.test.cjs`。
 - 扩展真实浏览器：安装锁定依赖和 Playwright Chromium 后运行 `npm --prefix chrome-extension run test:e2e`，设置隔离的 `IDM_TEST_PYTHON`。
 - 前端单测、构建和真实浏览器生命周期测试位于 `frontend/`，但这些检查验证的是界面/接口行为，不等于模型推理验收。
-- 依赖锁、仓库卫生、运行时最小验收和当前未闭环事项分别见 `docs/python-locks-2026-10-03.md`、`docs/repository-hygiene-2026-10-03.md`、`docs/minimal-runtime-acceptance-2026-10-03.md` 和 `docs/quality-status-2026-10-03.md`。
+- 依赖锁、仓库卫生、运行时最小验收和当前未闭环事项分别见 `docs/python-locks-2026-10-03.md`、`docs/repository-hygiene-2026-10-03.md`、`docs/minimal-runtime-acceptance-2026-10-03.md` 和 `docs/quality-status-2026-11-26.md`。
 
 任何“已完成”表述都应同时说明检查类型、使用的合成/真实数据和未覆盖范围。当前架构可以支撑本地开发预览，但还不构成云端多用户服务或经过真实模型验收的健康/心理分析产品。
 

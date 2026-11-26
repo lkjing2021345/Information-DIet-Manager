@@ -168,13 +168,13 @@ npm run test:e2e
 
 测试使用临时数据库和合成密钥。模型输出相关契约测试使用合成结果，与真实推理验收分开记录。扩展与前端验收共用 `chrome-extension` 中锁定的 Playwright 和下载的 Chrome for Testing，不会操作日常 Chrome 配置；它们会在系统临时目录保留合成资料，截图和结果分别写入被 Git 忽略的 `output/playwright/round2/` 和 `output/playwright/display-correctness/`。前端浏览器测试会启动临时后端、构建并服务真实生产页面。
 
-Windows CI 会执行上述 Python、扩展与前端单元/浏览器测试及构建，并通过官方服务审计前端、扩展和最小 Python 环境的完整依赖树；查询或解析失败也会阻断。最新结果与后续优先级见 [质量状态](docs/quality-status-2026-10-03.md)；依赖范围见 [依赖审计记录](docs/dependency-security-2026-10-03.md)。历史基线见 [第三轮](docs/round-3-improvements.md)、[第二轮](docs/round-2-improvements.md) 和 [第一轮](docs/round-1-improvements.md)。
+Windows CI 会执行上述 Python、扩展与前端单元/浏览器测试及构建，并通过官方服务审计前端、扩展和最小 Python 环境的完整依赖树；查询或解析失败也会阻断。最新结果与后续优先级见 [质量状态](docs/quality-status-2026-11-26.md)；依赖范围见 [依赖审计记录](docs/dependency-security-2026-10-03.md)。历史基线见 [第三轮](docs/round-3-improvements.md)、[第二轮](docs/round-2-improvements.md) 和 [第一轮](docs/round-1-improvements.md)。
 
 全部检查通过后，CI 会核对提交与工作区，生成两次离线依赖清单并比较文件哈希，将清单作为该次运行的 `dependency-inventory-<完整提交SHA>` 附件保留 30 天。清单分别列出运行、测试、维护及安装工具的锁定组件，保留输入文件和扩展 Readability 源码的哈希；它不代表正式 SBOM、实际构建产物清单或模型环境验收。范围及本地命令见 [依赖清单说明](docs/dependency-inventory-2026-10-03.md)。
 
 ## 当前发布边界
 
-本轮完成项、已有工程基础和后续验收条件见 [质量状态与后续清单](docs/quality-status-2026-10-03.md)；最近一轮的验证证据见 [2026-11-12 质量状态](docs/quality-status-2026-11-12.md)。导出过滤和 CSV 契约见 [导出说明](docs/export-contract-2026-10-03.md)；大规模导出的内存边界仍待完善。
+本轮完成项、已有工程基础和后续验收条件见 [质量状态与后续清单](docs/quality-status-2026-11-26.md)。导出过滤和 CSV 契约见 [导出说明](docs/export-contract-2026-10-03.md)；大规模导出的内存边界仍待完善。
 
 当前是本地开发预览，尚未达到严格企业级发布标准。已建立基础采集可靠性、API 访问保护、页面记录删除与事务恢复及自动验收；应用和维护工具分别使用完整哈希锁及审计集合校验。逐站权限、保留周期、重复访问模型、真实算法验收、模型依赖锁定、许可证和发布治理仍未完成。现有安全机制不防御同一用户权限的恶意进程、已被控制的浏览器或操作系统。`/analyze/run` 和 `/dashboard/summary` 统一统计所有已保存页面；`/analyze/run_full` 只保存自身分析窗口，不能覆盖全局数量。前端仍不依赖这三个旧接口，见 [旧统计接口修复](docs/legacy-statistics-2026-10-03.md)。
 
@@ -184,4 +184,4 @@ Windows CI 会执行上述 Python、扩展与前端单元/浏览器测试及构�
 
 每完成一轮独立修复，运行相应验证、检查待提交差异，然后提交并推送到 `origin`。推送前同步远端更新并保留已有工作；不提交真实浏览数据、密钥或临时诊断产物。具体协作约定见 [AGENTS.md](AGENTS.md)。
 
-统一入口也可通过 `python scripts/run_backend.py` 和 `python scripts/run_analysis.py --help` 使用；离线分析 CLI 同时接受前端 `records` 与后端导出/备份 `items` JSON，输入信封中的 `options` 必须是对象。默认标准输出和 `--output_format json` 文件都使用同一份 `{mode, summary, records, report}` 结果契约；Markdown/HTML 文件仍输出面向阅读的报告。输出使用严格 JSON，缺失或非有限测量不会伪造成 `0`；历史 `src.hyh` / `src.lsj` 入口为兼容保留。
+统一入口也可通过 `python scripts/run_backend.py` 和 `python scripts/run_analysis.py --help` 使用；离线分析 CLI 同时接受前端 `records` 与后端导出/备份 `items` JSON，输入信封中的 `options` 必须是对象，`include_emotions` 和 `detailed` 必须使用 JSON 布尔值。显式传入的模型路径加载失败会终止本次分析并返回失败状态。默认标准输出和 `--output_format json` 文件都使用同一份 `{mode, summary, records, report}` 结果契约；Markdown/HTML 文件仍输出面向阅读的报告。输出使用严格 JSON，缺失或非有限测量不会伪造成 `0`；历史 `src.hyh` / `src.lsj` 入口为兼容保留。

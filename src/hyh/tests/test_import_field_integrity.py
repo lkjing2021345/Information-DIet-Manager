@@ -54,6 +54,48 @@ INVALID_FIELDS = [
 
 
 @pytest.mark.parametrize("extension", ["json", "jsonl"])
+@pytest.mark.parametrize("field", ["title", "text", "lang", "channel", "author"])
+@pytest.mark.parametrize("value", [123, True, [], {"value": "synthetic"}])
+def test_json_text_fields_reject_non_strings_without_dropping_neighbors(client, caplog, extension, field, value):
+    valid = item("valid-neighbor")
+    invalid = item("invalid", **{field: value})
+
+    response = upload(client, extension, [valid, invalid])
+
+    assert response.status_code == 200
+    assert response.json() == {"inserted": 1, "duplicates": 0, "failed": 1}
+    assert PRIVATE not in response.text + caplog.text
+    rows = rows_in_database()
+    assert len(rows) == 1 and rows[0]["url"] == valid["url"]
+
+
+@pytest.mark.parametrize("extension", ["json", "jsonl"])
+@pytest.mark.parametrize("field", ["title", "text", "lang", "channel", "author"])
+def test_json_text_fields_keep_valid_strings_and_optional_nulls(client, extension, field):
+    value = {
+        "title": "  Synthetic title  ",
+        "text": "  Synthetic body  ",
+        "lang": " zh-CN ",
+        "channel": " edu ",
+        "author": " Synthetic ",
+    }[field]
+    valid = item("valid-string", **{field: value})
+    response = upload(client, extension, [valid])
+
+    assert response.status_code == 200
+    assert response.json() == {"inserted": 1, "duplicates": 0, "failed": 0}
+    stored = rows_in_database()[0]
+    assert stored[field] == value.strip()
+
+    if field != "title":
+        retry = upload(client, extension, [item("valid-null", **{field: None})])
+        assert retry.status_code == 200
+        assert retry.json() == {"inserted": 1, "duplicates": 0, "failed": 0}
+        expected = item("valid-null")["title"] if field == "text" else None
+        assert rows_in_database()[-1][field] == expected
+
+
+@pytest.mark.parametrize("extension", ["json", "jsonl"])
 @pytest.mark.parametrize("field,value", INVALID_FIELDS)
 def test_invalid_import_field_counts_as_failed_without_losing_field(client, caplog, extension, field, value):
     existing = item("existing", tags=["saved"], meta={"keep": 1})

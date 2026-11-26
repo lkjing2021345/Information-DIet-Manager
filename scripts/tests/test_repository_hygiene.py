@@ -22,10 +22,22 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.git("init", "--quiet")
 
     def git(self, *args):
+        environment = self.git_environment()
         return subprocess.run(
             ["git", "-c", f"safe.directory={self.repo}", "-C", str(self.repo), *args],
-            capture_output=True, check=True, timeout=30,
+            capture_output=True, check=True, timeout=30, env=environment,
         )
+
+    @staticmethod
+    def git_environment(source=None):
+        """Avoid malformed host-injected command-line config in Git tests."""
+        environment = os.environ.copy() if source is None else dict(source)
+        for name in tuple(environment):
+            if (name == "GIT_CONFIG_COUNT" or name.startswith("GIT_CONFIG_KEY_")
+                    or name.startswith("GIT_CONFIG_VALUE_")):
+                environment.pop(name, None)
+        environment.pop("GIT_CONFIG_PARAMETERS", None)
+        return environment
 
     def write(self, relative, content="synthetic fixture\n"):
         target = self.repo / relative
@@ -125,6 +137,15 @@ class RepositoryHygieneTests(unittest.TestCase):
         result = self.check()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1 indexed paths checked", result.stdout)
+
+    def test_host_git_config_environment_does_not_break_the_checker(self):
+        self.stage(["README.md"])
+        environment = os.environ.copy()
+        environment["GIT_CONFIG_COUNT"] = "1"
+        environment["GIT_CONFIG_KEY_0"] = "synthetic.invalid"
+        environment.pop("GIT_CONFIG_VALUE_0", None)
+        result = self.check(env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cached_removal_passes_and_preserves_the_local_file(self):
         self.stage(["src/hyh/data/private.sqlite3"])
