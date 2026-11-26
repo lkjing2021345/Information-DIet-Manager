@@ -45,6 +45,27 @@ def test_ack_after_insert_and_response_loss_retry_is_page_idempotent(client):
     assert stored["items"][0]["ts"] == 1790208000000
 
 
+@pytest.mark.parametrize("route", ["collect", "import"])
+def test_ingestion_scrubs_url_credentials_fragments_and_private_query_params(client, route):
+    payload = item(url=(
+        "https://user:pass@example.invalid/private?token=secret&mode=read&"
+        "API_KEY=another-secret#client-state"
+    ), source="import" if route == "import" else "plugin")
+    if route == "collect":
+        response = client.post("/collect", json=payload)
+    else:
+        response = client.post("/import", files={
+            "file": ("synthetic.json", json.dumps([payload]), "application/json"),
+        })
+
+    assert response.status_code == 200
+    assert response.json() == {"inserted": 1, "duplicates": 0, "failed": 0}
+    saved = client.get("/items").json()["items"][0]
+    assert saved["url"] == "https://example.invalid/private?mode=read"
+    assert "user:pass" not in json.dumps(saved)
+    assert "secret" not in json.dumps(saved)
+
+
 @pytest.mark.parametrize("ts", [0, MAX_INGEST_TS])
 def test_timestamp_inclusive_boundaries_are_accepted(client, ts):
     response = client.post("/collect", json=item(ts=ts))

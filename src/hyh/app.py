@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .db import get_conn, init_db
 from .models import IngestAck, IngestItem, MAX_INGEST_TS
-from .utils import normalize_text, normalize_url, sha256_hex
+from .utils import normalize_text, normalize_url, sanitize_ingest_url, sha256_hex
 from . import db
 from .security import LocalAccessMiddleware, LocalSecurity, process_ownership
 from .data_management import install_data_routes
@@ -192,10 +192,11 @@ def _row_from_item(item: IngestItem, *, preserve_text: bool = False) -> Dict[str
         if text is None:
             text = title
         text = _truncate_text(text)
-    url_norm = normalize_url(str(item.url))
+    stored_url = sanitize_ingest_url(str(item.url))
+    url_norm = normalize_url(stored_url)
     content_norm = normalize_text(title, text)
     return {
-        "url": str(item.url),
+        "url": stored_url,
         "title": title,
         "text": text,
         "ts": item.ts,

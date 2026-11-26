@@ -67,6 +67,7 @@ Backend normalization:
 ### 3.1 Ingestion
 - `POST /collect`
   - body: single `IngestItem`
+  - the stored URL is sanitized at the service boundary by removing userinfo, fragments and common credential-bearing query parameters; remaining query parameters retain their page identity
   - successful response is exactly one of `{"inserted": 1, "duplicates": 0, "failed": 0}` or `{"inserted": 0, "duplicates": 1, "failed": 0}`
   - acknowledgement is returned only after the database transaction commits; storage errors must not be acknowledged as success
   - retry after a lost response is safe under the existing normalized-URL unique constraint: a previously committed page returns `duplicates: 1`
@@ -78,6 +79,7 @@ Backend normalization:
 - `POST /import`
   - body: `multipart/form-data` file (`csv/json/jsonl`)
   - response: `{"inserted": n, "duplicates": m, "failed": k}`
+  - successfully stored URLs use the same service-boundary sanitization as `/collect`
   - each parsed item uses the same field limits; invalid items contribute to `failed`. The import parser retains its legacy conversion of textual timestamps before model validation
   - a storage failure rolls back the entire insert transaction, including earlier valid rows and their embeddings; it does not return a partial-success acknowledgement
 
